@@ -37,6 +37,15 @@ from src.api.v1.devices.gateway_schemas import (
     DeviceLogBatchResponse,
     OfflineSweepResponse,
 )
+from src.api.v1.configs.schemas import (
+    DeviceConfigPayload,
+    ConfigSyncAckRequest,
+    ConfigSyncAckResponse,
+)
+from src.services.config_service import (
+    build_device_composite_payload,
+    process_device_ack,
+)
 
 router = APIRouter(prefix="/device-gateway", tags=["Device Authentication & Telemetry Gateway"])
 
@@ -253,3 +262,46 @@ def sweep_stale_devices_offline(
         devices_marked_offline=len(offline_ids),
         offline_device_ids=offline_ids,
     )
+
+
+@router.get("/config", response_model=DeviceConfigPayload)
+def get_authenticated_device_config(
+    device: Device = Depends(get_authenticated_device),
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge Device Endpoint] Fetch active configuration payload and SHA-256 checksum
+    for the calling authenticated ESP32 node.
+    """
+    composite = dict(device.config.config_payload) if (device.config and device.config.config_payload) else build_device_composite_payload(device)
+    checksum = device.config.checksum if device.config else ""
+    is_synced = device.config.is_synced if device.config else False
+    last_synced_at = device.config.last_synced_at if device.config else None
+
+    return DeviceConfigPayload(
+        device_id=device.device_id,
+        product_type=composite.get("product_type", "UNKNOWN"),
+        config_version=device.current_config_version,
+        checksum=checksum,
+        is_synced=is_synced,
+        last_synced_at=last_synced_at,
+        modules=composite.get("modules", {}),
+        module_configs=composite.get("module_configs", {}),
+        slots=composite.get("slots"),
+        telemetry=composite.get("telemetry", {}),
+        settings=composite.get("settings", {}),
+        updated_at=device.config.updated_at if device.config else None,
+    )
+
+
+@router.post("/config/ack", response_model=ConfigSyncAckResponse)
+def acknowledge_authenticated_device_config(
+    payload: ConfigSyncAckRequest,
+    device: Device = Depends(get_authenticated_device),
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge Device Endpoint] Authenticated ESP32 node publishes acknowledgment
+    after verifying checksum and committing configuration to NVS flash.
+    """
+    return process_device_ack(db=db, device=device, ack_req=payload)

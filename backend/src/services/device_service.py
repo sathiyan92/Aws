@@ -322,6 +322,12 @@ def toggle_device_module(
 
     db.commit()
     db.refresh(module)
+
+    # Publish updated config to MQTT distribution topic
+    from src.services.config_service import publish_config_to_mqtt
+    if device.config:
+        publish_config_to_mqtt(device.device_id, device.config.config_payload, device.config.checksum)
+
     return module
 
 

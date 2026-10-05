@@ -427,14 +427,70 @@ python -m pytest backend/tests/ -v
 
 ---
 
-## 13. Phase 9 Requirements (Next Milestone)
+---
 
-Upon approval of Phase 8, development will proceed to **Phase 9: Cloud Configuration Synchronization**:
-- Versioned, decoupled configuration delivery engine between Cloud and ESP32.
-- Cloud configuration version incrementor and payload generator.
-- MQTT configuration distribution topic `devices/{device_id}/config`.
-- ESP32 NVS config parser, checksum validator, and acknowledgment publisher.
-- Out-of-sync recovery triggered automatically upon heartbeat configuration drift.
+## 13. Phase 9 Verification: Cloud Configuration Synchronization
+
+Phase 9 delivered the **versioned, decoupled configuration delivery engine** between Cloud and ESP32 hardware fleets. It guarantees that prices, feature modules, and telemetry timings can be modified dynamically in the cloud without requiring firmware recompilation or OTA flashing.
+
+### Key Capabilities Delivered:
+1. **Canonical JSON Serialization & SHA-256 Checksums (`config_service.py`):**
+   - Deterministic, sorted-key JSON serialization ensures identical cryptographic hashes regardless of key order or whitespace variances.
+   - Computes SHA-256 checksums over composite device payloads (modules, slot pricing, relay pins, telemetry timings).
+2. **Version Incrementor & Immutable Snapshot Archival:**
+   - Any modification via `PATCH /api/v1/devices/{device_id}/config` or module toggling automatically increments `current_config_version`, marks `is_synced = False`, archives an immutable `ConfigurationVersion` record, and emits an audit log.
+   - Publishes real-time config updates to simulated MQTT distribution topic `devices/{device_id}/config`.
+3. **Heartbeat Drift Detection & Edge Sync Recovery:**
+   - Heartbeats reporting outdated revisions trigger `config_in_sync: false`, directing the edge node to fetch the latest configuration payload.
+4. **Edge Device Handshake & Acknowledgment (`POST /api/v1/devices/{device_id}/config/ack`):**
+   - Validates that edge node computed matching SHA-256 checksum and applied the correct active version.
+   - Transitions `is_synced = True` and timestamps `last_synced_at`.
+   - Tampered or corrupted checksums are rejected with `CHECKSUM_MISMATCH`, keeping `is_synced = False` and logging security warnings.
+5. **Configuration Rollback & Append-Only History:**
+   - Admin can restore any historical version via `POST /api/v1/devices/{device_id}/config/rollback`.
+   - Preserves append-only immutability by creating a new forward version holding the restored payload.
+6. **Key-Level Configuration Diff Engine:**
+   - Compares two arbitrary configuration revisions via `GET /api/v1/devices/{device_id}/config/diff?base_version=X&target_version=Y`.
+7. **Embedded C Firmware Persistence:**
+   - FreeRTOS/ESP-IDF NVS manager functions (`nvs_mgr_save_config_payload`, `nvs_mgr_verify_checksum`, `nvs_mgr_build_config_ack`).
+   - MQTT topic handlers (`mqtt_mgr_subscribe_config`, `mqtt_mgr_publish_config_ack`).
+
+---
+
+### How to Verify Phase 9
+
+#### 1. Run the Configuration Synchronization Test Suite
+From the project root:
+```powershell
+python -m pytest backend/tests/test_config_sync.py -v
+```
+
+#### 2. Run All 7 Test Suites Across the Entire Platform (62 tests):
+```powershell
+python -m pytest backend/tests/ -v
+```
+
+#### 3. Verified Test Matrix (`test_config_sync.py`):
+- `test_canonical_checksum_generation_determinism`: Validates deterministic SHA-256 hash across varied key insertion orders.
+- `test_composite_config_payload_generation`: Verifies composite payload generation for Vending (`slots`, `prices`, `pins`) and RFID (`reader_mode`).
+- `test_cloud_config_update_bumps_version_and_marks_unsynced`: Updates configuration, asserts version increment, `is_synced = False`, version archival, and MQTT publication.
+- `test_heartbeat_detects_out_of_sync_drift`: Edge heartbeat reporting stale version receives `config_in_sync: False`.
+- `test_edge_device_fetches_active_config_and_acknowledges`: Edge fetches active config, validates checksum, publishes successful ACK; cloud marks `is_synced = True`.
+- `test_tampered_or_corrupt_checksum_ack_rejected`: Edge submitting invalid checksum receives `CHECKSUM_MISMATCH`, keeping `is_synced = False`.
+- `test_stale_version_ack_rejected`: Edge submitting mismatched version receives `VERSION_MISMATCH`.
+- `test_edge_hardware_error_reported_in_ack`: Edge reporting hardware write error logs event and keeps `is_synced = False`.
+- `test_configuration_rollback_creates_forward_revision`: Restores historical version by generating a forward revision v3 preserving immutability.
+- `test_configuration_diff_endpoint`: Returns field-level differences between revisions.
+- `test_multi_tenant_isolation_blocks_cross_tenant_config_access`: Enforces strict HTTP 403 Forbidden on cross-tenant config operations.
+
+---
+
+## 14. Phase 10 Requirements (Next Milestone)
+
+Upon approval of Phase 9, development will proceed to **Phase 10: Vending Product & Slot Management**:
+- Product catalog CRUD API (name, SKU code, price in currency units, image).
+- Physical slot assignment engine (slot number, motor relay pin, capacity, stock level).
+- Live price update engine: changes price (e.g., ₹40 -> ₹45) and triggers automatic config version bump without firmware compilation.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*

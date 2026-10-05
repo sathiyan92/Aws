@@ -115,6 +115,25 @@ uint32_t mqtt_mgr_calculate_backoff_ms(uint32_t retry_attempt, uint32_t base_ms,
  */
 int mqtt_mgr_format_topic(const char *subtopic, char *out_topic, size_t max_len);
 
+/**
+ * @brief Publish configuration synchronization acknowledgment to cloud.
+ * Topic: devices/{device_id}/config/ack
+ * @param applied_version Revision number committed to NVS.
+ * @param checksum SHA-256 checksum validated.
+ * @param success True if successfully applied, false if error.
+ * @param error_msg Optional error message if failed.
+ * @return Message ID on success, negative on error.
+ */
+int mqtt_mgr_publish_config_ack(uint32_t applied_version, const char *checksum, bool success, const char *error_msg);
+
+/**
+ * @brief Subscribe to device configuration topic: devices/{device_id}/config.
+ * @param handler Callback to receive configuration update JSON.
+ * @param user_ctx User context.
+ * @return 0 on success.
+ */
+int mqtt_mgr_subscribe_config(mqtt_message_handler_t handler, void *user_ctx);
+
 #ifdef __cplusplus
 }
 #endif

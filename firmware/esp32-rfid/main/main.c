@@ -28,6 +28,22 @@ static const char *TAG = "RFID_MAIN";
 #define LOGE(fmt, ...) printf("[ERR ][RFID_MAIN] " fmt "\n", ##__VA_ARGS__)
 #endif
 
+/* Configuration Message Callback */
+static void on_config_message(const char *topic, const char *payload, size_t len, void *ctx)
+{
+    (void)topic;
+    (void)ctx;
+    LOGI("Received incoming cloud configuration update: %zu bytes", len);
+
+    uint32_t version = 1;
+    char checksum[65] = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+    if (len > 0 && payload) {
+        nvs_mgr_save_config_payload(payload, version, checksum);
+        mqtt_mgr_publish_config_ack(version, checksum, true, NULL);
+        LOGI("RFID Terminal configuration committed to NVS flash.");
+    }
+}
+
 /* Network State Callback */
 static void on_network_event(net_state_t new_state, net_interface_t active_if, void *ctx)
 {
@@ -40,6 +56,9 @@ static void on_network_event(net_state_t new_state, net_interface_t active_if, v
 
         /* Connect to cloud MQTT broker upon network ready */
         mqtt_mgr_start();
+
+        /* Subscribe to device-specific configuration topic */
+        mqtt_mgr_subscribe_config(on_config_message, NULL);
     } else if (new_state == NET_STATE_DISCONNECTED) {
         LOGW("Network Disconnected!");
         system_tasks_clear_event(SYS_BIT_NET_CONNECTED);

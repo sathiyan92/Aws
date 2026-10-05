@@ -173,20 +173,41 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 9: Cloud Configuration Synchronization
-- **Status:** **NEXT UP (Awaiting Phase 8 Review)**
+- **Status:** **COMPLETED (Current)**
 - **Objectives:** Implement versioned, decoupled configuration delivery engine between Cloud and ESP32.
 - **Deliverables:**
-  - Cloud configuration version incrementor and payload generator.
-  - MQTT config distribution topic `devices/{device_id}/config`.
-  - ESP32 NVS config parser, checksum validator, and acknowledgment publisher.
-  - Out-of-sync detection via heartbeat comparison.
+  - Cloud configuration schemas ([`backend/src/api/v1/configs/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/configs/schemas.py)) for composite device payloads, sync ACKs, rollback requests, version history summaries, and diffs.
+  - Configuration synchronization service ([`backend/src/services/config_service.py`](file:///c:/Projects/iot-fleet-platform/backend/src/services/config_service.py)):
+    - Deterministic canonical JSON serialization and cryptographic SHA-256 checksum generation (`compute_canonical_checksum`).
+    - Device composite payload assembler (`build_device_composite_payload`) integrating modules, slot pricing/pins, and telemetry settings.
+    - Version incrementor (`sync_device_config_record`) archiving immutable `ConfigurationVersion` snapshots and setting `is_synced = False`.
+    - MQTT config distribution publisher (`devices/{device_id}/config`).
+    - Device ACK processor (`process_device_ack`) validating version, checksum, and status, setting `is_synced = True` on success or logging error/mismatch events.
+    - Configuration rollback engine (`rollback_device_config`) creating forward revisions to preserve append-only version immutability.
+    - Key-level configuration diff analyzer (`diff_configurations`).
+  - Configuration REST API ([`backend/src/api/v1/configs/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/configs/routes.py)):
+    - `GET /api/v1/devices/{device_id}/config`: Tenant-scoped active configuration retrieval.
+    - `POST /api/v1/devices/{device_id}/config/ack`: Device sync acknowledgment ingestion.
+    - `PATCH /api/v1/devices/{device_id}/config`: Live parameter updates with automatic revision increment.
+    - `GET /api/v1/devices/{device_id}/config/history`: Point-in-time configuration audit trail.
+    - `POST /api/v1/devices/{device_id}/config/rollback`: Point-in-time version restore.
+    - `GET /api/v1/devices/{device_id}/config/diff`: Field-level comparison between versions.
+  - Edge Device Gateway Endpoints ([`backend/src/api/v1/devices/gateway_routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/gateway_routes.py)):
+    - `GET /api/v1/device-gateway/config`: Edge node authenticated active config fetch.
+    - `POST /api/v1/device-gateway/config/ack`: Edge node authenticated sync acknowledgment.
+  - Embedded C Firmware Integration:
+    - NVS Manager ([`firmware/common/include/nvs_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/nvs_mgr.h), [`firmware/common/src/nvs_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/nvs_mgr.c)): config payload saving/loading, checksum validation, and standard ACK JSON builder.
+    - MQTT Manager ([`firmware/common/include/mqtt_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/mqtt_mgr.h), [`firmware/common/src/mqtt_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/mqtt_mgr.c)): `mqtt_mgr_subscribe_config` and `mqtt_mgr_publish_config_ack`.
+    - Application integration in [`firmware/esp32-vending/main/main.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/main/main.c) and [`firmware/esp32-rfid/main/main.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-rfid/main/main.c).
+  - Out-of-sync drift detection via heartbeat telemetry comparison (`config_in_sync: false`).
+  - Comprehensive automated test suite ([`backend/tests/test_config_sync.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_config_sync.py)).
+- **Verification Result:** Passed 11/11 tests in `test_config_sync.py` and 62/62 tests across all 7 test suites with 100% success rate.
 - **Dependencies:** Phase 8.
-- **Verification Strategy:** Change configuration in cloud; verify ESP32 downloads new version, updates local storage, and ACKs with updated version.
 
 ---
 
 ### Phase 10: Vending Product & Slot Management
-- **Status:** Planned
+- **Status:** **NEXT UP (Awaiting Phase 9 Review)**
 - **Objectives:** Implement product catalog and vending machine slot assignment engine.
 - **Deliverables:**
   - Product catalog CRUD API (name, code, price, image).

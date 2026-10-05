@@ -115,6 +115,54 @@ nvs_status_t nvs_mgr_write_wifi_credentials(const char *ssid, const char *passwo
  */
 nvs_status_t nvs_mgr_increment_boot_count(uint32_t *out_boot_count);
 
+/**
+ * @brief Save complete configuration payload string and checksum into NVS.
+ * @param json_payload JSON configuration string received from Cloud.
+ * @param version Active version number.
+ * @param checksum SHA-256 checksum string.
+ * @return NVS_STATUS_OK on success.
+ */
+nvs_status_t nvs_mgr_save_config_payload(const char *json_payload, uint32_t version, const char *checksum);
+
+/**
+ * @brief Read saved configuration payload string and checksum from NVS.
+ * @param out_json Output buffer for JSON string.
+ * @param max_len Maximum length of out_json.
+ * @param out_version Output pointer for version.
+ * @param out_checksum Output buffer for checksum (at least 65 bytes).
+ * @return NVS_STATUS_OK on success.
+ */
+nvs_status_t nvs_mgr_read_config_payload(char *out_json, size_t max_len, uint32_t *out_version, char *out_checksum);
+
+/**
+ * @brief Validate incoming configuration payload against expected SHA-256 checksum.
+ * @param json_payload JSON string.
+ * @param expected_checksum Expected 64-char hex string.
+ * @return true if valid, false if mismatch.
+ */
+bool nvs_mgr_verify_checksum(const char *json_payload, const char *expected_checksum);
+
+/**
+ * @brief Construct standard JSON acknowledgment payload for Cloud config synchronization.
+ * @param device_id Device identifier.
+ * @param applied_version Version number applied.
+ * @param checksum SHA-256 checksum applied.
+ * @param success True if successfully committed to flash, false otherwise.
+ * @param err_msg Error details if success is false.
+ * @param out_ack_json Output buffer for ACK JSON.
+ * @param max_len Size of output buffer.
+ * @return NVS_STATUS_OK on success.
+ */
+nvs_status_t nvs_mgr_build_config_ack(
+    const char *device_id,
+    uint32_t applied_version,
+    const char *checksum,
+    bool success,
+    const char *err_msg,
+    char *out_ack_json,
+    size_t max_len
+);
+
 #ifdef __cplusplus
 }
 #endif

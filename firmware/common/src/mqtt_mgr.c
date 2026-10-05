@@ -184,3 +184,44 @@ uint32_t mqtt_mgr_calculate_backoff_ms(uint32_t retry_attempt, uint32_t base_ms,
 
     return delay + jitter;
 }
+
+int mqtt_mgr_publish_config_ack(uint32_t applied_version, const char *checksum, bool success, const char *error_msg)
+{
+    if (strlen(s_config.device_id) == 0) {
+        return -1;
+    }
+
+    char topic[128];
+    if (mqtt_mgr_format_topic("config/ack", topic, sizeof(topic)) != 0) {
+        return -1;
+    }
+
+    char payload[384];
+    const char *status_str = success ? "SUCCESS" : "ERROR";
+    if (error_msg && strlen(error_msg) > 0) {
+        snprintf(payload, sizeof(payload),
+            "{\"device_id\":\"%s\",\"applied_version\":%lu,\"checksum\":\"%s\",\"status\":\"%s\",\"error_message\":\"%s\"}",
+            s_config.device_id, (unsigned long)applied_version, checksum ? checksum : "", status_str, error_msg);
+    } else {
+        snprintf(payload, sizeof(payload),
+            "{\"device_id\":\"%s\",\"applied_version\":%lu,\"checksum\":\"%s\",\"status\":\"%s\",\"error_message\":null}",
+            s_config.device_id, (unsigned long)applied_version, checksum ? checksum : "", status_str);
+    }
+
+    return mqtt_mgr_publish(topic, payload, 1, false);
+}
+
+int mqtt_mgr_subscribe_config(mqtt_message_handler_t handler, void *user_ctx)
+{
+    if (strlen(s_config.device_id) == 0) {
+        return -1;
+    }
+
+    char topic[128];
+    if (mqtt_mgr_format_topic("config", topic, sizeof(topic)) != 0) {
+        return -1;
+    }
+
+    return mqtt_mgr_subscribe(topic, 1, handler, user_ctx);
+}
+
