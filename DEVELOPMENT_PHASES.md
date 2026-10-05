@@ -11,9 +11,9 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 |---|---|---|---|
 | **Phase 1** | **Architecture & Project Foundation** | **Architecture & Scaffolding** | **COMPLETED** |
 | **Phase 2** | **Database Schema & Data Model** | **Data Engineering** | **COMPLETED** |
-| **Phase 3** | **Authentication & Multi-Tenant Authorization** | **Core Backend Security** | **COMPLETED (Current)** |
-| **Phase 4** | **Device Lifecycle & Fleet Management** | **Fleet Services** | **NEXT UP** |
-| **Phase 5** | **Manufacturer Operations Portal** | **Frontend (Admin)** | Planned |
+| **Phase 3** | **Authentication & Multi-Tenant Authorization** | **Core Backend Security** | **COMPLETED** |
+| **Phase 4** | **Device Lifecycle & Fleet Management** | **Fleet Services** | **COMPLETED (Current)** |
+| **Phase 5** | **Manufacturer Operations Portal** | **Frontend (Admin)** | **NEXT UP** |
 | **Phase 6** | **Client Portal & Dynamic Feature Engine** | **Frontend (Tenant)** | Planned |
 | **Phase 7** | **ESP32 Base Firmware Core** | **Embedded System** | Planned |
 | **Phase 8** | **Device Provisioning & Secure Handshake** | **Edge-to-Cloud Auth** | Planned |
@@ -87,29 +87,32 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 4: Device Lifecycle & Fleet Management
-- **Status:** **NEXT UP (Awaiting Phase 3 Review)**
+- **Status:** **COMPLETED (Current)**
 - **Objectives:** Build CRUD services, registration pipelines, and APIs for physical device lifecycle management.
 - **Deliverables:**
-  - Manufacturer device provisioning endpoints: register physical device, burn Device ID, generate unique device credentials, assign/unassign to clients.
-  - Module management endpoints: toggle `QR_PAYMENT`, `COIN_PAYMENT`, `RFID_ACCESS` per device with automated audit logging.
-  - Device status monitor: tracks online/offline status based on heartbeat timeouts.
-  - Client device catalog endpoints: retrieve device list with dynamic module capabilities strictly scoped to requesting client.
-- **Dependencies:** Phase 3.
-- **Verification Strategy:** Register device `VM-000004`, assign to client, toggle modules, verify status changes and audit log trail.
+  - Device and client Pydantic schemas ([`backend/src/api/v1/devices/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/schemas.py), [`backend/src/api/v1/clients/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/clients/schemas.py)).
+  - Device lifecycle service ([`backend/src/services/device_service.py`](file:///c:/Projects/iot-fleet-platform/backend/src/services/device_service.py)) with auto-generated immutable Device IDs (`VM-XXXXXX`, `RFID-XXXXXX`), unique cryptographic tokens, initial config v1 creation, and audit logging.
+  - Client tenant service ([`backend/src/services/client_service.py`](file:///c:/Projects/iot-fleet-platform/backend/src/services/client_service.py)).
+  - Device API routes ([`backend/src/api/v1/devices/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/routes.py)): registration, multi-tenant fleet querying, device assignment, and hardware module toggling.
+  - Client tenant API routes ([`backend/src/api/v1/clients/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/clients/routes.py)): client onboarding, listing, and profile inspection.
+  - Comprehensive pytest integration test suite ([`backend/tests/test_device_lifecycle.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_device_lifecycle.py)).
+- **Verification Result:** Passed 11/11 tests (23/23 tests overall across test suites) with 100% success rate.
 
 ---
 
-### Phase 5: Manufacturer Dashboard
-- **Status:** Planned
-- **Objectives:** Build web-based operations portal for the platform manufacturer / super-admin.
+### Phase 5: Manufacturer Operations Portal
+- **Status:** **NEXT UP (Awaiting Phase 4 Review)**
+- **Objectives:** Build a premium, rich web-based operations portal for the platform manufacturer / super-admin.
 - **Deliverables:**
-  - Client tenant management view (create/edit clients).
-  - Fleet inventory view (all devices, online status, firmware, config versions).
-  - Hardware provisioning interface.
-  - Module configuration toggles per machine.
+  - Single-page application for platform administrator.
+  - Dashboard analytics overview (active fleet, online percentage, module breakdown).
+  - Client tenant management view (create clients, inspect tenant fleet).
+  - Hardware provisioning interface (register new physical ESP32 nodes).
+  - Device assignment modal (link/unlink machines to clients).
+  - Machine module configuration toggles with real-time feedback.
   - System-wide audit log inspector.
 - **Dependencies:** Phase 4.
-- **Verification Strategy:** End-to-end browser testing of tenant creation and device provisioning workflows.
+- **Verification Strategy:** End-to-end browser testing of tenant creation, device provisioning, and module toggle workflows.
 
 ---
 

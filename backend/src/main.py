@@ -18,6 +18,8 @@ from src.db.session import get_db
 from src.db.models.device import Device
 from src.db.models.client import Client
 from src.api.v1.auth.routes import router as auth_router
+from src.api.v1.devices.routes import router as device_router
+from src.api.v1.clients.routes import router as client_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -46,8 +48,10 @@ async def platform_exception_handler(request: Request, exc: PlatformException):
     )
 
 
-# Mount Authentication Router
+# Mount API Routers
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(device_router, prefix="/api/v1")
+app.include_router(client_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])

@@ -3,7 +3,8 @@
 [![Platform Architecture](https://img.shields.io/badge/Architecture-Phase%201%20Completed-brightgreen.svg)](#)
 [![Database Schema](https://img.shields.io/badge/Database%20Schema-Phase%202%20Completed-brightgreen.svg)](#)
 [![Authentication & Tenancy](https://img.shields.io/badge/Multi--Tenant%20Auth-Phase%203%20Completed-brightgreen.svg)](#)
-[![Status](https://img.shields.io/badge/Current%20State-Phase%203%20Complete-blue.svg)](#)
+[![Device Lifecycle](https://img.shields.io/badge/Device%20Lifecycle-Phase%204%20Completed-brightgreen.svg)](#)
+[![Status](https://img.shields.io/badge/Current%20State-Phase%204%20Complete-blue.svg)](#)
 [![Target Hardware](https://img.shields.io/badge/Target%20Hardware-ESP32%20%7C%20ESP32--S3-orange.svg)](#)
 
 ---
@@ -214,17 +215,41 @@ python -m pytest backend/tests/test_auth_and_tenancy.py -v
 
 ---
 
-## 8. Phase 4 Requirements (Next Milestone)
+## 8. Phase 4 Verification: Device Lifecycle & Fleet Management
 
-Upon approval of Phase 3, development will proceed to **Phase 4: Device Lifecycle & Fleet Management**:
-- Implement device provisioning API for Manufacturer:
-  - Register new ESP32 units with factory tuple (`hardware_id`, `chip_id`, `mac_address`, `factory_serial`).
-  - Generate cryptographically secure Device IDs (`VM-XXXXXX`, `RFID-XXXXXX`).
-  - Provision unique per-device authentication credentials.
-- Implement device assignment & reassignment service (linking/unlinking devices to/from client tenants).
-- Implement hardware module management API (enabling/disabling `QR_PAYMENT`, `COIN_PAYMENT`, `RFID_ACCESS` per machine).
-- Implement device status tracking service (online/offline heartbeat calculation).
-- Implement tenant-scoped device query endpoints for client dashboards.
+Phase 4 implemented physical hardware registration, auto-generating permanent Device IDs (`VM-XXXXXX`, `RFID-XXXXXX`), unique device credentials, client tenant assignment/unassignment, and hardware feature module management with automated configuration version bumping.
+
+### How to Verify Phase 4
+Run the automated test suite:
+```powershell
+python -m pytest backend/tests/test_device_lifecycle.py -v
+```
+
+### Verified Test Matrix:
+- `test_list_supported_device_types`: Returns product types with capability schemas.
+- `test_manufacturer_registers_vending_machine_auto_naming`: Provisions hardware, verifies sequential Device ID generation (`VM-000100`), credentials, and config v1.
+- `test_manufacturer_registers_rfid_terminal_auto_naming`: Provisions RFID unit, auto-generates `RFID-000002`.
+- `test_client_admin_cannot_register_device`: Non-manufacturer users blocked with HTTP 403 `FORBIDDEN_ACCESS`.
+- `test_duplicate_hardware_identifiers_rejected`: Duplicate MAC or chip ID raises HTTP 400 Bad Request.
+- `test_manufacturer_assigns_and_unassigns_device`: Transitions between `PROVISIONED` (inventory) and `ASSIGNED` (tenant).
+- `test_manufacturer_toggles_hardware_module_bumps_config_version`: Module toggle increments `current_config_version` (v1 -> v2), updates active configuration, and logs historical audit diff.
+- `test_client_admin_cannot_toggle_modules`: Client admins blocked from modifying physical hardware capabilities.
+- `test_fleet_listing_strict_multi_tenant_scoping`: Manufacturer sees full fleet; Client tenants see **strictly** their assigned units.
+- `test_single_device_detail_tenant_scoping`: Direct access to another client's machine returns HTTP 403 `TENANT_ISOLATION_VIOLATION`.
+- `test_client_onboarding_and_listing`: Manufacturer creates and lists client tenant organizations.
+
+---
+
+## 9. Phase 5 Requirements (Next Milestone)
+
+Upon approval of Phase 4, development will proceed to **Phase 5: Manufacturer Operations Portal**:
+- Build a premium, rich web-based portal for the platform manufacturer / super-admin.
+- Implement fleet analytics overview (online machines, product breakdown, module distribution).
+- Build client tenant management views (create client organizations, inspect tenant fleets).
+- Build hardware provisioning interface (register physical ESP32 devices).
+- Build device assignment modal (link/unlink machines to client tenants).
+- Build machine module configuration toggles with real-time feedback.
+- Build system-wide immutable audit log inspector.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
