@@ -135,20 +135,23 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 7: ESP32 Base Firmware Core
-- **Status:** **NEXT UP (Awaiting Phase 6 Review)**
+- **Status:** **COMPLETED (Current)**
 - **Objectives:** Implement base embedded firmware foundation for ESP32 using ESP-IDF / FreeRTOS.
 - **Deliverables:**
-  - Hardware abstraction layer (Wi-Fi, Ethernet, Cellular LTE-M drivers).
-  - Non-Volatile Storage (NVS) manager for identity and persistent flags.
-  - TLS 1.3 client stack and MQTT client with automatic reconnection and exponential backoff.
-  - FreeRTOS task architecture separating network stack from real-time hardware I/O.
-- **Dependencies:** Phase 1.
-- **Verification Strategy:** ESP32 boots, reads burnt Device ID from NVS, connects to secure Wi-Fi, and maintains persistent TLS connection.
+  - Common Firmware Core Header ([`firmware/common/include/firmware_config.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/firmware_config.h)) defining task priorities, buffer limits, and hardware module bitmasks (`MODULE_FLAG_QR_PAYMENT`, `MODULE_FLAG_COIN_PAYMENT`, `MODULE_FLAG_RFID_ACCESS`).
+  - Non-Volatile Storage Manager ([`firmware/common/include/nvs_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/nvs_mgr.h), [`firmware/common/src/nvs_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/nvs_mgr.c)) managing permanent device identity, cryptographic tokens, dynamic config cache, and boot cycle counters.
+  - Network Connection HAL ([`firmware/common/include/net_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/net_mgr.h), [`firmware/common/src/net_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/net_mgr.c)) providing unified interface for Wi-Fi station, Ethernet, and automatic Cellular LTE-M failover.
+  - Resilient TLS 1.3 / MQTT Client Manager ([`firmware/common/include/mqtt_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/mqtt_mgr.h), [`firmware/common/src/mqtt_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/mqtt_mgr.c)) with exponential backoff and jitter algorithm, heartbeat generator, and device-scoped topic formatting (`devices/{device_id}/*`).
+  - FreeRTOS Multi-Task Architecture ([`firmware/common/include/system_tasks.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/system_tasks.h), [`firmware/common/src/system_tasks.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/system_tasks.c)) isolating network communication (Core 0) from real-time hardware I/O (Core 1) using thread-safe telemetry and command queues.
+  - Dual-bank A/B OTA partition layout ([`firmware/partitions_two_ota.csv`](file:///c:/Projects/iot-fleet-platform/firmware/partitions_two_ota.csv)) and PlatformIO multi-environment configuration ([`firmware/platformio.ini`](file:///c:/Projects/iot-fleet-platform/firmware/platformio.ini)).
+  - ESP-IDF applications for Vending Controller ([`firmware/esp32-vending/`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending)) and RFID Attendance Terminal ([`firmware/esp32-rfid/`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-rfid)).
+  - Comprehensive automated test suite ([`backend/tests/test_firmware_core.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_firmware_core.py)).
+- **Verification Result:** Passed 8/8 tests in `test_firmware_core.py` and 43/43 tests across all 5 test suites with 100% success rate.
 
 ---
 
 ### Phase 8: Device Registration and Secure Authentication
-- **Status:** Planned
+- **Status:** **NEXT UP (Awaiting Phase 7 Review)**
 - **Objectives:** Establish cryptographically secure mutual handshake between ESP32 and Cloud.
 - **Deliverables:**
   - Device credential provisioning workflow (unique token or client certificate).

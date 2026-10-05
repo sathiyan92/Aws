@@ -1,0 +1,19 @@
+# ESP-IDF Component Definition for Common Firmware Core
+idf_component_register(
+    SRCS
+        "src/nvs_mgr.c"
+        "src/net_mgr.c"
+        "src/mqtt_mgr.c"
+        "src/system_tasks.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_event
+        esp_netif
+        mqtt
+        freertos
+        log
+        mbedtls
+)

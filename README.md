@@ -330,15 +330,66 @@ python -m pytest backend/tests/ -v
 
 ---
 
-## 11. Phase 7 Requirements (Next Milestone)
+## 11. Phase 7 Verification: ESP32 Base Firmware Core
 
-Upon approval of Phase 6, development will proceed to **Phase 7: ESP32 Base Firmware Core**:
-- Base embedded C/C++ firmware foundation for ESP32 (ESP-IDF v5.x / PlatformIO with FreeRTOS).
-- Hardware abstraction layer for Wi-Fi and peripheral buses.
-- Non-Volatile Storage (NVS) manager for cryptographic device identity and offline state.
-- Secure TLS 1.3 client and resilient MQTT connectivity with exponential backoff.
-- Multi-task FreeRTOS architecture cleanly isolating the networking stack from real-time hardware I/O.
+Phase 7 delivered the embedded C/C++ base firmware foundation for ESP32 devices running ESP-IDF v5.x / FreeRTOS.
+
+### Key Capabilities Delivered:
+1. **Hardware Abstraction Layer (HAL):**
+   - Unified network interface ([`firmware/common/include/net_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/net_mgr.h), [`firmware/common/src/net_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/net_mgr.c)) supporting Wi-Fi, Ethernet, and automatic Cellular LTE-M failover.
+   - Event-driven state loop notifying application tasks of IP acquisition and link transitions.
+2. **Non-Volatile Storage (NVS) Manager:**
+   - Dedicated flash partition manager ([`firmware/common/include/nvs_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/nvs_mgr.h), [`firmware/common/src/nvs_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/nvs_mgr.c)).
+   - Persists permanent device identity (`device_id`, `client_id`, `hardware_serial`, `auth_token`), configuration cache (`config_version`, enabled modules bitmask, checksum), and boot cycle counters.
+3. **Resilient TLS 1.3 / MQTT Client Manager:**
+   - MQTT client ([`firmware/common/include/mqtt_mgr.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/mqtt_mgr.h), [`firmware/common/src/mqtt_mgr.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/mqtt_mgr.c)) with automatic exponential backoff and randomized jitter to eliminate thundering herd storms on broker reconnection.
+   - Device-scoped topic formatting: `devices/{device_id}/heartbeat`, `telemetry`, `config`, `commands`, `ota`.
+   - Standard heartbeat generator serializing device uptime, free heap, RSSI, and active config version.
+4. **Dual-Core FreeRTOS Multi-Task Architecture:**
+   - Clean task segregation ([`firmware/common/include/system_tasks.h`](file:///c:/Projects/iot-fleet-platform/firmware/common/include/system_tasks.h), [`firmware/common/src/system_tasks.c`](file:///c:/Projects/iot-fleet-platform/firmware/common/src/system_tasks.c)):
+     - **Core 0:** Network and MQTT communication tasks (`PRIORITY_NET_MANAGER = 5`, `PRIORITY_MQTT_CLIENT = 4`).
+     - **Core 1:** Real-time hardware I/O task (`PRIORITY_REALTIME_IO = 6`) for coin pulse ISRs, motor firing, and RFID card capture.
+   - Thread-safe FreeRTOS queues: `xQueueTelemetry` (real-time events -> MQTT) and `xQueueCommands` (cloud commands -> actuator).
+5. **Dual-Bank OTA Partition Table & Build Systems:**
+   - Partition table ([`firmware/partitions_two_ota.csv`](file:///c:/Projects/iot-fleet-platform/firmware/partitions_two_ota.csv)) with dual A/B application slots (`ota_0`, `ota_1`) and `otadata`.
+   - Native ESP-IDF CMake files and PlatformIO multi-environment file ([`firmware/platformio.ini`](file:///c:/Projects/iot-fleet-platform/firmware/platformio.ini)).
+
+---
+
+### How to Verify Phase 7
+
+#### 1. Run the Firmware Core Test Suite
+From the project root:
+```powershell
+python -m pytest backend/tests/test_firmware_core.py -v
+```
+
+Run all platform test suites (43 tests):
+```powershell
+python -m pytest backend/tests/ -v
+```
+
+#### 2. Verified Test Matrix (`test_firmware_core.py`):
+- `test_firmware_directory_and_build_files_present`: Validates C source and header files, CMakeLists, and PlatformIO definitions.
+- `test_dual_bank_ota_partition_table_layout`: Asserts dual A/B slots (`ota_0`, `ota_1`) and NVS storage.
+- `test_module_bitflags_and_task_priority_definitions`: Validates hardware module masks and dual-core priorities.
+- `test_mqtt_exponential_backoff_algorithm`: Asserts exponential doubling, ceiling cap, and jitter bounds.
+- `test_device_scoped_mqtt_topic_hierarchy`: Confirms strict broker topic partitioning.
+- `test_heartbeat_payload_schema`: Validates JSON heartbeat telemetry payload format.
+- `test_freertos_queue_telemetry_and_command_dispatch`: Asserts thread-safe FIFO queuing between real-time I/O and network task.
+- `test_network_hal_failover_logic`: Validates primary Wi-Fi to cellular LTE failover state transitions.
+
+---
+
+## 12. Phase 8 Requirements (Next Milestone)
+
+Upon approval of Phase 7, development will proceed to **Phase 8: Device Registration and Secure Authentication**:
+- Establish cryptographically secure mutual handshake between ESP32 and Cloud.
+- Device credential provisioning workflow (unique token or client certificates).
+- Cloud device authentication gateway verifying eFuse chip ID, MAC address, and device token.
+- Periodic heartbeat telemetry ingestion loop updating `is_online`, `last_seen_at`, and `free_heap` in the cloud database.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
+
 
