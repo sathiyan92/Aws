@@ -1,5 +1,12 @@
 idf_component_register(
-    SRCS "main.c"
-    INCLUDE_DIRS "."
-    REQUIRES common
+    SRCS
+        "main.c"
+        "../src/coin_acceptor.c"
+        "../src/coin_offline_buffer.c"
+    INCLUDE_DIRS
+        "."
+        "../include"
+    REQUIRES
+        common
 )
+

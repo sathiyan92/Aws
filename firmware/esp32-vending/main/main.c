@@ -13,6 +13,8 @@
 #include "net_mgr.h"
 #include "mqtt_mgr.h"
 #include "system_tasks.h"
+#include "coin_acceptor.h"
+#include "coin_offline_buffer.h"
 
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
@@ -116,6 +118,18 @@ void app_main(void)
     }
     if (config_cache.enabled_modules_mask & MODULE_FLAG_COIN_PAYMENT) {
         LOGI("  [+] Mechanical Coin Acceptor Module: ACTIVE");
+        coin_offline_buffer_init();
+        coin_acceptor_config_t coin_cfg = {
+            .gpio_coin_pin = COIN_DEFAULT_GPIO_PIN,
+            .gpio_inhibit_pin = COIN_DEFAULT_INHIBIT_PIN,
+            .mode = COIN_MODE_PULSE_TRAIN,
+            .debounce_ms = COIN_DEFAULT_DEBOUNCE_MS,
+            .inter_pulse_timeout_ms = COIN_INTER_PULSE_TIMEOUT_MS,
+            .change_dispenser_fitted = false,
+            .escrow_enabled = true,
+            .denomination_count = 0, /* use defaults */
+        };
+        coin_acceptor_init(&coin_cfg);
     }
 
     /* 4. Initialize FreeRTOS Queues and Event Groups */

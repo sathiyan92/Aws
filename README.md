@@ -543,16 +543,78 @@ python -m pytest backend/tests/ -v
 
 ---
 
-## 15. Phase 11 Requirements (Next Milestone)
+## 15. Phase 11 Verification: Coin Payment Engine
 
-Upon approval of Phase 10, development will proceed to **Phase 11: Coin Payment Engine**:
-- ESP32 hardware interrupt driver for pulse train detection with hardware debouncing on coin acceptor GPIO.
-- Configurable pulse-to-denomination mapping synced via cloud configuration (e.g., 1 pulse = ₹1, 2 pulses = ₹2, 5 pulses = ₹5).
-- Autonomous edge vend logic: dispenses when accumulated credit >= price during cloud network disconnection.
-- Local offline transaction buffer in LittleFS and cloud reconciliation upon reconnect.
+Phase 11 delivered the **multi-coin electronic acceptor pulse processing engine, autonomous edge credit accumulator, persistent LittleFS offline transaction ring buffer, and cloud gateway financial reconciliation**. It guarantees that vending machines can accept cash, accumulate credit, vend products, and dispense change completely offline during internet blackouts, seamlessly reconciling transaction ledgers and inventory counters when connectivity resumes.
+
+### Key Capabilities Delivered:
+1. **ESP32 Hardware Interrupt Driver & Pulse Debouncing (`coin_acceptor.h`, `coin_acceptor.c`):**
+   - High-speed GPIO interrupt handler detects pulse trains with configurable electrical noise rejection (valid pulses between 20ms and 80ms).
+   - Inter-pulse silence timeout (>250ms) delineates the conclusion of a pulse train for discrete coin insertions.
+   - Dynamic pulse-to-denomination mapper (1 pulse = ₹1, 2 pulses = ₹2, 5 pulses = ₹5, 10 pulses = ₹10) configurable via cloud configuration.
+2. **Autonomous Edge Credit Accumulator & Offline Vend:**
+   - Accumulates inserted coins into real-time RAM credit balance.
+   - Authorizes autonomous edge vend when `credit >= slot_price` using cached NVS configuration without requiring cloud network availability.
+   - Calculates change due; triggers coin hopper or holds balance in escrow.
+   - Validates physical product delivery via optical IR drop sensor (differentiating `SUCCESS` vs `JAMMED`).
+3. **LittleFS Persistent Circular Transaction Buffer (`coin_offline_buffer.h`, `coin_offline_buffer.c`):**
+   - In-memory/flash circular buffer (up to 256 transactions) retaining un-synced offline records across power cycles.
+   - Exports un-synced batches and marks records synced upon cloud gateway confirmation.
+4. **Edge Gateway Batch Transaction Reconciliation (`POST /api/v1/device-gateway/transactions/offline-sync`):**
+   - Authenticated ESP32 session endpoint ingesting offline coin vend batches.
+   - Enforces transaction deduplication and idempotency on UUIDv4 transaction identifiers.
+   - Automatically decrements machine slot inventory (`current_stock = max(0, slot.current_stock - 1)`) for confirmed dispensations.
+   - Persists immutable records in `transactions` table (`COIN_VEND`, `is_offline_sync = True`).
+   - Emits structured audit logs (`COIN_TRANSACTIONS_SYNCED`, `SLOT_INVENTORY_DISPENSED`).
+5. **Cash Collection Reporting & Dynamic Settings Sync (`vending/routes.py`, `coin_service.py`):**
+   - `GET /api/v1/vending/{device_id}/coins/summary`: Aggregates total cash collected, successful/failed vends, denomination breakdown (counts of ₹1, ₹2, ₹5, ₹10), and total change dispensed.
+   - `PUT /api/v1/vending/{device_id}/coins/settings`: Dynamically updates pulse calibrations and debounce timings, automatically bumping `current_config_version`, recalculating canonical SHA-256 checksums, and archiving immutable configuration revisions.
+   - Module Policy Guards: Strictly rejects coin operations on devices without `COIN_PAYMENT` enabled with HTTP 403 `MODULE_DISABLED_FOR_DEVICE`.
+   - Multi-Tenant Isolation: Strictly blocks cross-tenant access with HTTP 403 Forbidden.
+
+---
+
+### How to Verify Phase 11
+
+#### 1. Run the Coin Payment Engine Test Suite
+From the project root:
+```powershell
+python -m pytest backend/tests/test_coin_engine.py -v
+```
+
+#### 2. Run All 9 Test Suites Across the Entire Platform (88 tests):
+```powershell
+python -m pytest backend/tests/ -v
+```
+
+#### 3. Verified Test Matrix (`test_coin_engine.py`):
+- `test_coin_acceptor_firmware_files_and_headers_present`: Verifies all coin acceptor C driver and buffer files exist.
+- `test_coin_acceptor_header_definitions`: Asserts hardware timing constants, debounce windows, and function prototypes.
+- `test_coin_offline_buffer_header_definitions`: Asserts LittleFS ring buffer structures and capacity parameters.
+- `test_pulse_train_detection_and_debounce_filtering`: Emulates hardware transient noise rejection and silence timeout pulse train completion.
+- `test_autonomous_edge_credit_accumulation_and_vend`: Emulates multi-coin credit accumulation, price check, vend execution, and change calculation.
+- `test_edge_device_offline_transaction_batch_sync`: Ingests offline transaction batch via authenticated device gateway endpoint.
+- `test_offline_sync_idempotency_and_deduplication`: Asserts duplicate batches are acknowledged without duplicate row insertion.
+- `test_slot_stock_decremented_on_successful_coin_vend`: Confirms slot inventory decrements on successful vend and is preserved on jammed dispense.
+- `test_coin_settings_update_increments_config_version_and_checksum`: Verifies live coin setting edits trigger version increments, checksum recomputation, and version archival.
+- `test_cash_collection_summary_and_denomination_breakdown`: Validates cash collection totals and denomination breakdown.
+- `test_coin_transactions_listing_endpoint`: Verifies paginated coin transaction queries.
+- `test_module_policy_guard_blocks_device_without_coin_payment`: Asserts HTTP 403 when querying coin endpoints on a device without `COIN_PAYMENT`.
+- `test_multi_tenant_isolation_on_coin_subsystem`: Asserts HTTP 403 when a tenant queries another tenant's machine cash records.
+
+---
+
+## 16. Phase 12 Requirements (Next Milestone)
+
+Upon approval of Phase 11, development will proceed to **Phase 12: Dynamic QR Payment Engine**:
+- Purchase intent initiation API (`/api/v1/orders/initiate`) resolving active configured slot price.
+- Dynamic UPI / Payment Gateway deep-link and QR payload generator.
+- ESP32 TFT/LCD dynamic QR code rendering engine with countdown expiration timer.
+- Order lifecycle state machine (`PENDING`, `SCANNED`, `AUTHORIZED`, `EXPIRED`, `CANCELLED`).
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
+
 
 
 

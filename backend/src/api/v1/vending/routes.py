@@ -30,6 +30,15 @@ from src.api.v1.vending.schemas import (
     MachineSlotConfigureRequest,
     MachineSlotBulkConfigureRequest,
     MachineSlotRestockRequest,
+    CoinOfflineSyncRequest,
+    CoinOfflineSyncResponse,
+    CoinCashSummaryResponse,
+)
+from src.services.coin_service import (
+    get_device_coin_settings,
+    update_device_coin_settings,
+    process_offline_transaction_batch,
+    get_device_cash_summary,
 )
 from src.services.vending_service import (
     list_products,
@@ -223,57 +232,54 @@ def get_coin_settings(
     [Guarded: COIN_PAYMENT] Retrieve electronic coin pulse acceptor configuration.
     Rejects with 403 MODULE_DISABLED_FOR_DEVICE if COIN_PAYMENT is disabled.
     """
-    coin_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="COIN_PAYMENT").first()
-    cfg = coin_mod.configuration or {}
-
-    default_mappings = {"1": 100, "2": 200, "5": 500, "10": 1000}
-    return CoinSettingsResponse(
-        device_id=device.device_id,
-        acceptor_mode=cfg.get("acceptor_mode", "PULSE_TRAIN"),
-        pulse_mappings=cfg.get("pulse_mappings", default_mappings),
-        debounce_ms=cfg.get("debounce_ms", 50),
-        coin_escrow_enabled=cfg.get("coin_escrow_enabled", True),
-        change_dispenser_fitted=cfg.get("change_dispenser_fitted", False),
-    )
+    return get_device_coin_settings(db=db, device=device)
 
 
 @router.put("/{device_id}/coins/settings", response_model=CoinSettingsResponse)
 def update_coin_settings(
     payload: CoinSettingsUpdateRequest,
+    request: Request,
     device: Device = Depends(require_device_module("COIN_PAYMENT")),
+    context: TenantContext = Depends(get_tenant_context),
     db: Session = Depends(get_db),
 ):
     """
     [Guarded: COIN_PAYMENT] Update coin pulse-to-value mapping and debounce timing.
-    Bumps device configuration version.
+    Bumps device configuration version, recalculates SHA-256 checksum, archives version,
+    and publishes MQTT update.
     """
-    coin_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="COIN_PAYMENT").first()
-    cfg = dict(coin_mod.configuration or {})
-
-    if payload.pulse_mappings is not None:
-        cfg["pulse_mappings"] = payload.pulse_mappings
-    if payload.debounce_ms is not None:
-        cfg["debounce_ms"] = payload.debounce_ms
-    if payload.change_dispenser_fitted is not None:
-        cfg["change_dispenser_fitted"] = payload.change_dispenser_fitted
-
-    coin_mod.configuration = cfg
-    device.current_config_version += 1
-    if device.config:
-        device.config.active_version = device.current_config_version
-        device.config.is_synced = False
-
-    db.commit()
-
-    default_mappings = {"1": 100, "2": 200, "5": 500, "10": 1000}
-    return CoinSettingsResponse(
-        device_id=device.device_id,
-        acceptor_mode=cfg.get("acceptor_mode", "PULSE_TRAIN"),
-        pulse_mappings=cfg.get("pulse_mappings", default_mappings),
-        debounce_ms=cfg.get("debounce_ms", 50),
-        coin_escrow_enabled=cfg.get("coin_escrow_enabled", True),
-        change_dispenser_fitted=cfg.get("change_dispenser_fitted", False),
+    client_ip = request.client.host if request and request.client else None
+    return update_device_coin_settings(
+        db=db,
+        device=device,
+        payload=payload,
+        actor_user_id=context.user_id,
+        ip_address=client_ip,
     )
+
+
+@router.get("/{device_id}/coins/summary", response_model=CoinCashSummaryResponse)
+def get_coin_summary(
+    device: Device = Depends(require_device_module("COIN_PAYMENT")),
+    db: Session = Depends(get_db),
+):
+    """
+    [Guarded: COIN_PAYMENT] Retrieve aggregate cash collection metrics and
+    denomination breakdown for a vending machine.
+    """
+    return get_device_cash_summary(db=db, device=device)
+
+
+@router.post("/{device_id}/coins/sync", response_model=CoinOfflineSyncResponse)
+def sync_device_coins(
+    payload: CoinOfflineSyncRequest,
+    device: Device = Depends(require_device_module("COIN_PAYMENT")),
+    db: Session = Depends(get_db),
+):
+    """
+    [Guarded: COIN_PAYMENT] Client portal or proxy endpoint to ingest offline coin transactions.
+    """
+    return process_offline_transaction_batch(db=db, device=device, payload=payload)
 
 
 @router.get("/{device_id}/coins/transactions", response_model=List[VendingTransactionResponse])

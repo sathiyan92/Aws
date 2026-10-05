@@ -46,6 +46,11 @@ from src.services.config_service import (
     build_device_composite_payload,
     process_device_ack,
 )
+from src.api.v1.vending.schemas import (
+    CoinOfflineSyncRequest,
+    CoinOfflineSyncResponse,
+)
+from src.services.coin_service import process_offline_transaction_batch
 
 router = APIRouter(prefix="/device-gateway", tags=["Device Authentication & Telemetry Gateway"])
 
@@ -305,3 +310,17 @@ def acknowledge_authenticated_device_config(
     after verifying checksum and committing configuration to NVS flash.
     """
     return process_device_ack(db=db, device=device, ack_req=payload)
+
+
+@router.post("/transactions/offline-sync", response_model=CoinOfflineSyncResponse)
+def sync_offline_transactions(
+    payload: CoinOfflineSyncRequest,
+    device: Device = Depends(get_authenticated_device),
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge Device Endpoint] Ingest a batch of offline coin vend transactions
+    buffered in edge LittleFS flash during network disconnection.
+    """
+    return process_offline_transaction_batch(db=db, device=device, payload=payload)
+

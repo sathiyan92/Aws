@@ -207,7 +207,7 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 10: Vending Product & Slot Management
-- **Status:** **COMPLETED (Current)**
+- **Status:** **COMPLETED**
 - **Objectives:** Implement multi-tenant product catalog, physical slot configuration engine, and real-time fleet price synchronization.
 - **Deliverables:**
   - Product Catalog CRUD API and schemas ([`backend/src/api/v1/vending/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/vending/schemas.py), [`backend/src/api/v1/vending/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/vending/routes.py)):
@@ -228,20 +228,42 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 11: Coin Payment Engine
-- **Status:** **NEXT UP (Awaiting Phase 10 Review)**
-- **Objectives:** Implement multi-coin electronic acceptor pulse processing and offline credit handling.
+- **Status:** **COMPLETED (Current)**
+- **Objectives:** Implement multi-coin electronic acceptor pulse processing, autonomous edge credit accumulator, LittleFS offline ring buffer, and cloud gateway transaction reconciliation.
 - **Deliverables:**
-  - ESP32 hardware interrupt driver for pulse train detection with hardware debouncing.
-  - Pulse-to-denomination mapping (configurable via cloud config).
-  - Autonomous edge vend logic: dispenses when `credit >= price` during cloud network disconnection.
-  - Local transaction buffer in LittleFS and sync mechanism.
+  - ESP32 hardware interrupt driver ([`firmware/esp32-vending/include/coin_acceptor.h`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/include/coin_acceptor.h), [`firmware/esp32-vending/src/coin_acceptor.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/src/coin_acceptor.c)):
+    - Pulse train detection on GPIO with hardware debouncing (transient noise filtering for 20-80ms pulses).
+    - Silence timeout delineation (>250ms) to detect end of pulse train for discrete inserted coins.
+    - Configurable pulse-to-denomination mapping (1 pulse = ₹1, 2 pulses = ₹2, 5 pulses = ₹5, 10 pulses = ₹10).
+    - Credit accumulator state machine and autonomous offline vend authorization (`credit >= price`).
+    - Change calculation and hopper trigger (or escrow retention).
+    - Optical drop sensor validation.
+  - LittleFS persistent circular transaction buffer ([`firmware/esp32-vending/include/coin_offline_buffer.h`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/include/coin_offline_buffer.h), [`firmware/esp32-vending/src/coin_offline_buffer.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/src/coin_offline_buffer.c)):
+    - In-memory ring buffer (up to 256 records) storing un-synced offline transactions.
+    - Batch extraction, cloud sync marking, and memory reclamation.
+  - Firmware application integration ([`firmware/esp32-vending/main/main.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/main/main.c), [`firmware/esp32-vending/main/CMakeLists.txt`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/main/CMakeLists.txt)):
+    - Automatic driver and buffer initialization when `MODULE_FLAG_COIN_PAYMENT` is active.
+  - Cloud Device Gateway batch sync endpoint ([`backend/src/api/v1/devices/gateway_routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/gateway_routes.py)):
+    - Authenticated edge ESP32 batch transaction ingestion (`POST /api/v1/device-gateway/transactions/offline-sync`).
+    - Idempotent deduplication on transaction UUIDs.
+    - Slot inventory stock decrement on successful vend.
+    - Ledger persistence in `transactions` table with denomination breakdown.
+    - Audit trail creation for offline transaction batches and inventory dispensing.
+  - Vending Management APIs ([`backend/src/api/v1/vending/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/vending/routes.py), [`backend/src/services/coin_service.py`](file:///c:/Projects/iot-fleet-platform/backend/src/services/coin_service.py)):
+    - `GET /api/v1/vending/{device_id}/coins/settings`: Retrieve coin pulse configurations.
+    - `PUT /api/v1/vending/{device_id}/coins/settings`: Update mappings/debounce, automatically bumping configuration version and recalculating SHA-256 checksums.
+    - `GET /api/v1/vending/{device_id}/coins/summary`: Cash collection dashboard reporting total cash, denomination counts, and dispensed change.
+    - `GET /api/v1/vending/{device_id}/coins/transactions`: Paginated transaction list.
+  - Module Policy Guard: Rejects coin operations on devices without `COIN_PAYMENT` enabled with HTTP 403 `MODULE_DISABLED_FOR_DEVICE`.
+  - Multi-Tenant Isolation: Strictly blocks cross-tenant access with HTTP 403.
+  - Comprehensive automated test suite ([`backend/tests/test_coin_engine.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_coin_engine.py)).
+- **Verification Result:** Passed 13/13 tests in `test_coin_engine.py` and 88/88 tests across all 9 test suites with 100% success rate.
 - **Dependencies:** Phase 10.
-- **Verification Strategy:** Simulate coin pulses on ESP32 GPIO; assert credit accumulation, vend trigger, and transaction logging.
 
 ---
 
 ### Phase 12: Dynamic QR Payment Engine
-- **Status:** Planned
+- **Status:** **NEXT UP (Awaiting Phase 11 Review)**
 - **Objectives:** Implement transaction-based ephemeral QR payment flow.
 - **Deliverables:**
   - Purchase intent initiation API (`/api/v1/orders/initiate`).

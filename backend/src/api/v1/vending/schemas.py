@@ -165,3 +165,48 @@ class MachineSlotRestockRequest(BaseModel):
     quantity_added: Optional[int] = Field(None, ge=1, description="Quantity to increment current stock by")
     new_stock_level: Optional[int] = Field(None, ge=0, description="Directly set exact stock level")
 
+
+# ------------------------------------------------------------------------------
+# COIN ACCEPTOR OFFLINE SYNC & CASH REPORTING SCHEMAS
+# ------------------------------------------------------------------------------
+
+class CoinOfflineSyncItem(BaseModel):
+    """Single transaction record synchronized from edge LittleFS ring buffer."""
+    tx_uuid: str = Field(..., description="Unique client-generated transaction UUIDv4")
+    slot_number: int = Field(..., ge=1, description="Machine slot number dispensed")
+    product_code: Optional[str] = Field(None, description="Product SKU code dispensed")
+    amount_paise: int = Field(..., ge=0, description="Product price / vend amount in paise")
+    coins_inserted: Optional[Dict[str, int]] = Field(None, description="Denomination count breakdown, e.g. {'1': 0, '2': 0, '5': 2, '10': 2}")
+    change_dispensed_paise: int = Field(0, ge=0, description="Change dispensed in paise")
+    dispense_status: str = Field(..., description="Vend outcome: SUCCESS, FAILURE, JAMMED")
+    transacted_at: datetime = Field(..., description="Timestamp of edge vend execution")
+
+
+class CoinOfflineSyncRequest(BaseModel):
+    """Batch payload of un-synced offline coin transactions from ESP32."""
+    device_id: str
+    transactions: List[CoinOfflineSyncItem]
+
+
+class CoinOfflineSyncResponse(BaseModel):
+    """Cloud acknowledgment of ingested offline coin transactions."""
+    device_id: str
+    synced_count: int
+    duplicate_count: int
+    synced_tx_uuids: List[str]
+    rejected_tx_uuids: List[str] = []
+    message: str = "Batch processed successfully"
+
+
+class CoinCashSummaryResponse(BaseModel):
+    """Aggregate cash collection reporting and denomination breakdown."""
+    device_id: str
+    total_cash_collected_rupees: float
+    total_transactions: int
+    successful_vends: int
+    failed_vends: int
+    denomination_breakdown: Dict[str, int]
+    total_change_dispensed_rupees: float
+    last_sync_at: Optional[datetime] = None
+
+

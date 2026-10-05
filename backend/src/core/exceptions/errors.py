@@ -79,6 +79,18 @@ class BadRequestException(PlatformException):
         )
 
 
+class ConflictException(PlatformException):
+    """Raised when an operation conflicts with existing resource state."""
+    def __init__(self, detail: str, error_code: str = "RESOURCE_CONFLICT", extra: Optional[Any] = None):
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+            error_code=error_code,
+            extra=extra,
+        )
+
+
+
 class DeviceAuthFailedException(PlatformException):
     """Raised when ESP32 token or signature verification fails."""
     def __init__(self, detail: str = "Device authentication failed. Invalid token or credentials."):
