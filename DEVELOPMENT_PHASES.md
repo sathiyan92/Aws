@@ -151,19 +151,29 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 8: Device Registration and Secure Authentication
-- **Status:** **NEXT UP (Awaiting Phase 7 Review)**
+- **Status:** **COMPLETED (Current)**
 - **Objectives:** Establish cryptographically secure mutual handshake between ESP32 and Cloud.
 - **Deliverables:**
-  - Device credential provisioning workflow (unique token or client certificate).
-  - Cloud device authentication gateway verifying eFuse chip ID, MAC address, and device token.
-  - Periodic heartbeat telemetry loop (`uptime`, `free_heap`, `rssi`, `config_version`, `firmware_version`).
-- **Dependencies:** Phases 4, 7.
-- **Verification Strategy:** Physical or simulated ESP32 performs TLS handshake, authenticates with unique credentials, and reports heartbeat to backend.
+  - Device Gateway API schemas ([`backend/src/api/v1/devices/gateway_schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/gateway_schemas.py)) for hardware handshakes, MQTT topic mapping, heartbeat telemetry, edge log batches, and offline sweeps.
+  - Physical Hardware Authentication Endpoint ([`backend/src/api/v1/devices/gateway_routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/gateway_routes.py)):
+    - Verifies device existence, suspension checks, and credential validity.
+    - Validates SHA-256 hash of device secret token.
+    - Enforces physical hardware tuple validation (eFuse Chip ID and MAC address match factory records) with HTTP 403 `HARDWARE_IDENTITY_MISMATCH` to prevent token cloning.
+    - Issues short-lived device session JWT (`DEVICE_CLIENT` role) and dynamically scoped MQTT broker topic paths (`devices/{device_id}/*`).
+  - Device Dependency Guard ([`backend/src/core/security/dependencies.py`](file:///c:/Projects/iot-fleet-platform/backend/src/core/security/dependencies.py)) supporting `get_authenticated_device` via session JWT or direct `X-Device-Token` headers.
+  - Heartbeat Telemetry Ingestion Endpoint:
+    - Ingests `uptime_seconds`, `free_heap_bytes`, `wifi_rssi`, `ip_address`, and fault codes into time-series `device_heartbeats`.
+    - Automatically detects edge-to-cloud configuration drift (`config_in_sync: false`) when device revision lags behind cloud revision.
+    - Updates device `is_online = True` and `last_heartbeat_at`.
+  - Edge Diagnostic Log Batch Ingestion Endpoint flushing LittleFS log buffers into `device_logs`.
+  - Fleet Health Offline Sweeper marking uncommunicative devices `is_online = False` after threshold expiry.
+  - Comprehensive automated test suite ([`backend/tests/test_device_authentication.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_device_authentication.py)).
+- **Verification Result:** Passed 8/8 tests in `test_device_authentication.py` and 51/51 tests across all 6 test suites with 100% success rate.
 
 ---
 
 ### Phase 9: Cloud Configuration Synchronization
-- **Status:** Planned
+- **Status:** **NEXT UP (Awaiting Phase 8 Review)**
 - **Objectives:** Implement versioned, decoupled configuration delivery engine between Cloud and ESP32.
 - **Deliverables:**
   - Cloud configuration version incrementor and payload generator.

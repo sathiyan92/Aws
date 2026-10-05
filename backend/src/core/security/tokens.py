@@ -70,3 +70,29 @@ def decode_token(token: str) -> Dict[str, Any]:
         raise NotAuthenticatedException("Token has expired. Please log in again.")
     except jwt.InvalidTokenError:
         raise NotAuthenticatedException("Invalid token signature or structure.")
+
+
+def create_device_session_token(
+    device_id: str,
+    device_pk: str,
+    client_id: Optional[str] = None,
+    expires_delta: Optional[timedelta] = None,
+) -> str:
+    """Generate a signed JWT session token for an authenticated ESP32 device."""
+    now = datetime.now(timezone.utc)
+    if expires_delta:
+        expire = now + expires_delta
+    else:
+        expire = now + timedelta(hours=24)  # 24-hour device session
+
+    payload: Dict[str, Any] = {
+        "sub": device_pk,
+        "device_id": device_id,
+        "client_id": client_id,
+        "role": "DEVICE_CLIENT",
+        "type": "device_session",
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+

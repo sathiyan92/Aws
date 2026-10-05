@@ -77,3 +77,37 @@ class BadRequestException(PlatformException):
             detail=detail,
             error_code="BAD_REQUEST",
         )
+
+
+class DeviceAuthFailedException(PlatformException):
+    """Raised when ESP32 token or signature verification fails."""
+    def __init__(self, detail: str = "Device authentication failed. Invalid token or credentials."):
+        super().__init__(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=detail,
+            error_code="DEVICE_AUTHENTICATION_FAILED",
+        )
+
+
+class HardwareMismatchException(PlatformException):
+    """
+    CRITICAL SECURITY VIOLATION:
+    Raised when device token is presented with non-matching physical MAC or eFuse Chip ID.
+    Prevents cloned tokens from spoofing physical devices.
+    """
+    def __init__(self, detail: str = "Hardware identity mismatch. Chip ID or MAC does not match factory provisioning."):
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=detail,
+            error_code="HARDWARE_IDENTITY_MISMATCH",
+        )
+
+
+class CredentialRevokedException(PlatformException):
+    """Raised when device credentials have been marked revoked in the database."""
+    def __init__(self, detail: str = "Device credentials have been revoked by platform administrator."):
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=detail,
+            error_code="CREDENTIAL_REVOKED",
+        )

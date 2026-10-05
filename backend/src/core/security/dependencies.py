@@ -142,3 +142,55 @@ def require_device_module(module_code: str) -> Callable:
         return device
 
     return module_checker
+
+
+def get_authenticated_device(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    x_device_token: Optional[str] = Header(None, alias="X-Device-Token"),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-ID"),
+    db: Session = Depends(get_db),
+) -> Device:
+    """
+    Authenticate an ESP32 hardware device via:
+    1. Authorization Bearer session token (JWT from /device-gateway/authenticate)
+    2. Or direct X-Device-Token + X-Device-ID headers
+    """
+    import hashlib
+    from src.db.models.device import DeviceCredential
+    from src.core.exceptions.errors import DeviceAuthFailedException, CredentialRevokedException
+
+    # Method 1: Bearer JWT Session Token
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:].strip()
+        try:
+            payload = decode_token(token)
+            if payload.get("role") == "DEVICE_CLIENT" and payload.get("type") == "device_session":
+                device_pk = payload.get("sub")
+                device = db.query(Device).filter(Device.id == device_pk).first()
+                if not device:
+                    raise DeviceAuthFailedException("Device not found for session token")
+                if device.status == "SUSPENDED":
+                    raise ForbiddenException("Device has been suspended by administrator")
+                return device
+        except Exception:
+            pass  # Fall through to raw token check
+
+    # Method 2: Direct Token (via Header or Bearer raw token)
+    raw_token = x_device_token
+    if not raw_token and authorization and authorization.startswith("Bearer "):
+        raw_token = authorization[7:].strip()
+
+    if raw_token:
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        cred = db.query(DeviceCredential).filter(DeviceCredential.token_hash == token_hash).first()
+        if cred:
+            if cred.is_revoked:
+                raise CredentialRevokedException()
+            device = db.query(Device).filter(Device.id == cred.device_id).first()
+            if device and (not x_device_id or device.device_id == x_device_id):
+                if device.status == "SUSPENDED":
+                    raise ForbiddenException("Device has been suspended by administrator")
+                return device
+
+    raise DeviceAuthFailedException("Valid device credentials or session token required")
+

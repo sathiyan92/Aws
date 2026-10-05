@@ -381,15 +381,63 @@ python -m pytest backend/tests/ -v
 
 ---
 
-## 12. Phase 8 Requirements (Next Milestone)
+## 12. Phase 8 Verification: Device Registration and Secure Authentication Gateway
 
-Upon approval of Phase 7, development will proceed to **Phase 8: Device Registration and Secure Authentication**:
-- Establish cryptographically secure mutual handshake between ESP32 and Cloud.
-- Device credential provisioning workflow (unique token or client certificates).
-- Cloud device authentication gateway verifying eFuse chip ID, MAC address, and device token.
-- Periodic heartbeat telemetry ingestion loop updating `is_online`, `last_seen_at`, and `free_heap` in the cloud database.
+Phase 8 delivered the **Cloud Device Authentication Gateway** establishing cryptographically secure mutual verification, anti-cloning hardware identity protection, and time-series heartbeat ingestion.
+
+### Key Capabilities Delivered:
+1. **Physical Hardware Handshake (`POST /api/v1/device-gateway/authenticate`):**
+   - Validates the device secret token against cryptographic SHA-256 hashes in `device_credentials`.
+   - **Anti-Cloning Protection:** Validates that the presented eFuse Chip ID and MAC address match factory records. Mismatches are rejected with **HTTP 403 `HARDWARE_IDENTITY_MISMATCH`**.
+   - Verifies credential validity, expiration, and revocation status.
+   - Issues a short-lived device session JWT (`role: DEVICE_CLIENT`) and dynamically scoped MQTT broker topics (`devices/{device_id}/*`).
+2. **Periodic Heartbeat Telemetry Ingestion (`POST /api/v1/device-gateway/heartbeat`):**
+   - Ingests `uptime_seconds`, `free_heap_bytes`, `wifi_rssi`, and local IP into `device_heartbeats`.
+   - **Configuration Drift Detection:** Detects if edge configuration version lags behind cloud revision, returning `config_in_sync: false` and `active_config_version` to trigger client-side config synchronization.
+   - Updates `is_online = True` and `last_heartbeat_at`.
+3. **Diagnostic Edge Log Batch Ingestion (`POST /api/v1/device-gateway/logs`):**
+   - Flushes buffered error and debug events from LittleFS into `device_logs`.
+4. **Fleet Health Offline Sweeper (`POST /api/v1/device-gateway/offline-check`):**
+   - Scans and automatically transitions devices to `is_online = False` if heartbeats cease beyond the configured threshold window.
+
+---
+
+### How to Verify Phase 8
+
+#### 1. Run the Device Authentication Test Suite
+From the project root:
+```powershell
+python -m pytest backend/tests/test_device_authentication.py -v
+```
+
+Run all platform test suites across the platform (51 tests):
+```powershell
+python -m pytest backend/tests/ -v
+```
+
+#### 2. Verified Test Matrix (`test_device_authentication.py`):
+- `test_device_successful_handshake_and_authentication`: Validates token, chip ID, MAC address, session JWT issuance, and MQTT topic map.
+- `test_device_authentication_invalid_token_rejected`: Rejection of wrong token with HTTP 401 `DEVICE_AUTHENTICATION_FAILED`.
+- `test_device_authentication_hardware_mismatch_rejected`: Rejection of token on cloned hardware with HTTP 403 `HARDWARE_IDENTITY_MISMATCH`.
+- `test_device_authentication_revoked_credential_rejected`: Rejection of revoked credentials with HTTP 403 `CREDENTIAL_REVOKED`.
+- `test_device_heartbeat_ingestion_and_telemetry`: Ingestion of metrics and time-series record creation.
+- `test_device_heartbeat_detects_configuration_drift`: Asserts `config_in_sync: false` when edge lags cloud revision.
+- `test_device_diagnostic_log_batch_ingestion`: Persists batch of edge logs into `device_logs`.
+- `test_offline_detection_worker_marks_stale_devices`: Transitions uncommunicative nodes to `is_online = False`.
+
+---
+
+## 13. Phase 9 Requirements (Next Milestone)
+
+Upon approval of Phase 8, development will proceed to **Phase 9: Cloud Configuration Synchronization**:
+- Versioned, decoupled configuration delivery engine between Cloud and ESP32.
+- Cloud configuration version incrementor and payload generator.
+- MQTT configuration distribution topic `devices/{device_id}/config`.
+- ESP32 NVS config parser, checksum validator, and acknowledgment publisher.
+- Out-of-sync recovery triggered automatically upon heartbeat configuration drift.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
+
 
 
