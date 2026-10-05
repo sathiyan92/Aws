@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, Any, TYPE_CHECKING
 from sqlalchemy import String, Integer, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.db.base import Base, TimestampMixin, generate_uuid
+from src.db.base import Base, TimestampMixin, generate_uuid, utc_now
 
 if TYPE_CHECKING:
     from src.db.models.device import Device
@@ -78,7 +78,7 @@ class ConfigurationVersion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=utc_now,
     )
 
     # Relationships

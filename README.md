@@ -2,7 +2,8 @@
 
 [![Platform Architecture](https://img.shields.io/badge/Architecture-Phase%201%20Completed-brightgreen.svg)](#)
 [![Database Schema](https://img.shields.io/badge/Database%20Schema-Phase%202%20Completed-brightgreen.svg)](#)
-[![Status](https://img.shields.io/badge/Current%20State-Phase%202%20Complete-blue.svg)](#)
+[![Authentication & Tenancy](https://img.shields.io/badge/Multi--Tenant%20Auth-Phase%203%20Completed-brightgreen.svg)](#)
+[![Status](https://img.shields.io/badge/Current%20State-Phase%203%20Complete-blue.svg)](#)
 [![Target Hardware](https://img.shields.io/badge/Target%20Hardware-ESP32%20%7C%20ESP32--S3-orange.svg)](#)
 
 ---
@@ -187,15 +188,43 @@ Get-Content infrastructure/docker/postgres/init-schema.sql | Select-Object -Firs
 
 ---
 
-## 7. Phase 3 Requirements (Next Milestone)
+## 7. Phase 3 Verification: Authentication & Multi-Tenant Authorization
 
-Upon approval of Phase 2, development will proceed to **Phase 3: Authentication and Multi-Tenant Authorization**:
-- Implement JWT token issue and refresh mechanisms with short expiration (15 mins) and rotating refresh tokens.
-- Implement PBKDF2 / Argon2id password verification and user management services.
-- Implement FastAPI security dependency: `get_current_user`, `get_current_tenant`.
-- Implement RBAC authorization guards: `RequiresRole(["MANUFACTURER_ADMIN"])`, `RequiresRole(["CLIENT_ADMIN"])`.
-- Implement tenant isolation middleware ensuring all query filters strictly enforce `client_id` boundaries.
-- Build integration tests asserting that users from Tenant A receive `403 Forbidden` when attempting to access Tenant B resources.
+Phase 3 implemented JWT token generation, refresh rotation, RBAC guards, and multi-tenant isolation boundaries.
+
+### How to Verify Phase 3
+Run the automated pytest suite:
+```powershell
+python -m pytest backend/tests/test_auth_and_tenancy.py -v
+```
+
+### Verified Test Matrix:
+- `test_health_endpoint`: Public health status check.
+- `test_manufacturer_admin_login`: Super-admin receives global token with `client_id=NULL`.
+- `test_client_admin_login`: Client admin receives tenant-scoped token with assigned `client_id`.
+- `test_login_invalid_credentials`: Rejection of wrong credentials with `NOT_AUTHENTICATED`.
+- `test_protected_route_requires_token`: Bearer token enforcement on `/auth/me`.
+- `test_auth_me_returns_profile`: Profile extraction from validated JWT.
+- `test_token_refresh_flow`: Seamless access token rotation with refresh token.
+- `test_strict_tenant_isolation_boundary`: **Client A user attempting to query Client B devices is rejected with HTTP 403 `TENANT_ISOLATION_VIOLATION`**.
+- `test_manufacturer_admin_global_visibility`: Manufacturer super-admin can inspect any tenant's fleet.
+- `test_rbac_manufacturer_admin_only_endpoint`: Non-manufacturer users rejected from admin routes with HTTP 403 `FORBIDDEN_ACCESS`.
+- `test_backend_module_authorization_policy`: **Backend rejects direct requests to disabled modules (e.g. coin on QR-only machine) with HTTP 403 `MODULE_DISABLED_FOR_DEVICE`**.
+- `test_device_cross_tenant_access_blocked`: Client A user cannot access Client B machines even if feature modules match.
+
+---
+
+## 8. Phase 4 Requirements (Next Milestone)
+
+Upon approval of Phase 3, development will proceed to **Phase 4: Device Lifecycle & Fleet Management**:
+- Implement device provisioning API for Manufacturer:
+  - Register new ESP32 units with factory tuple (`hardware_id`, `chip_id`, `mac_address`, `factory_serial`).
+  - Generate cryptographically secure Device IDs (`VM-XXXXXX`, `RFID-XXXXXX`).
+  - Provision unique per-device authentication credentials.
+- Implement device assignment & reassignment service (linking/unlinking devices to/from client tenants).
+- Implement hardware module management API (enabling/disabling `QR_PAYMENT`, `COIN_PAYMENT`, `RFID_ACCESS` per machine).
+- Implement device status tracking service (online/offline heartbeat calculation).
+- Implement tenant-scoped device query endpoints for client dashboards.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
