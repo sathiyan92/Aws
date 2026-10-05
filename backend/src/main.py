@@ -27,6 +27,7 @@ from src.api.v1.vending.routes import router as vending_router
 from src.api.v1.rfid.routes import router as rfid_router
 from src.api.v1.devices.gateway_routes import router as gateway_router
 from src.api.v1.configs.routes import router as config_router
+from src.api.v1.orders.routes import router as orders_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -64,6 +65,7 @@ app.include_router(vending_router, prefix="/api/v1")
 app.include_router(rfid_router, prefix="/api/v1")
 app.include_router(gateway_router, prefix="/api/v1")
 app.include_router(config_router, prefix="/api/v1")
+app.include_router(orders_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])

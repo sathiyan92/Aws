@@ -604,16 +604,75 @@ python -m pytest backend/tests/ -v
 
 ---
 
-## 16. Phase 12 Requirements (Next Milestone)
+## 16. Phase 12 Verification: Dynamic QR Payment Engine
 
-Upon approval of Phase 11, development will proceed to **Phase 12: Dynamic QR Payment Engine**:
-- Purchase intent initiation API (`/api/v1/orders/initiate`) resolving active configured slot price.
-- Dynamic UPI / Payment Gateway deep-link and QR payload generator.
-- ESP32 TFT/LCD dynamic QR code rendering engine with countdown expiration timer.
-- Order lifecycle state machine (`PENDING`, `SCANNED`, `AUTHORIZED`, `EXPIRED`, `CANCELLED`).
+Phase 12 delivered the **transaction-based ephemeral dynamic QR payment flow, dynamic price resolution, ephemeral UPI payload generation, countdown timers, LCD rendering, polling, cancellation, and expiration transitions**. It guarantees that customers can purchase items via any standard UPI app (Google Pay, PhonePe, Paytm, BHIM) by scanning dynamic, transaction-bound QR codes with real-time expiration countdowns and strict edge-to-cloud lifecycle management.
+
+### Key Capabilities Delivered:
+1. **Dynamic Purchase Intent Initiation (`POST /api/v1/orders/initiate`):**
+   - Resolves effective product price dynamically (slot-specific price override takes precedence over catalog base price).
+   - Validates physical slot inventory (`current_stock > 0`), returning HTTP 409 `OUT_OF_STOCK` if sold out.
+   - Enforces `QR_PAYMENT` hardware module policy guard, rejecting requests on non-QR machines with HTTP 403 `MODULE_DISABLED_FOR_DEVICE`.
+   - Generates unique order identifier (`ORD-YYYYMMDD-XXXXXX`) and ephemeral dynamic UPI payment payload:
+     `upi://pay?pa={vpa}&pn={name}&am={amount}&cu=INR&tn={order_number}&tr={order_uuid}`.
+   - Generates ASCII LCD preview frame for embedded displays and debug monitoring.
+   - Creates immutable audit log (`ORDER_INITIATED`).
+2. **Real-Time Polling & Automatic Dynamic Expiration (`GET /api/v1/orders/{order_id}`):**
+   - Calculates exact seconds remaining before timeout.
+   - Automatically detects orders exceeding expiration window (`expires_at < utc_now()`) and seamlessly transitions order status to `EXPIRED` and payment to `FAILED`.
+3. **Order Cancellation Before Payment (`POST /api/v1/orders/{order_id}/cancel`):**
+   - Enables customers/operators to cancel an active pending order.
+   - Guards against cancelling orders in terminal paid or dispensed states (`PAID`, `DISPENSE_AUTHORIZED`, `DISPENSED`).
+   - Creates audit trail entry (`ORDER_CANCELLED`).
+4. **Tenant-Isolated Order Listing (`GET /api/v1/orders/`):**
+   - Scopes queries strictly to authenticated tenant or specified device.
+   - Automatically handles dynamic expiration across all returned pending orders.
+5. **ESP32 Dynamic QR Driver & State Machine (`qr_payment.h`, `qr_payment.c`):**
+   - Microsecond/millisecond tick processing for countdown timers (`IDLE` -> `DISPLAYING` -> `AUTHORIZED` / `CANCELLED` / `EXPIRED`).
+   - Integrated into ESP32 vending main loop (`main/main.c`) behind `MODULE_FLAG_QR_PAYMENT`.
+
+---
+
+### How to Verify Phase 12
+
+#### 1. Run the Dynamic QR Payment Test Suite
+From the project root:
+```powershell
+python -m pytest backend/tests/test_dynamic_qr_orders.py -v
+```
+
+#### 2. Run All 10 Test Suites Across the Entire Platform (99 tests):
+```powershell
+python -m pytest backend/tests/ -v
+```
+
+#### 3. Verified Test Matrix (`test_dynamic_qr_orders.py`):
+- `test_firmware_qr_payment_files_and_headers`: Verifies C header and driver files exist and export required countdown APIs.
+- `test_firmware_qr_state_machine_and_countdown_emulation`: Emulates tick processing, state transitions, and timeout expiration.
+- `test_initiate_order_dynamic_price_resolution`: Validates order creation, catalog base price resolution, and UPI URI generation.
+- `test_initiate_order_resolves_slot_price_override`: Validates slot override price takes precedence over catalog price.
+- `test_initiate_order_out_of_stock_rejected`: Confirms HTTP 409 `OUT_OF_STOCK` when slot inventory is 0.
+- `test_initiate_order_disabled_qr_module_rejected`: Asserts HTTP 403 `MODULE_DISABLED_FOR_DEVICE` on coin-only machines.
+- `test_order_status_polling_and_countdown`: Confirms active countdown timer calculation and UPI payload retrieval.
+- `test_order_dynamic_expiration_after_timeout`: Asserts pending orders past timeout automatically transition to `EXPIRED`.
+- `test_order_cancellation_by_user`: Verifies cancellation and audit logging.
+- `test_order_list_multi_tenant_isolation`: Enforces strict tenant isolation across order history.
+- `test_order_audit_trail_logging`: Asserts full lifecycle audit logs are recorded.
+
+---
+
+## 17. Phase 13 Requirements (Next Milestone)
+
+Upon approval of Phase 12, development will proceed to **Phase 13: Payment Verification and Dispense Authorization**:
+- Cryptographically signed payment gateway webhook handler (HMAC-SHA256 signature verification).
+- Signed, time-limited dispense command generator (`order_id`, `slot`, `nonce`, `signature`).
+- ESP32 motor driver firing and optical IR drop sensor validation.
+- Dispense result callback API updating stock and transaction ledger.
+- Automatic refund trigger on dispense failure.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
+
 
 
 

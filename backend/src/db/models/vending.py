@@ -139,10 +139,12 @@ class Order(Base, TimestampMixin):
         default="PENDING",
         index=True,
         nullable=False,
-    )  # PENDING, PAYMENT_PENDING, PAID, DISPENSE_AUTHORIZED, DISPENSED, FAILED, REFUNDED, CANCELLED
+    )  # PENDING, PAYMENT_PENDING, PAID, DISPENSE_AUTHORIZED, DISPENSED, FAILED, REFUNDED, CANCELLED, EXPIRED
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispense_token: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     dispense_token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispensed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
     # Relationships
     client: Mapped["Client"] = relationship("Client", back_populates="orders")

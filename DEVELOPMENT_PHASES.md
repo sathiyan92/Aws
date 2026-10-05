@@ -228,7 +228,7 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 11: Coin Payment Engine
-- **Status:** **COMPLETED (Current)**
+- **Status:** **COMPLETED**
 - **Objectives:** Implement multi-coin electronic acceptor pulse processing, autonomous edge credit accumulator, LittleFS offline ring buffer, and cloud gateway transaction reconciliation.
 - **Deliverables:**
   - ESP32 hardware interrupt driver ([`firmware/esp32-vending/include/coin_acceptor.h`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/include/coin_acceptor.h), [`firmware/esp32-vending/src/coin_acceptor.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/src/coin_acceptor.c)):
@@ -263,7 +263,32 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 12: Dynamic QR Payment Engine
-- **Status:** **NEXT UP (Awaiting Phase 11 Review)**
+- **Status:** **COMPLETED (Current)**
+- **Objectives:** Implement transaction-based ephemeral dynamic QR payment flow, dynamic price resolution, ephemeral UPI payload generation, countdown timers, LCD rendering, polling, cancellation, and expiration transitions.
+- **Deliverables:**
+  - Dynamic QR & Order Management API ([`backend/src/api/v1/orders/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/orders/routes.py), [`backend/src/api/v1/orders/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/orders/schemas.py), [`backend/src/services/order_service.py`](file:///c:/Projects/iot-fleet-platform/backend/src/services/order_service.py)):
+    - `POST /api/v1/orders/initiate`: Purchase intent initiation, resolving dynamic slot override price vs. catalog price, validating active machine state and slot stock.
+    - Dynamic UPI URI generation: `upi://pay?pa={vpa}&pn={name}&am={amount}&cu=INR&tn={order_number}&tr={order_uuid}`.
+    - `GET /api/v1/orders/{order_id}`: Real-time order status polling, countdown timer calculation, and dynamic automatic transition to `EXPIRED` once timeout elapses.
+    - `POST /api/v1/orders/{order_id}/cancel`: User/client order cancellation before payment completion.
+    - `GET /api/v1/orders/`: Multi-tenant scoped order listing with optional device and status filters.
+  - Module Policy Enforcement & Guards:
+    - Blocks purchase intent initiation on devices without `QR_PAYMENT` enabled (`MODULE_DISABLED_FOR_DEVICE`, HTTP 403).
+    - Blocks orders when slot inventory is exhausted (`OUT_OF_STOCK`, HTTP 409).
+    - Prevents cancellation of orders already in `PAID`, `DISPENSE_AUTHORIZED`, or `DISPENSED` states.
+  - ESP32 Embedded Driver & State Machine ([`firmware/esp32-vending/include/qr_payment.h`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/include/qr_payment.h), [`firmware/esp32-vending/src/qr_payment.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/src/qr_payment.c)):
+    - Ephemeral QR session lifecycle: `IDLE` -> `DISPLAYING` -> `AUTHORIZED` / `CANCELLED` / `EXPIRED`.
+    - Millisecond countdown timer with tick processing and timeout triggering.
+    - ASCII LCD frame renderer for 20x4 / 128x64 displays.
+    - Integration into ESP32 vending firmware main loop ([`firmware/esp32-vending/main/main.c`](file:///c:/Projects/iot-fleet-platform/firmware/esp32-vending/main/main.c)).
+  - Comprehensive automated test suite ([`backend/tests/test_dynamic_qr_orders.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_dynamic_qr_orders.py)).
+- **Verification Result:** Passed 11/11 tests in `test_dynamic_qr_orders.py` and 99/99 tests across all 10 test suites with 100% success rate.
+- **Dependencies:** Phase 10.
+
+---
+
+### Phase 13: Payment Verification and Dispense Authorization
+- **Status:** **NEXT UP (Awaiting Phase 12 Review)**
 - **Objectives:** Implement transaction-based ephemeral QR payment flow.
 - **Deliverables:**
   - Purchase intent initiation API (`/api/v1/orders/initiate`).

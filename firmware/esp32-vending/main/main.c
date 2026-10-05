@@ -15,6 +15,7 @@
 #include "system_tasks.h"
 #include "coin_acceptor.h"
 #include "coin_offline_buffer.h"
+#include "qr_payment.h"
 
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
@@ -115,6 +116,7 @@ void app_main(void)
 
     if (config_cache.enabled_modules_mask & MODULE_FLAG_QR_PAYMENT) {
         LOGI("  [+] Dynamic QR Payment Module: ACTIVE");
+        qr_payment_init();
     }
     if (config_cache.enabled_modules_mask & MODULE_FLAG_COIN_PAYMENT) {
         LOGI("  [+] Mechanical Coin Acceptor Module: ACTIVE");
