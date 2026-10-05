@@ -1,0 +1,330 @@
+# Comprehensive Development Phases & Implementation Roadmap
+## Multi-Tenant Cloud IoT Platform for Vending & RFID Systems
+
+---
+
+## Roadmap Overview
+
+This platform is structured into **22 sequential, rigorously scoped phases**. Each phase establishes a verified, testable foundation before subsequent layers are built.
+
+| Phase | Title | Domain | Status |
+|---|---|---|---|
+| **Phase 1** | **Architecture & Project Foundation** | **Architecture & Scaffolding** | **COMPLETED (Current)** |
+| **Phase 2** | **Database Schema & Data Model** | **Data Engineering** | **NEXT UP** |
+| **Phase 3** | **Authentication & Multi-Tenant Authorization** | **Core Backend Security** | Planned |
+| **Phase 4** | **Device Lifecycle & Fleet Management** | **Fleet Services** | Planned |
+| **Phase 5** | **Manufacturer Operations Portal** | **Frontend (Admin)** | Planned |
+| **Phase 6** | **Client Portal & Dynamic Feature Engine** | **Frontend (Tenant)** | Planned |
+| **Phase 7** | **ESP32 Base Firmware Core** | **Embedded System** | Planned |
+| **Phase 8** | **Device Provisioning & Secure Handshake** | **Edge-to-Cloud Auth** | Planned |
+| **Phase 9** | **Cloud Configuration Synchronization** | **Edge Config Engine** | Planned |
+| **Phase 10** | **Vending Product & Slot Management** | **Vending Core** | Planned |
+| **Phase 11** | **Coin Payment Engine & Pulse Processing** | **Vending (Cash)** | Planned |
+| **Phase 12** | **Dynamic QR Payment Engine** | **Vending (Digital)** | Planned |
+| **Phase 13** | **Payment Verification & Dispense Auth** | **Transaction Orchestration** | Planned |
+| **Phase 14** | **RFID Device Management Subsystem** | **RFID Core** | Planned |
+| **Phase 15** | **RFID Card & Employee Lifecycle** | **Access Management** | Planned |
+| **Phase 16** | **RFID Attendance Event Engine** | **Telemetry & Reporting** | Planned |
+| **Phase 17** | **Edge Offline Resilience & Batch Sync** | **Edge Data Sync** | Planned |
+| **Phase 18** | **Firmware Repository & Binary Signing** | **Firmware Release Eng** | Planned |
+| **Phase 19** | **OTA Deployment Engine & Rollback** | **Fleet Maintenance** | Planned |
+| **Phase 20** | **Fleet Monitoring, Telemetry & Alerts** | **Observability** | Planned |
+| **Phase 21** | **Platform Security Hardening & Audit** | **Security & Compliance** | Planned |
+| **Phase 22** | **Production Deployment & Release** | **DevOps & Cloud Infra** | Planned |
+
+---
+
+## Phase Details
+
+### Phase 1: Architecture and Project Foundation
+- **Status:** **COMPLETED (Current)**
+- **Objectives:** Define end-to-end multi-tenant IoT system architecture, hardware protocols, security boundaries, and project scaffolding.
+- **Deliverables:**
+  - `ARCHITECTURE.md`: Complete architectural specification.
+  - `DEVELOPMENT_PHASES.md`: 22-phase execution roadmap.
+  - `README.md`: System manual, directory structure, verification steps.
+  - Directory scaffolding across `backend`, `frontend`, `firmware`, `infrastructure`, and `docs`.
+  - Initial configuration files and `.gitignore`.
+- **Prerequisites:** Initial system requirements.
+- **Verification Strategy:** Verify presence of all architectural sections, directory structures, and git initialization.
+
+---
+
+### Phase 2: Database Schema & Data Model
+- **Status:** **NEXT UP (Awaiting Phase 1 Review)**
+- **Objectives:** Design, implement, and migrate the production database schema for PostgreSQL.
+- **Entities & Tables:**
+  - `users`, `clients`, `devices`, `device_types`, `device_modules`, `device_credentials`
+  - `device_configs`, `configuration_versions`
+  - `products`, `machine_slots`
+  - `firmware_versions`, `ota_deployments`
+  - `rfid_cards`, `employees`, `attendance_events`
+  - `orders`, `payments`, `transactions`
+  - `device_heartbeats`, `device_logs`, `audit_logs`
+- **Deliverables:**
+  - Relational schema migration scripts (SQL / Alembic / Prisma).
+  - Foreign key constraints, unique constraints, and multi-tenant indexes (`client_id` indexing).
+  - Seed script populating default device types (`VENDING_MACHINE`, `RFID_ATTENDANCE`), default modules, and initial manufacturer admin user.
+- **Dependencies:** Phase 1 architecture approval.
+- **Verification Strategy:** Automated migration run, rollback verification, schema introspection, and seed data check.
+
+---
+
+### Phase 3: Authentication and Multi-Tenant Authorization
+- **Status:** Planned
+- **Objectives:** Implement secure JWT authentication, Argon2 password hashing, and multi-tenant authorization guards.
+- **Deliverables:**
+  - User login, refresh token rotation, logout endpoints.
+  - Tenant context middleware extracting `client_id` from JWT.
+  - RBAC policy engine: `MANUFACTURER_ADMIN`, `MANUFACTURER_SUPPORT`, `CLIENT_ADMIN`, `CLIENT_OPERATOR`.
+  - Tenant isolation unit and integration tests verifying cross-tenant access rejection (HTTP 403).
+- **Dependencies:** Phase 2.
+- **Verification Strategy:** Test suite asserting that a user from Tenant A receives 403/404 when querying Tenant B records.
+
+---
+
+### Phase 4: Device Management
+- **Status:** Planned
+- **Objectives:** Build CRUD services and APIs for physical device lifecycle management.
+- **Deliverables:**
+  - Manufacturer endpoints: register device, burn Device ID, generate credentials, assign device to client, unassign device.
+  - Module management endpoints: toggle `QR_PAYMENT`, `COIN_PAYMENT`, `RFID_ACCESS` per device.
+  - Device status tracker: updates online/offline state based on heartbeat timeouts.
+- **Dependencies:** Phase 3.
+- **Verification Strategy:** Register device `VM-000001`, assign to client, toggle modules, verify status changes.
+
+---
+
+### Phase 5: Manufacturer Dashboard
+- **Status:** Planned
+- **Objectives:** Build web-based operations portal for the platform manufacturer / super-admin.
+- **Deliverables:**
+  - Client tenant management view (create/edit clients).
+  - Fleet inventory view (all devices, online status, firmware, config versions).
+  - Hardware provisioning interface.
+  - Module configuration toggles per machine.
+  - System-wide audit log inspector.
+- **Dependencies:** Phase 4.
+- **Verification Strategy:** End-to-end browser testing of tenant creation and device provisioning workflows.
+
+---
+
+### Phase 6: Client Dashboard & Dynamic Feature Visibility
+- **Status:** Planned
+- **Objectives:** Build client tenant portal with dynamic UI visibility driven by device type and enabled modules.
+- **Deliverables:**
+  - Dynamic navigation and view renderer:
+    - If `QR_PAYMENT` enabled -> display QR payment settings and transactions.
+    - If `COIN_PAYMENT` enabled -> display coin settings and cash audit logs.
+    - If `RFID_ATTENDANCE` enabled -> display RFID card manager and attendance logs.
+  - Strict backend API enforcement: return 403 if client attempts access to disabled modules.
+- **Dependencies:** Phase 5.
+- **Verification Strategy:** Configure one machine with QR only and one with Coin only; assert UI dynamically adapts and unauthorized API calls fail.
+
+---
+
+### Phase 7: ESP32 Base Firmware Core
+- **Status:** Planned
+- **Objectives:** Implement base embedded firmware foundation for ESP32 using ESP-IDF / FreeRTOS.
+- **Deliverables:**
+  - Hardware abstraction layer (Wi-Fi, Ethernet, Cellular LTE-M drivers).
+  - Non-Volatile Storage (NVS) manager for identity and persistent flags.
+  - TLS 1.3 client stack and MQTT client with automatic reconnection and exponential backoff.
+  - FreeRTOS task architecture separating network stack from real-time hardware I/O.
+- **Dependencies:** Phase 1.
+- **Verification Strategy:** ESP32 boots, reads burnt Device ID from NVS, connects to secure Wi-Fi, and maintains persistent TLS connection.
+
+---
+
+### Phase 8: Device Registration and Secure Authentication
+- **Status:** Planned
+- **Objectives:** Establish cryptographically secure mutual handshake between ESP32 and Cloud.
+- **Deliverables:**
+  - Device credential provisioning workflow (unique token or client certificate).
+  - Cloud device authentication gateway verifying eFuse chip ID, MAC address, and device token.
+  - Periodic heartbeat telemetry loop (`uptime`, `free_heap`, `rssi`, `config_version`, `firmware_version`).
+- **Dependencies:** Phases 4, 7.
+- **Verification Strategy:** Physical or simulated ESP32 performs TLS handshake, authenticates with unique credentials, and reports heartbeat to backend.
+
+---
+
+### Phase 9: Cloud Configuration Synchronization
+- **Status:** Planned
+- **Objectives:** Implement versioned, decoupled configuration delivery engine between Cloud and ESP32.
+- **Deliverables:**
+  - Cloud configuration version incrementor and payload generator.
+  - MQTT config distribution topic `devices/{device_id}/config`.
+  - ESP32 NVS config parser, checksum validator, and acknowledgment publisher.
+  - Out-of-sync detection via heartbeat comparison.
+- **Dependencies:** Phase 8.
+- **Verification Strategy:** Change configuration in cloud; verify ESP32 downloads new version, updates local storage, and ACKs with updated version.
+
+---
+
+### Phase 10: Vending Product & Slot Management
+- **Status:** Planned
+- **Objectives:** Implement product catalog and vending machine slot assignment engine.
+- **Deliverables:**
+  - Product catalog CRUD API (name, code, price, image).
+  - Slot configuration API (slot number, motor relay pin, capacity, stock level).
+  - Price update engine: changes price (e.g., ₹40 -> ₹45), triggers config version bump without firmware compilation.
+- **Dependencies:** Phase 9.
+- **Verification Strategy:** Update product price via Client Dashboard; verify configuration version increments and ESP32 synchronizes price.
+
+---
+
+### Phase 11: Coin Payment Engine
+- **Status:** Planned
+- **Objectives:** Implement multi-coin electronic acceptor pulse processing and offline credit handling.
+- **Deliverables:**
+  - ESP32 hardware interrupt driver for pulse train detection with hardware debouncing.
+  - Pulse-to-denomination mapping (configurable via cloud config).
+  - Autonomous edge vend logic: dispenses when `credit >= price` during cloud network disconnection.
+  - Local transaction buffer in LittleFS and sync mechanism.
+- **Dependencies:** Phase 10.
+- **Verification Strategy:** Simulate coin pulses on ESP32 GPIO; assert credit accumulation, vend trigger, and transaction logging.
+
+---
+
+### Phase 12: Dynamic QR Payment Engine
+- **Status:** Planned
+- **Objectives:** Implement transaction-based ephemeral QR payment flow.
+- **Deliverables:**
+  - Purchase intent initiation API (`/api/v1/orders/initiate`).
+  - Integration with UPI/Payment Gateway to generate dynamic payment intents and deep links.
+  - ESP32 TFT/LCD QR code rendering library with countdown timer.
+  - Dynamic price resolution: orders always fetch active configured price.
+- **Dependencies:** Phase 10.
+- **Verification Strategy:** Customer selects slot; ESP32 requests order; Cloud generates dynamic QR; customer scans; verify payload matches exact active price.
+
+---
+
+### Phase 13: Payment Verification and Dispense Authorization
+- **Status:** Planned
+- **Objectives:** Secure webhook processing, dispense authorization tokens, and physical drop sensor feedback.
+- **Deliverables:**
+  - Cryptographically signed payment gateway webhook handler.
+  - Signed, time-limited dispense command generator (`order_id`, `slot`, `nonce`, `signature`).
+  - ESP32 motor driver firing and optical IR drop sensor validation.
+  - Dispense result callback API updating stock and ledger.
+  - Automatic refund trigger on dispense failure.
+- **Dependencies:** Phase 12.
+- **Verification Strategy:** Fire payment webhook; verify cloud sends signed dispense command; simulate drop sensor trigger; verify stock decrements.
+
+---
+
+### Phase 14: RFID Device Management Subsystem
+- **Status:** Planned
+- **Objectives:** Specialize device management for RFID attendance terminals.
+- **Deliverables:**
+  - RFID device configuration schema (reader mode, IN/OUT direction, buzzer durations).
+  - Reader communication driver (Wiegand 26/34, RC522 SPI, PN532 I2C).
+  - Device-level attendance terminal diagnostics.
+- **Dependencies:** Phase 9.
+- **Verification Strategy:** Configure terminal as "MAIN_GATE_IN"; verify reader driver initializes and receives tag reads.
+
+---
+
+### Phase 15: RFID Card & Employee Lifecycle
+- **Status:** Planned
+- **Objectives:** Build full card management and employee assignment engine.
+- **Deliverables:**
+  - Employee roster CRUD (code, name, department, status).
+  - Card management: ADD, EDIT, ASSIGN, DISABLE, BLOCK, REPLACE.
+  - Referential integrity guarantee: soft-delete preservation with audit trail when attendance records exist.
+  - Replacement history tracking linking old UID to new UID.
+- **Dependencies:** Phase 14.
+- **Verification Strategy:** Issue card to employee, record tap, replace card with new UID; verify old card is blocked and audit trail is preserved.
+
+---
+
+### Phase 16: RFID Attendance Event Engine
+- **Status:** Planned
+- **Objectives:** Capture, validate, and report real-time attendance events.
+- **Deliverables:**
+  - Real-time tap event ingest endpoint and MQTT handler.
+  - Card validation against cloud directory and local device cache.
+  - Attendance report generation (daily summary, punch in/out, late arrivals, shift hours).
+  - CSV and PDF export for client admins.
+- **Dependencies:** Phase 15.
+- **Verification Strategy:** Tap card; verify cloud creates attendance record; verify dashboard updates in real-time.
+
+---
+
+### Phase 17: Edge Offline Resilience & Batch Sync
+- **Status:** Planned
+- **Objectives:** Implement offline operation for vending and RFID with reliable reconnect synchronization.
+- **Deliverables:**
+  - ESP32 LittleFS persistent circular FIFO queue.
+  - Local card whitelist cache synchronization (compact binary hash table).
+  - Idempotent batch upload API with `event_uuid` deduplication.
+  - Connection monitor and background sync worker on ESP32.
+- **Dependencies:** Phases 11, 16.
+- **Verification Strategy:** Disconnect internet; perform 20 RFID taps and 5 coin vends; reconnect internet; verify all 25 records sync without loss or duplication.
+
+---
+
+### Phase 18: Firmware Repository & Binary Signing
+- **Status:** Planned
+- **Objectives:** Build secure firmware storage, version indexing, and cryptographic signing pipeline.
+- **Deliverables:**
+  - Firmware upload portal for manufacturer admins (version, changelog, target hardware revision).
+  - Automated SHA-256 hash calculation and ECDSA-P256 digital signature verification.
+  - Firmware repository storage with pre-signed secure download URLs.
+- **Dependencies:** Phase 5.
+- **Verification Strategy:** Upload firmware binary; assert checksum and signature generation; verify download URL authorization.
+
+---
+
+### Phase 19: OTA Deployment Engine & Rollback
+- **Status:** Planned
+- **Objectives:** Implement remote over-the-air firmware updates with automatic rollback.
+- **Deliverables:**
+  - OTA campaign manager: deploy to single device, client fleet, or all devices.
+  - ESP32 dual-partition (`ota_0`, `ota_1`) streaming download engine.
+  - Post-boot diagnostic self-test: rollback to previous partition if cloud handshake fails within 120 seconds.
+  - OTA progress tracking and deployment history dashboard.
+- **Dependencies:** Phases 7, 18.
+- **Verification Strategy:** Trigger OTA to device; verify chunked download, reboot, self-test confirmation, and status reporting.
+
+---
+
+### Phase 20: Monitoring, Telemetry & Alerts
+- **Status:** Planned
+- **Objectives:** Real-time observability, health metrics, and automated alert notifications.
+- **Deliverables:**
+  - Real-time device health dashboard (online count, disconnected devices, heap memory, signal strength).
+  - Automated anomaly alerts: machine offline > 15 mins, coin hopper empty, low product stock, drop sensor jam.
+  - Email, SMS, and Webhook notification dispatchers.
+- **Dependencies:** Phases 8, 10, 16.
+- **Verification Strategy:** Simulate device disconnect; assert offline alert is triggered and dispatched after timeout threshold.
+
+---
+
+### Phase 21: Security Hardening & Audit Compliance
+- **Status:** Planned
+- **Objectives:** Comprehensive security audit, vulnerability mitigation, and compliance validation.
+- **Deliverables:**
+  - Static application security testing (SAST) and dependency vulnerability scan.
+  - TLS configuration hardening (A+ cipher suite validation).
+  - Comprehensive immutable audit log engine for all administrative actions.
+  - Penetration test simulation against multi-tenant isolation boundaries.
+- **Dependencies:** All previous phases.
+- **Verification Strategy:** Execute automated penetration test suite; assert zero cross-tenant data leakage and zero unauthenticated API access.
+
+---
+
+### Phase 22: Production Deployment & Release
+- **Status:** Planned
+- **Objectives:** Production infrastructure setup, containerization, CI/CD pipeline, and manufacturer handoff.
+- **Deliverables:**
+  - Production Docker Compose & Kubernetes deployment manifests.
+  - Production PostgreSQL with read-replicas and automated backups.
+  - Clustered EMQX MQTT broker configuration with TLS.
+  - CI/CD deployment pipelines with automated unit, integration, and security checks.
+  - Production operating manual and field deployment guide.
+- **Dependencies:** Phase 21.
+- **Verification Strategy:** Full staging-to-production deployment dry run with simulated fleet of 1,000 devices.
+
+---
+*Roadmap Version: 1.0.0 — Phase 1 Architecture Foundation Baseline*
