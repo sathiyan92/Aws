@@ -17,9 +17,12 @@ from src.core.security.dependencies import (
 from src.db.session import get_db
 from src.db.models.device import Device
 from src.db.models.client import Client
+from fastapi.staticfiles import StaticFiles
+import os
 from src.api.v1.auth.routes import router as auth_router
 from src.api.v1.devices.routes import router as device_router
 from src.api.v1.clients.routes import router as client_router
+from src.api.v1.audit.routes import router as audit_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -52,6 +55,7 @@ async def platform_exception_handler(request: Request, exc: PlatformException):
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(device_router, prefix="/api/v1")
 app.include_router(client_router, prefix="/api/v1")
+app.include_router(audit_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])
@@ -81,9 +85,7 @@ def list_tenant_devices(
     A client user can ONLY query their own client_id. Cross-tenant access is rejected with 403 Forbidden.
     Manufacturer admins can inspect any client tenant.
     """
-    # Enforce tenant boundary
     context.assert_tenant_access(target_client_id)
-
     devices = db.query(Device).filter(Device.client_id == target_client_id).all()
     return {
         "tenant_id": target_client_id,
@@ -116,7 +118,6 @@ def access_device_module_feature(
     Demonstrates backend policy enforcement for hardware feature modules.
     Rejects requests with 403 MODULE_DISABLED if the module is disabled on the target machine.
     """
-    # Lookup device
     device = db.query(Device).filter(
         (Device.device_id == device_id) | (Device.id == device_id)
     ).first()
@@ -124,10 +125,8 @@ def access_device_module_feature(
     if not device:
         raise NotFoundException("Device", device_id)
 
-    # Enforce tenant ownership of device
     context.assert_device_access(device)
 
-    # Check module
     from src.db.models.device import DeviceModule
     mod = db.query(DeviceModule).filter(
         DeviceModule.device_id == device.id,
@@ -150,18 +149,65 @@ def access_device_module_feature(
 
 @app.get("/api/v1/manufacturer/platform-stats", tags=["Manufacturer Admin Only"])
 def get_platform_statistics(
-    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN", "MANUFACTURER_SUPPORT")),
     db: Session = Depends(get_db),
 ):
     """
-    Super-admin only endpoint.
-    Protected by RBAC guard: requires MANUFACTURER_ADMIN role.
+    Super-admin only endpoint returning complete fleet telemetry and distribution.
     """
+    from src.db.models.device import DeviceType, DeviceModule
+    from src.db.models.audit import AuditLog
+
     clients_count = db.query(Client).count()
     devices_count = db.query(Device).count()
+    online_count = db.query(Device).filter(Device.is_online == True).count()
+
+    # Status breakdown
+    statuses = ["PROVISIONED", "ASSIGNED", "ACTIVE", "MAINTENANCE", "SUSPENDED"]
+    status_map = {s: db.query(Device).filter(Device.status == s).count() for s in statuses}
+
+    # Product family breakdown
+    vending_count = db.query(Device).join(DeviceType).filter(DeviceType.code == "VENDING_MACHINE").count()
+    rfid_count = db.query(Device).join(DeviceType).filter(DeviceType.code == "RFID_ATTENDANCE").count()
+
+    # Module breakdown
+    qr_count = db.query(DeviceModule).filter(DeviceModule.module_code == "QR_PAYMENT", DeviceModule.is_enabled == True).count()
+    coin_count = db.query(DeviceModule).filter(DeviceModule.module_code == "COIN_PAYMENT", DeviceModule.is_enabled == True).count()
+    rfid_mod_count = db.query(DeviceModule).filter(DeviceModule.module_code == "RFID_ACCESS", DeviceModule.is_enabled == True).count()
+
+    # Recent activity
+    recent_audits = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(10).all()
+
     return {
         "clients_count": clients_count,
         "devices_count": devices_count,
-        "caller_role": context.role,
+        "online_devices_count": online_count,
+        "offline_devices_count": devices_count - online_count,
+        "status_breakdown": status_map,
+        "product_type_breakdown": {
+            "VENDING_MACHINE": vending_count,
+            "RFID_ATTENDANCE": rfid_count,
+        },
+        "module_breakdown": {
+            "QR_PAYMENT": qr_count,
+            "COIN_PAYMENT": coin_count,
+            "RFID_ACCESS": rfid_mod_count,
+        },
+        "recent_audits": [
+            {
+                "id": a.id,
+                "action": a.action,
+                "entity_type": a.entity_type,
+                "entity_id": a.entity_id,
+                "created_at": a.created_at,
+            }
+            for a in recent_audits
+        ],
         "access": "UNRESTRICTED_GLOBAL",
     }
+
+
+# Mount static directory for Manufacturer Portal UI if directory exists
+portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/manufacturer-portal"))
+if os.path.exists(portal_dir):
+    app.mount("/portal", StaticFiles(directory=portal_dir, html=True), name="manufacturer_portal")

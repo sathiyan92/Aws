@@ -4,7 +4,8 @@
 [![Database Schema](https://img.shields.io/badge/Database%20Schema-Phase%202%20Completed-brightgreen.svg)](#)
 [![Authentication & Tenancy](https://img.shields.io/badge/Multi--Tenant%20Auth-Phase%203%20Completed-brightgreen.svg)](#)
 [![Device Lifecycle](https://img.shields.io/badge/Device%20Lifecycle-Phase%204%20Completed-brightgreen.svg)](#)
-[![Status](https://img.shields.io/badge/Current%20State-Phase%204%20Complete-blue.svg)](#)
+[![Manufacturer Portal](https://img.shields.io/badge/Manufacturer%20Portal-Phase%205%20Completed-brightgreen.svg)](#)
+[![Status](https://img.shields.io/badge/Current%20State-Phase%205%20Complete-blue.svg)](#)
 [![Target Hardware](https://img.shields.io/badge/Target%20Hardware-ESP32%20%7C%20ESP32--S3-orange.svg)](#)
 
 ---
@@ -240,16 +241,42 @@ python -m pytest backend/tests/test_device_lifecycle.py -v
 
 ---
 
-## 9. Phase 5 Requirements (Next Milestone)
+## 9. Phase 5 Verification: Manufacturer Operations Portal
 
-Upon approval of Phase 4, development will proceed to **Phase 5: Manufacturer Operations Portal**:
-- Build a premium, rich web-based portal for the platform manufacturer / super-admin.
-- Implement fleet analytics overview (online machines, product breakdown, module distribution).
-- Build client tenant management views (create client organizations, inspect tenant fleets).
-- Build hardware provisioning interface (register physical ESP32 devices).
-- Build device assignment modal (link/unlink machines to client tenants).
-- Build machine module configuration toggles with real-time feedback.
-- Build system-wide immutable audit log inspector.
+Phase 5 implemented the modern web application for the platform manufacturer, hosting fleet analytics, client directory, hardware provisioning, device assignment, dynamic module toggling, and audit log inspection.
+
+### How to Run & Verify Phase 5
+1. **Run the Automated Pytest Suite:**
+   ```powershell
+   python -m pytest backend/tests/test_manufacturer_portal.py -v
+   ```
+2. **Launch the Live Platform Server:**
+   ```powershell
+   cd c:\Projects\iot-fleet-platform\backend
+   python -m uvicorn src.main:app --port 8000 --reload
+   ```
+3. **Open the Operations Portal in your Browser:**
+   - URL: `http://localhost:8000/portal/index.html` (or open [`frontend/manufacturer-portal/index.html`](file:///c:/Projects/iot-fleet-platform/frontend/manufacturer-portal/index.html) directly).
+   - Click **⚡ Quick Demo Login (Super-Admin)** to authenticate as `admin` (`Admin@SecurePlatform2026!`).
+   - Interact with the tabs:
+     - **Overview:** Inspect connected fleet stats, active online count, module breakdown, and live audit stream.
+     - **Clients:** View onboarded client organizations, device counts, and click "View Fleet".
+     - **All Devices:** Provision new physical nodes (`VM-XXXXXX`), toggle modules (`QR_PAYMENT` / `COIN_PAYMENT`), and assign devices.
+     - **Vending Machines:** Filter specifically for vending controllers with interactive switches.
+     - **RFID Terminals:** Filter specifically for attendance units.
+     - **Audit Trail:** Inspect immutable logs of all mutations.
+
+---
+
+## 10. Phase 6 Requirements (Next Milestone)
+
+Upon approval of Phase 5, development will proceed to **Phase 6: Client Portal & Dynamic Feature Visibility**:
+- Build a dedicated, secure client tenant web portal.
+- Implement the **CRITICAL REQUIREMENT: Dynamic Feature Visibility**:
+  - If `QR_PAYMENT` is enabled -> show QR payment configuration, transaction records, and payment settings.
+  - If `COIN_PAYMENT` is enabled -> show coin configuration, pulse settings, and cash audit records.
+  - If a module is disabled -> completely hide and purge controls from the client UI.
+  - Enforce backend verification asserting that forged API calls to disabled modules receive HTTP 403 Forbidden.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*

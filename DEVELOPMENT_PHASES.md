@@ -12,9 +12,9 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 | **Phase 1** | **Architecture & Project Foundation** | **Architecture & Scaffolding** | **COMPLETED** |
 | **Phase 2** | **Database Schema & Data Model** | **Data Engineering** | **COMPLETED** |
 | **Phase 3** | **Authentication & Multi-Tenant Authorization** | **Core Backend Security** | **COMPLETED** |
-| **Phase 4** | **Device Lifecycle & Fleet Management** | **Fleet Services** | **COMPLETED (Current)** |
-| **Phase 5** | **Manufacturer Operations Portal** | **Frontend (Admin)** | **NEXT UP** |
-| **Phase 6** | **Client Portal & Dynamic Feature Engine** | **Frontend (Tenant)** | Planned |
+| **Phase 4** | **Device Lifecycle & Fleet Management** | **Fleet Services** | **COMPLETED** |
+| **Phase 5** | **Manufacturer Operations Portal** | **Frontend (Admin)** | **COMPLETED (Current)** |
+| **Phase 6** | **Client Portal & Dynamic Feature Engine** | **Frontend (Tenant)** | **NEXT UP** |
 | **Phase 7** | **ESP32 Base Firmware Core** | **Embedded System** | Planned |
 | **Phase 8** | **Device Provisioning & Secure Handshake** | **Edge-to-Cloud Auth** | Planned |
 | **Phase 9** | **Cloud Configuration Synchronization** | **Edge Config Engine** | Planned |
@@ -101,32 +101,32 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 5: Manufacturer Operations Portal
-- **Status:** **NEXT UP (Awaiting Phase 4 Review)**
+- **Status:** **COMPLETED (Current)**
 - **Objectives:** Build a premium, rich web-based operations portal for the platform manufacturer / super-admin.
 - **Deliverables:**
-  - Single-page application for platform administrator.
-  - Dashboard analytics overview (active fleet, online percentage, module breakdown).
-  - Client tenant management view (create clients, inspect tenant fleet).
-  - Hardware provisioning interface (register new physical ESP32 nodes).
-  - Device assignment modal (link/unlink machines to clients).
-  - Machine module configuration toggles with real-time feedback.
-  - System-wide audit log inspector.
-- **Dependencies:** Phase 4.
-- **Verification Strategy:** End-to-end browser testing of tenant creation, device provisioning, and module toggle workflows.
+  - Modern, responsive SPA with dark mode, glassmorphism, and micro-animations ([`frontend/manufacturer-portal/`](file:///c:/Projects/iot-fleet-platform/frontend/manufacturer-portal)).
+  - Interactive HTML5 dashboard layout ([`frontend/manufacturer-portal/index.html`](file:///c:/Projects/iot-fleet-platform/frontend/manufacturer-portal/index.html)).
+  - Bespoke design system stylesheet with glowing badges, responsive data tables, and modal dialogs ([`frontend/manufacturer-portal/styles.css`](file:///c:/Projects/iot-fleet-platform/frontend/manufacturer-portal/styles.css)).
+  - Reactive JavaScript SPA controller ([`frontend/manufacturer-portal/app.js`](file:///c:/Projects/iot-fleet-platform/frontend/manufacturer-portal/app.js)) with JWT auth, quick demo login, live telemetry charts, hardware provisioning dialog, client onboarding dialog, device assignment modal, and instant hardware module toggling with automatic config version bumping.
+  - Audit log query API ([`backend/src/api/v1/audit/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/audit/routes.py)).
+  - Comprehensive unit and integration test suite ([`backend/tests/test_manufacturer_portal.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_manufacturer_portal.py)).
+- **Verification Result:** Passed 27/27 tests across all suites with 100% success rate. Static portal served directly at `/portal/index.html`.
 
 ---
 
-### Phase 6: Client Dashboard & Dynamic Feature Visibility
-- **Status:** Planned
-- **Objectives:** Build client tenant portal with dynamic UI visibility driven by device type and enabled modules.
+### Phase 6: Client Portal & Dynamic Feature Engine
+- **Status:** **NEXT UP (Awaiting Phase 5 Review)**
+- **Objectives:** Build client tenant portal with dynamic UI visibility strictly driven by device type and enabled modules (`QR_PAYMENT`, `COIN_PAYMENT`, `RFID_ACCESS`).
 - **Deliverables:**
-  - Dynamic navigation and view renderer:
-    - If `QR_PAYMENT` enabled -> display QR payment settings and transactions.
-    - If `COIN_PAYMENT` enabled -> display coin settings and cash audit logs.
-    - If `RFID_ATTENDANCE` enabled -> display RFID card manager and attendance logs.
-  - Strict backend API enforcement: return 403 if client attempts access to disabled modules.
+  - Client web application hosted at `/client-portal` or `/client`.
+  - Dynamic navigation and view rendering engine:
+    - If `QR_PAYMENT` is enabled -> render QR Payment Settings, Payment Configuration, and QR Transactions.
+    - If `COIN_PAYMENT` is enabled -> render Coin Configuration, Pulse Settings, and Coin Collections.
+    - If `RFID_ACCESS` / `RFID_ATTENDANCE` is enabled -> render RFID Cards, Employees, and Attendance.
+    - If a module is disabled -> completely hide and purge controls from the client UI.
+  - Strict backend verification asserting that forged API calls to disabled modules receive HTTP 403 Forbidden.
 - **Dependencies:** Phase 5.
-- **Verification Strategy:** Configure one machine with QR only and one with Coin only; assert UI dynamically adapts and unauthorized API calls fail.
+- **Verification Strategy:** Automated and browser-based testing on machines with diverse module configurations (`VM-000001` QR only, `VM-000002` Coin only, `VM-000003` Hybrid).
 
 ---
 

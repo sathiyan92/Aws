@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Operations Portal | Multi-Tenant IoT Fleet</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Ambient Background Glows -->
+    <div class="ambient-glow-1"></div>
+    <div class="ambient-glow-2"></div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-icon">⚡</div>
+                <div class="brand-text">
+                    <h1>IoT Fleet OEM</h1>
+                    <p>Manufacturer Ops</p>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <span class="nav-section-title">Fleet Command</span>
+                <a class="nav-item active" data-tab="overview">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    <span>Overview</span>
+                </a>
+                <a class="nav-item" data-tab="clients">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                    <span>Clients (Tenants)</span>
+                </a>
+                <a class="nav-item" data-tab="devices">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                    <span>All Devices</span>
+                </a>
+                <a class="nav-item" data-tab="vending">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                    <span>Vending Machines</span>
+                </a>
+                <a class="nav-item" data-tab="rfid">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2"></path></svg>
+                    <span>RFID Terminals</span>
+                </a>
+
+                <span class="nav-section-title">Compliance & Security</span>
+                <a class="nav-item" data-tab="audit">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    <span>Audit Trail</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-badge">
+                    <div class="avatar" id="userAvatar">AD</div>
+                    <div class="user-meta">
+                        <div class="name" id="userName">Platform Admin</div>
+                        <div class="role" id="userRole">MANUFACTURER_ADMIN</div>
+                    </div>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="logoutBtn" title="Logout">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-wrapper">
+            <header class="top-header">
+                <div class="header-title">
+                    <h2 id="pageTitle">Fleet Command Center</h2>
+                    <p>Real-Time Commercial IoT Hardware Orchestration</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-sm" id="refreshBtn">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Refresh
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="openCreateClientModal()">
+                        + Onboard Client
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="openProvisionModal()">
+                        ⚡ Register Hardware
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-body">
+                <!-- ==========================================
+                     TAB: OVERVIEW (DASHBOARD)
+                     ========================================== -->
+                <section id="tab-overview" class="tab-pane active">
+                    <!-- Stat Cards -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon blue">📡</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statTotalDevices">—</div>
+                                <div class="stat-label">Total Connected Fleet</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon green">⚡</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statOnlineDevices" style="color:var(--success);">—</div>
+                                <div class="stat-label">Active Online Units</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon purple">🏢</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statClients">—</div>
+                                <div class="stat-label">Client Tenants</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon cyan">🥤</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statVending">—</div>
+                                <div class="stat-label">Vending Machines</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Module Distribution & Activity Split -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                        <div class="card-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <h3>Hardware Module Entitlements</h3>
+                                    <p>Active feature capabilities across deployed machines</p>
+                                </div>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:1.25rem;">
+                                <div>
+                                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.4rem;">
+                                        <span><strong>QR_PAYMENT</strong> (Dynamic Digital)</span>
+                                        <span id="statQRCount" style="color:var(--primary); font-weight:700;">—</span>
+                                    </div>
+                                    <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:10px; overflow:hidden;">
+                                        <div style="width:75%; height:100%; background:var(--primary); border-radius:10px;"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.4rem;">
+                                        <span><strong>COIN_PAYMENT</strong> (Autonomous Edge Cash)</span>
+                                        <span id="statCoinCount" style="color:var(--warning); font-weight:700;">—</span>
+                                    </div>
+                                    <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:10px; overflow:hidden;">
+                                        <div style="width:50%; height:100%; background:var(--warning); border-radius:10px;"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.4rem;">
+                                        <span><strong>RFID_ACCESS</strong> (Whitelisted Badges)</span>
+                                        <span id="statRFIDCount" style="color:var(--purple); font-weight:700;">—</span>
+                                    </div>
+                                    <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:10px; overflow:hidden;">
+                                        <div style="width:35%; height:100%; background:var(--purple); border-radius:10px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <h3>Recent Audit Stream</h3>
+                                    <p>Live security and operational changes</p>
+                                </div>
+                            </div>
+                            <div id="recentActivityList">
+                                <div style="text-align:center; padding:1.5rem; color:var(--text-muted);">Loading activity stream...</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================
+                     TAB: CLIENTS
+                     ========================================== -->
+                <section id="tab-clients" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Client Organizations</h3>
+                                <p>Multi-tenant companies with segregated hardware fleets</p>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="openCreateClientModal()">+ Add Client</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tenant Code</th>
+                                        <th>Company Name</th>
+                                        <th>Contact Email</th>
+                                        <th>Phone</th>
+                                        <th>Status</th>
+                                        <th>Fleet Allocation</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="clientsTableBody">
+                                    <tr><td colspan="7" style="text-align:center; padding:2rem;">Loading client directory...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================
+                     TAB: ALL DEVICES
+                     ========================================== -->
+                <section id="tab-devices" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Connected Hardware Fleet</h3>
+                                <p>Manage Device IDs, module toggles, and tenant assignment</p>
+                            </div>
+                            <div class="panel-controls">
+                                <button class="btn btn-primary btn-sm" onclick="openProvisionModal()">⚡ Register Device</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device ID</th>
+                                        <th>Product Type</th>
+                                        <th>Assigned Client</th>
+                                        <th>Connectivity</th>
+                                        <th>Status</th>
+                                        <th>Config Ver</th>
+                                        <th>Hardware Modules</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="devicesTableBody">
+                                    <tr><td colspan="8" style="text-align:center; padding:2rem;">Loading device fleet...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================
+                     TAB: VENDING MACHINES
+                     ========================================== -->
+                <section id="tab-vending" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Commercial Vending Controller Nodes</h3>
+                                <p>Dedicated view for machines supporting QR, Coin, and Multi-drop vending</p>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device ID</th>
+                                        <th>Product Type</th>
+                                        <th>Assigned Client</th>
+                                        <th>Connectivity</th>
+                                        <th>Status</th>
+                                        <th>Config Ver</th>
+                                        <th>Active Modules (QR / Coin)</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vendingTableBody">
+                                    <tr><td colspan="8" style="text-align:center; padding:2rem;">Loading vending machines...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================
+                     TAB: RFID TERMINALS
+                     ========================================== -->
+                <section id="tab-rfid" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>RFID Attendance Terminals</h3>
+                                <p>Dedicated view for corporate and institutional attendance nodes</p>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device ID</th>
+                                        <th>Product Type</th>
+                                        <th>Assigned Client</th>
+                                        <th>Connectivity</th>
+                                        <th>Status</th>
+                                        <th>Config Ver</th>
+                                        <th>Subsystem</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rfidTableBody">
+                                    <tr><td colspan="8" style="text-align:center; padding:2rem;">Loading RFID terminals...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================
+                     TAB: AUDIT LOGS
+                     ========================================== -->
+                <section id="tab-audit" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Security Audit Logs</h3>
+                                <p>Immutable audit trail of all user mutations, module toggles, and device registrations</p>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Action</th>
+                                        <th>Entity</th>
+                                        <th>Target ID</th>
+                                        <th>Details / State Mutation</th>
+                                        <th>Origin IP</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="auditTableBody">
+                                    <tr><td colspan="6" style="text-align:center; padding:2rem;">Loading audit trail...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- ==========================================
+         MODALS
+         ========================================== -->
+
+    <!-- Modal: Register Device -->
+    <div id="modalProvision" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3>⚡ Provision Physical ESP32 Hardware</h3>
+                <button class="modal-close" onclick="closeModal('modalProvision')">&times;</button>
+            </div>
+            <form id="provisionForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Product Type Family</label>
+                        <select class="input-field" id="provType" required>
+                            <option value="VENDING_MACHINE">Commercial Vending Machine (VM-XXXXXX)</option>
+                            <option value="RFID_ATTENDANCE">Smart RFID Attendance Terminal (RFID-XXXXXX)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Hardware MAC Address</label>
+                        <input type="text" class="input-field" id="provMac" required>
+                    </div>
+                    <div class="form-group">
+                        <label>ESP32 eFuse Chip ID</label>
+                        <input type="text" class="input-field" id="provChip" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Factory Barcode / Serial</label>
+                        <input type="text" class="input-field" id="provSerial" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Initial Feature Modules</label>
+                        <div style="display:flex; gap:1.5rem; margin-top:0.25rem;">
+                            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; cursor:pointer;">
+                                <input type="checkbox" id="provModQR" checked> QR Payment
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; cursor:pointer;">
+                                <input type="checkbox" id="provModCoin"> Coin Acceptor
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalProvision')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Provision Node</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Onboard Client -->
+    <div id="modalCreateClient" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3>🏢 Onboard Client Organization</h3>
+                <button class="modal-close" onclick="closeModal('modalCreateClient')">&times;</button>
+            </div>
+            <form id="createClientForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Unique Tenant Code</label>
+                        <input type="text" class="input-field" id="newClientCode" placeholder="e.g. METRO_RETAIL" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Company Legal Name</label>
+                        <input type="text" class="input-field" id="newClientName" placeholder="e.g. Metro Retail Corp Pvt Ltd" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Administrative Email</label>
+                        <input type="email" class="input-field" id="newClientEmail" placeholder="admin@metro.local" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Contact Phone</label>
+                        <input type="text" class="input-field" id="newClientPhone" placeholder="+91-9876543210">
+                    </div>
+                    <div class="form-group">
+                        <label>Corporate / Site Address</label>
+                        <input type="text" class="input-field" id="newClientAddress" placeholder="Bangalore, Karnataka">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalCreateClient')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Onboard Client</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Assign Device -->
+    <div id="modalAssign" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3>🔗 Assign Device to Tenant</h3>
+                <button class="modal-close" onclick="closeModal('modalAssign')">&times;</button>
+            </div>
+            <form id="assignForm">
+                <div class="modal-body">
+                    <input type="hidden" id="assignDeviceId">
+                    <p style="font-size:0.85rem; color:var(--text-secondary);">
+                        Assigning hardware node: <strong id="assignDeviceCodeLabel" style="color:var(--primary);"></strong>
+                    </p>
+                    <div class="form-group" style="margin-top:1rem;">
+                        <label>Target Client Organization</label>
+                        <select class="input-field" id="assignClientId">
+                            <option value="">-- Unassign (Return to Inventory) --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalAssign')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Assignment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Login -->
+    <div id="modalLogin" class="modal-overlay">
+        <div class="modal-container" style="max-width:400px;">
+            <div class="modal-header">
+                <h3>🔐 Operations Portal Login</h3>
+            </div>
+            <form id="loginForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Username or Email</label>
+                        <input type="text" class="input-field" id="loginUsername" value="admin" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" class="input-field" id="loginPassword" value="Admin@SecurePlatform2026!" required>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnQuickDemoLogin" style="width:100%; justify-content:center; margin-top:0.5rem;">
+                        ⚡ Quick Demo Login (Super-Admin)
+                    </button>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Authenticate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
