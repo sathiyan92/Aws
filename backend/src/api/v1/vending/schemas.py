@@ -67,3 +67,101 @@ class ClientFleetCapabilityItem(BaseModel):
     has_coin_payment: bool
     has_rfid_access: bool
     modules: Dict[str, bool]
+
+
+# ------------------------------------------------------------------------------
+# PRODUCT CATALOG SCHEMAS
+# ------------------------------------------------------------------------------
+
+class ProductCreateRequest(BaseModel):
+    """Payload to create a new catalog product for a client tenant."""
+    product_code: str = Field(..., description="Unique product SKU/code (e.g. BEV-COKE-300)")
+    name: str = Field(..., description="Display name of the product")
+    price: int = Field(..., ge=1, description="Price in smallest currency unit (paise: 4000 = ₹40.00)")
+    description: Optional[str] = Field(None, description="Product description")
+    image_url: Optional[str] = Field(None, description="Product image asset URL")
+    is_active: bool = Field(True, description="Active status for dispensing")
+
+
+class ProductUpdateRequest(BaseModel):
+    """Payload to update an existing catalog product."""
+    name: Optional[str] = None
+    price: Optional[int] = Field(None, ge=1, description="Updated price in paise")
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ProductResponse(BaseModel):
+    """Catalog product detail."""
+    id: str
+    client_id: str
+    product_code: str
+    name: str
+    description: Optional[str] = None
+    price: int
+    price_rupees: float
+    image_url: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ------------------------------------------------------------------------------
+# MACHINE SLOT MANAGEMENT SCHEMAS
+# ------------------------------------------------------------------------------
+
+class MachineSlotResponse(BaseModel):
+    """Physical dispensing slot configuration and live stock status."""
+    id: str
+    device_id: str
+    slot_number: int
+    slot_code: str
+    product_id: Optional[str] = None
+    product_code: Optional[str] = None
+    product_name: Optional[str] = None
+    price: int
+    price_rupees: float
+    override_price: Optional[int] = None
+    motor_pin: Optional[int] = None
+    pulse_duration_ms: int
+    capacity: int
+    current_stock: int
+    is_active: bool
+
+
+class MachineSlotConfigureRequest(BaseModel):
+    """Payload to configure or reassign a physical vending machine slot."""
+    product_id: Optional[str] = Field(None, description="Catalog product ID to bind to this slot")
+    override_price: Optional[int] = Field(None, description="Optional slot-specific price override in paise")
+    motor_pin: Optional[int] = Field(None, description="ESP32 GPIO / relay pin index driving the coil motor")
+    pulse_duration_ms: Optional[int] = Field(None, ge=100, le=5000, description="Motor run pulse duration in ms")
+    capacity: Optional[int] = Field(None, ge=1, le=100, description="Max physical capacity")
+    current_stock: Optional[int] = Field(None, ge=0, description="Current stock level")
+    is_active: Optional[bool] = Field(None, description="Slot active status")
+
+
+class MachineSlotBulkItem(BaseModel):
+    """Single slot entry within a bulk configuration request."""
+    slot_number: int = Field(..., ge=1, le=100)
+    product_id: Optional[str] = None
+    override_price: Optional[int] = None
+    motor_pin: Optional[int] = None
+    pulse_duration_ms: Optional[int] = 500
+    capacity: Optional[int] = 10
+    current_stock: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class MachineSlotBulkConfigureRequest(BaseModel):
+    """Payload to configure multiple slots on a vending machine simultaneously."""
+    slots: List[MachineSlotBulkItem]
+
+
+class MachineSlotRestockRequest(BaseModel):
+    """Payload to record inventory restocking for a vending machine slot."""
+    quantity_added: Optional[int] = Field(None, ge=1, description="Quantity to increment current stock by")
+    new_stock_level: Optional[int] = Field(None, ge=0, description="Directly set exact stock level")
+

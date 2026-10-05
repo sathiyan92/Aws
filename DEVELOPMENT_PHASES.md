@@ -151,7 +151,7 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 8: Device Registration and Secure Authentication
-- **Status:** **COMPLETED (Current)**
+- **Status:** **COMPLETED**
 - **Objectives:** Establish cryptographically secure mutual handshake between ESP32 and Cloud.
 - **Deliverables:**
   - Device Gateway API schemas ([`backend/src/api/v1/devices/gateway_schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/devices/gateway_schemas.py)) for hardware handshakes, MQTT topic mapping, heartbeat telemetry, edge log batches, and offline sweeps.
@@ -173,7 +173,7 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 9: Cloud Configuration Synchronization
-- **Status:** **COMPLETED (Current)**
+- **Status:** **COMPLETED**
 - **Objectives:** Implement versioned, decoupled configuration delivery engine between Cloud and ESP32.
 - **Deliverables:**
   - Cloud configuration schemas ([`backend/src/api/v1/configs/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/configs/schemas.py)) for composite device payloads, sync ACKs, rollback requests, version history summaries, and diffs.
@@ -207,19 +207,28 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 10: Vending Product & Slot Management
-- **Status:** **NEXT UP (Awaiting Phase 9 Review)**
-- **Objectives:** Implement product catalog and vending machine slot assignment engine.
+- **Status:** **COMPLETED (Current)**
+- **Objectives:** Implement multi-tenant product catalog, physical slot configuration engine, and real-time fleet price synchronization.
 - **Deliverables:**
-  - Product catalog CRUD API (name, code, price, image).
-  - Slot configuration API (slot number, motor relay pin, capacity, stock level).
-  - Price update engine: changes price (e.g., ₹40 -> ₹45), triggers config version bump without firmware compilation.
+  - Product Catalog CRUD API and schemas ([`backend/src/api/v1/vending/schemas.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/vending/schemas.py), [`backend/src/api/v1/vending/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/vending/routes.py)):
+    - Product creation, retrieval, listing, updating, and deletion.
+    - Referential integrity guards: prevents deletion of products currently assigned to active machine slots (`PRODUCT_IN_USE`).
+  - Machine Slot Assignment & Inventory Management:
+    - Single slot configuration (`PUT /api/v1/vending/machines/{device_id}/slots/{slot_number}`) for product mapping, motor GPIO pin, capacity, and slot override price.
+    - Bulk slot configuration (`PUT /api/v1/vending/machines/{device_id}/slots/bulk`).
+    - Inventory restocking endpoint (`POST /api/v1/vending/machines/{device_id}/slots/{slot_number}/restock`): increases stock level without bumping firmware configuration version.
+  - Fleet Price Update Synchronization Engine ([`backend/src/services/vending_service.py`](file:///c:/Projects/iot-fleet-platform/backend/src/services/vending_service.py)):
+    - Modifying product price across catalog automatically detects all affected vending machines with slots mapped to this product (without slot price overrides).
+    - Automatically rebuilds composite device configuration payloads, increments `current_config_version`, computes SHA-256 checksums, sets `is_synced = False`, archives immutable `ConfigurationVersion` snapshots, and dispatches real-time MQTT distribution messages to `devices/{device_id}/config`.
+  - Multi-tenant isolation: enforces strict tenant boundaries on products and slots with HTTP 403 Forbidden.
+  - Comprehensive automated test suite ([`backend/tests/test_vending_slots.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_vending_slots.py)).
+- **Verification Result:** Passed 13/13 tests in `test_vending_slots.py` and 75/75 tests across all 8 test suites with 100% success rate.
 - **Dependencies:** Phase 9.
-- **Verification Strategy:** Update product price via Client Dashboard; verify configuration version increments and ESP32 synchronizes price.
 
 ---
 
 ### Phase 11: Coin Payment Engine
-- **Status:** Planned
+- **Status:** **NEXT UP (Awaiting Phase 10 Review)**
 - **Objectives:** Implement multi-coin electronic acceptor pulse processing and offline credit handling.
 - **Deliverables:**
   - ESP32 hardware interrupt driver for pulse train detection with hardware debouncing.
