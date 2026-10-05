@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Client Portal | IoT Fleet Management & Dynamic Visibility</title>
+    <meta name="description" content="Multi-tenant client management portal with real-time dynamic hardware feature visibility and server-side policy enforcement for ESP32 vending fleets and RFID systems.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="ambient-glow-1"></div>
+    <div class="ambient-glow-2"></div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1 id="clientBrandTitle">Client Portal</h1>
+                    <p id="tenantSubTitle">Tenant Workspace</p>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section-title">Fleet Operations</div>
+                <a class="nav-item active" data-tab="tab-fleet" id="navFleet">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <span>My Fleet Machines</span>
+                </a>
+
+                <div class="nav-section-title" id="moduleNavHeader">Device Feature Modules</div>
+                
+                <!-- Dynamic QR Navigation Item (Visible only when QR is enabled) -->
+                <a class="nav-item" data-tab="tab-qr" id="navQR">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <span>QR Payments</span>
+                </a>
+
+                <!-- Dynamic Coin Navigation Item (Visible only when Coin is enabled) -->
+                <a class="nav-item" data-tab="tab-coin" id="navCoin">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"></circle><path d="M14.8 9A2 2 0 0 0 13 8h-2a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4h-2a2 2 0 0 1-1.8-1"></path><path d="M12 6v2m0 8v2"></path></svg>
+                    <span>Coin Acceptor</span>
+                </a>
+
+                <!-- Dynamic RFID Navigation Item (Visible only when RFID is enabled) -->
+                <a class="nav-item" data-tab="tab-rfid" id="navRFID">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                    <span>RFID Cards & Logs</span>
+                </a>
+
+                <div class="nav-section-title">Security & Verification</div>
+                <a class="nav-item" data-tab="tab-security" id="navSecurity">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    <span>Security Policy Guard</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-badge">
+                    <div class="avatar" id="userAvatar">A</div>
+                    <div class="user-meta">
+                        <div class="name" id="userNameLabel">Apex Admin</div>
+                        <div class="role" id="userRoleLabel">CLIENT_ADMIN</div>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" id="logoutBtn" style="padding: 0.4rem 0.6rem; font-size: 0.75rem;" title="Sign Out">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Wrapper -->
+        <div class="main-wrapper">
+            <!-- Top Header Bar -->
+            <header class="top-header">
+                <div class="device-selector-wrapper">
+                    <label for="deviceSelect" style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Active Machine:</label>
+                    <select id="deviceSelect" class="device-select">
+                        <option value="">Loading machines...</option>
+                    </select>
+                    <span id="deviceTypeBadge" class="badge badge-on" style="margin-left: 0.5rem; display: none;">VENDING</span>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="text-align: right;">
+                        <span id="tenantNameHeader" style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">Apex Vending Solutions</span>
+                        <div id="tenantIdHeader" style="font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">Tenant: apex-vending</div>
+                    </div>
+                    <button class="btn btn-secondary" id="refreshCapabilitiesBtn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                        Sync Fleet
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dynamic Capability Banner -->
+            <div class="capability-banner" id="capabilityBanner">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <strong style="color: var(--primary);">Hardware Modules for Selected Device:</strong>
+                    <div class="banner-modules" id="activeModulesList">
+                        <span class="badge badge-on">Detecting...</span>
+                    </div>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    Feature controls adapt dynamically. Unauthorized controls are stripped & blocked server-side.
+                </div>
+            </div>
+
+            <!-- Body Tabs Container -->
+            <main class="content-body">
+                
+                <!-- TAB 1: FLEET OVERVIEW -->
+                <section id="tab-fleet" class="tab-pane active">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Tenant Fleet Overview</h3>
+                                <p>All provisioned ESP32 hardware units assigned to your company account.</p>
+                            </div>
+                            <span class="badge badge-on" id="fleetCountBadge">0 Assigned Devices</span>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device ID</th>
+                                        <th>Hardware Name</th>
+                                        <th>Product Family</th>
+                                        <th>Status</th>
+                                        <th>Enabled Modules</th>
+                                        <th>Config Rev</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fleetTableBody">
+                                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading fleet inventory...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Architecture Assurance Card -->
+                    <div class="card-panel" style="background: rgba(16, 185, 129, 0.03); border-color: rgba(16, 185, 129, 0.15);">
+                        <div class="panel-header">
+                            <div>
+                                <h3 style="color: var(--primary);">Dynamic Feature Visibility Principle</h3>
+                                <p>How client isolation and hardware feature gating operate seamlessly in this platform.</p>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; font-size: 0.825rem; color: var(--text-secondary);">
+                            <div style="background: rgba(15, 23, 42, 0.6); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+                                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 0.9rem;">1. Dynamic UI Customization</h4>
+                                <p>When you select a machine above, the navigation tabs and configuration forms dynamically adjust. If a machine only has QR payments, coin settings are completely hidden.</p>
+                            </div>
+                            <div style="background: rgba(15, 23, 42, 0.6); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+                                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 0.9rem;">2. Server-Side Policy Guards</h4>
+                                <p>Frontend hiding is not our security perimeter. Every API endpoint enforces <code>require_device_module</code> dependencies, rejecting disabled features with <strong>HTTP 403 Forbidden</strong>.</p>
+                            </div>
+                            <div style="background: rgba(15, 23, 42, 0.6); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+                                <h4 style="color: var(--text-primary); margin-bottom: 0.5rem; font-size: 0.9rem;">3. Zero-Firmware Recompilation</h4>
+                                <p>Hardware prices, pulse ratios, and active modules are managed as versioned configuration records. Updating them notifies the device without touching C/C++ firmware.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 2: QR PAYMENT MODULE (Dynamic) -->
+                <section id="tab-qr" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Dynamic QR Code Payment Settings</h3>
+                                <p>Configure UPI / Dynamic QR payment gateway integration for <span class="mono-text selected-device-label">...</span></p>
+                            </div>
+                            <span class="badge badge-on" id="qrStatusBadge">QR Active</span>
+                        </div>
+
+                        <form id="qrSettingsForm">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="qrVpa">UPI VPA / Merchant ID</label>
+                                    <input type="text" id="qrVpa" class="input-field" placeholder="apexvending@icici" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="qrMerchantName">Merchant Display Name</label>
+                                    <input type="text" id="qrMerchantName" class="input-field" placeholder="Apex Vending Express" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="qrCurrency">Operating Currency</label>
+                                    <select id="qrCurrency" class="input-field">
+                                        <option value="INR">INR (₹)</option>
+                                        <option value="USD">USD ($)</option>
+                                        <option value="EUR">EUR (€)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="qrTimeout">Display Timeout (Seconds)</label>
+                                    <input type="number" id="qrTimeout" class="input-field" value="120" min="30" max="600">
+                                </div>
+                            </div>
+                            <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                                <button type="button" class="btn btn-secondary" id="resetQrBtn">Reload Settings</button>
+                                <button type="submit" class="btn btn-primary" id="saveQrBtn">Save QR Settings</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- QR Transaction Log Table -->
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>QR Payment Transactions</h3>
+                                <p>Live digital settlements processed on this vending machine.</p>
+                            </div>
+                            <span class="badge badge-on">Online Settlement Engine</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tx ID</th>
+                                        <th>Timestamp</th>
+                                        <th>Item Slot</th>
+                                        <th>Amount</th>
+                                        <th>Provider</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="qrTransactionsBody">
+                                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No recent QR transactions.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 3: COIN ACCEPTOR MODULE (Dynamic) -->
+                <section id="tab-coin" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Coin Acceptor & Mechanical Pulse Configuration</h3>
+                                <p>Calibrate coin-to-pulse ratios and hardware coin denominations for <span class="mono-text selected-device-label">...</span></p>
+                            </div>
+                            <span class="badge badge-on" id="coinStatusBadge">Coin Mech Active</span>
+                        </div>
+
+                        <form id="coinSettingsForm">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="coinPulseRatio">Value Per Pulse</label>
+                                    <input type="number" id="coinPulseRatio" class="input-field" step="0.5" value="1.0" min="0.1" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="coinCurrency">Currency Symbol</label>
+                                    <input type="text" id="coinCurrency" class="input-field" value="₹" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="coinMinPulse">Pulse Width (ms)</label>
+                                    <input type="number" id="coinMinPulse" class="input-field" value="50" min="10" max="250">
+                                </div>
+                                <div class="form-group">
+                                    <label for="coinAcceptedDenoms">Accepted Denominations (Comma-separated)</label>
+                                    <input type="text" id="coinAcceptedDenoms" class="input-field" value="1, 2, 5, 10">
+                                </div>
+                            </div>
+                            <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                                <button type="button" class="btn btn-secondary" id="resetCoinBtn">Reload Settings</button>
+                                <button type="submit" class="btn btn-primary" id="saveCoinBtn">Save Coin Mech Calibration</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Coin Collection Log Table -->
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Coin Vault & Inflow Log</h3>
+                                <p>Mechanical coin drop audits and collection events.</p>
+                            </div>
+                            <span class="badge badge-on">Hardware Pulse Counter</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Event ID</th>
+                                        <th>Timestamp</th>
+                                        <th>Coin Value</th>
+                                        <th>Pulses Detected</th>
+                                        <th>Total Cash In Vault</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="coinTransactionsBody">
+                                    <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No coin transactions recorded yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 4: RFID ATTENDANCE MODULE (Dynamic) -->
+                <section id="tab-rfid" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>RFID Card Whitelist Management</h3>
+                                <p>Authorized personnel badges and smart access credentials for <span class="mono-text selected-device-label">...</span></p>
+                            </div>
+                            <button class="btn btn-primary" id="addCardBtn" style="font-size: 0.75rem;">+ Add Authorized Card</button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Card UID</th>
+                                        <th>Cardholder Name</th>
+                                        <th>Designation / Dept</th>
+                                        <th>Status</th>
+                                        <th>Enrolled At</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rfidCardsBody">
+                                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading authorized RFID cards...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- RFID Access Swipes Table -->
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Recent RFID Check-in / Swipes</h3>
+                                <p>Hardware swipe telemetry logged at reader unit.</p>
+                            </div>
+                            <span class="badge badge-on">Access Controller</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Log ID</th>
+                                        <th>Swipe Timestamp</th>
+                                        <th>Card UID</th>
+                                        <th>Cardholder</th>
+                                        <th>Direction</th>
+                                        <th>Verdict</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rfidLogsBody">
+                                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No attendance swipe logs recorded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 5: SECURITY POLICY GUARD VERIFICATION -->
+                <section id="tab-security" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3 style="color: #f87171;">Interactive Security Policy Enforcement Test</h3>
+                                <p>Demonstrate that frontend feature hiding is backed by rigid server-side authorization.</p>
+                            </div>
+                            <span class="badge badge-off" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">Policy Guard Testbed</span>
+                        </div>
+
+                        <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.5rem; margin-bottom: 1.5rem;">
+                            <h4 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">Test Objective</h4>
+                            <p style="font-size: 0.825rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                                If a client inspects the browser DOM and un-hides a disabled module, or crafts a direct HTTP request to a disabled module endpoint (e.g. sending a coin pulse update to <strong style="color: var(--primary);">VM-000001</strong> which only has QR), the backend must reject it with <strong style="color: #f87171;">HTTP 403 Forbidden</strong> and error code <code>MODULE_DISABLED_FOR_DEVICE</code>.
+                            </p>
+
+                            <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+                                <div style="flex: 1; min-width: 250px;">
+                                    <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Target Module to Attack/Test:</label>
+                                    <select id="forgedModuleSelect" class="input-field" style="width: 100%;">
+                                        <option value="COIN_PAYMENT">COIN_PAYMENT (Disabled on VM-000001)</option>
+                                        <option value="QR_PAYMENT">QR_PAYMENT (Disabled on VM-000002)</option>
+                                        <option value="RFID_ACCESS">RFID_ACCESS (Disabled on VM-000001 & VM-000002)</option>
+                                    </select>
+                                </div>
+                                <div style="flex: 1; min-width: 250px;">
+                                    <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Target Machine:</label>
+                                    <select id="forgedDeviceSelect" class="input-field" style="width: 100%;">
+                                        <option value="VM-000001">VM-000001 (QR Only)</option>
+                                        <option value="VM-000002">VM-000002 (Coin Only)</option>
+                                        <option value="VM-000003">VM-000003 (Hybrid: QR + Coin)</option>
+                                        <option value="RFID-000001">RFID-000001 (RFID Only)</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-danger" id="simulateAttackBtn" style="margin-top: 1.25rem;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                    Execute Forged Request
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Live Security Response Box -->
+                        <div id="securityTestResult" class="security-alert-box" style="display: none;">
+                            <div id="securityResultIcon"></div>
+                            <div style="flex: 1;">
+                                <h4 id="securityResultTitle" style="font-size: 0.9rem; font-weight: 700;">Result Pending</h4>
+                                <p id="securityResultDesc" style="font-size: 0.8rem; margin: 0.35rem 0 0.75rem 0; color: var(--text-secondary);"></p>
+                                <pre id="securityResultJson" style="background: rgba(6, 9, 14, 0.95); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; overflow-x: auto; color: #f87171;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal for Adding RFID Card -->
+    <div class="modal-overlay" id="addCardModal">
+        <div class="modal-container">
+            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text-primary);">Register RFID Access Card</h3>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+                Grant access to this RFID Attendance terminal. The UID will be synced to the device whitelist.
+            </p>
+            <form id="addCardForm">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="newCardUid">Card UID (HEX / Dec)</label>
+                    <input type="text" id="newCardUid" class="input-field" placeholder="E2:80:68:1A" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="newCardholderName">Cardholder Name</label>
+                    <input type="text" id="newCardholderName" class="input-field" placeholder="Sarah Jenkins" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label for="newCardDept">Department / Designation</label>
+                    <input type="text" id="newCardDept" class="input-field" placeholder="Operations Manager" required>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" id="closeAddCardModalBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Enroll Card</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Overlay for Client User -->
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-container" style="max-width: 420px; text-align: center;">
+            <div class="brand-icon" style="margin: 0 auto 1rem auto; width: 48px; height: 48px;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <h3 style="font-size: 1.25rem; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; margin-bottom: 0.25rem;">Client Tenant Login</h3>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+                Multi-Tenant Cloud IoT Platform for Vending & RFID Fleets
+            </p>
+
+            <form id="loginForm" style="text-align: left;">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="loginUsername">Username / Email</label>
+                    <input type="text" id="loginUsername" class="input-field" value="apex_admin" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" class="input-field" value="Apex@Admin2026!" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
+                    Sign In to Tenant Portal
+                </button>
+            </form>
+
+            <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle); font-size: 0.72rem; color: var(--text-muted);">
+                <p><strong>Quick Demo Access:</strong></p>
+                <div style="margin-top: 0.5rem; display: flex; justify-content: center; gap: 0.5rem;">
+                    <button class="btn btn-secondary" id="demoApexBtn" style="font-size: 0.7rem; padding: 0.35rem 0.65rem;">
+                        Apex Vending Admin
+                    </button>
+                    <button class="btn btn-secondary" id="demoMetroBtn" style="font-size: 0.7rem; padding: 0.35rem 0.65rem;">
+                        Metro Retail Admin
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

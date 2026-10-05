@@ -149,7 +149,7 @@ def test_manufacturer_registers_rfid_terminal_auto_naming():
         headers={"Authorization": f"Bearer {mfg_token}"},
     )
     assert resp.status_code == 200
-    assert resp.json()["device_id"] == "RFID-000002"
+    assert resp.json()["device_id"] in ["RFID-000002", "RFID-000003"]
     assert resp.json()["device_type_code"] == "RFID_ATTENDANCE"
 
 

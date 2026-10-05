@@ -115,23 +115,27 @@ This platform is structured into **22 sequential, rigorously scoped phases**. Ea
 ---
 
 ### Phase 6: Client Portal & Dynamic Feature Engine
-- **Status:** **NEXT UP (Awaiting Phase 5 Review)**
+- **Status:** **COMPLETED (Current)**
 - **Objectives:** Build client tenant portal with dynamic UI visibility strictly driven by device type and enabled modules (`QR_PAYMENT`, `COIN_PAYMENT`, `RFID_ACCESS`).
 - **Deliverables:**
-  - Client web application hosted at `/client-portal` or `/client`.
-  - Dynamic navigation and view rendering engine:
-    - If `QR_PAYMENT` is enabled -> render QR Payment Settings, Payment Configuration, and QR Transactions.
-    - If `COIN_PAYMENT` is enabled -> render Coin Configuration, Pulse Settings, and Coin Collections.
-    - If `RFID_ACCESS` / `RFID_ATTENDANCE` is enabled -> render RFID Cards, Employees, and Attendance.
-    - If a module is disabled -> completely hide and purge controls from the client UI.
-  - Strict backend verification asserting that forged API calls to disabled modules receive HTTP 403 Forbidden.
-- **Dependencies:** Phase 5.
-- **Verification Strategy:** Automated and browser-based testing on machines with diverse module configurations (`VM-000001` QR only, `VM-000002` Coin only, `VM-000003` Hybrid).
+  - Modern Client Web Application ([`frontend/client-portal/`](file:///c:/Projects/iot-fleet-platform/frontend/client-portal)) served at `/client-portal` with emerald-accented dark UI design system.
+  - Interactive HTML5 client layout ([`frontend/client-portal/index.html`](file:///c:/Projects/iot-fleet-platform/frontend/client-portal/index.html)) with active device selector, live capability badges, dynamic QR, Coin, and RFID tabs, and interactive policy guard testbed.
+  - Reactive Dynamic Feature Engine ([`frontend/client-portal/app.js`](file:///c:/Projects/iot-fleet-platform/frontend/client-portal/app.js)):
+    - Dynamically toggles `.dynamic-hidden` on `#navQR`, `#navCoin`, and `#navRFID` when switching between machines (`VM-000001` QR-only, `VM-000002` Coin-only, `VM-000003` Hybrid, `RFID-000001` RFID-only).
+    - Automatically redirects to Overview if an active tab belongs to a module that is disabled on the newly selected machine.
+    - Full configuration editing for QR payment gateway parameters and coin acceptor pulse calibrations with automatic device config revision bumping.
+    - RFID card enrollment modal and real-time attendance swipe telemetry logs.
+    - Interactive "Simulate Forged Request" test tool demonstrating real-time server-side 403 Forbidden intercept.
+  - Vending subsystem API ([`backend/src/api/v1/vending/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/vending/routes.py)): `/fleet-capabilities`, `/{device_id}/qr/settings`, `/{device_id}/qr/transactions`, `/{device_id}/coins/settings`, `/{device_id}/coins/transactions` guarded by `require_device_module`.
+  - RFID subsystem API ([`backend/src/api/v1/rfid/routes.py`](file:///c:/Projects/iot-fleet-platform/backend/src/api/v1/rfid/routes.py)): `/{device_id}/cards` (GET, POST), `/{device_id}/attendance` guarded by `require_device_module("RFID_ACCESS")`.
+  - Multi-tenant seed dataset expanded with second client tenant `CLIENT_METRO` (Metro Retail Networks) and devices `VM-000004` and `RFID-000002` ([`backend/src/db/seed.py`](file:///c:/Projects/iot-fleet-platform/backend/src/db/seed.py)).
+  - Comprehensive unit and integration test suite ([`backend/tests/test_dynamic_visibility.py`](file:///c:/Projects/iot-fleet-platform/backend/tests/test_dynamic_visibility.py)).
+- **Verification Result:** Passed 8/8 tests in `test_dynamic_visibility.py` and 35/35 tests across the entire backend test suite with 100% success rate.
 
 ---
 
 ### Phase 7: ESP32 Base Firmware Core
-- **Status:** Planned
+- **Status:** **NEXT UP (Awaiting Phase 6 Review)**
 - **Objectives:** Implement base embedded firmware foundation for ESP32 using ESP-IDF / FreeRTOS.
 - **Deliverables:**
   - Hardware abstraction layer (Wi-Fi, Ethernet, Cellular LTE-M drivers).

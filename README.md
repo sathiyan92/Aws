@@ -268,15 +268,77 @@ Phase 5 implemented the modern web application for the platform manufacturer, ho
 
 ---
 
-## 10. Phase 6 Requirements (Next Milestone)
+## 10. Phase 6 Verification: Client Portal & Dynamic Feature Visibility
 
-Upon approval of Phase 5, development will proceed to **Phase 6: Client Portal & Dynamic Feature Visibility**:
-- Build a dedicated, secure client tenant web portal.
-- Implement the **CRITICAL REQUIREMENT: Dynamic Feature Visibility**:
-  - If `QR_PAYMENT` is enabled -> show QR payment configuration, transaction records, and payment settings.
-  - If `COIN_PAYMENT` is enabled -> show coin configuration, pulse settings, and cash audit records.
-  - If a module is disabled -> completely hide and purge controls from the client UI.
-  - Enforce backend verification asserting that forged API calls to disabled modules receive HTTP 403 Forbidden.
+Phase 6 implemented the dedicated Client Tenant Portal ([`frontend/client-portal/`](file:///c:/Projects/iot-fleet-platform/frontend/client-portal)) with dynamic hardware feature visibility and server-side policy guard enforcement.
+
+### Key Capabilities Delivered:
+1. **Dynamic Feature Visibility:**
+   - Client navigation tabs, forms, and tables adapt in real-time based on the hardware modules enabled on the currently selected machine.
+   - If `QR_PAYMENT` is disabled on a machine (e.g., `VM-000002`), all QR settings and digital payment logs are purged from the UI using `.dynamic-hidden`.
+   - If `COIN_PAYMENT` is disabled on a machine (e.g., `VM-000001`), coin pulse calibration and coin vault logs are purged from the UI.
+   - If `RFID_ACCESS` is enabled (e.g., `RFID-000001`), the RFID whitelist manager and real-time attendance logs are displayed.
+2. **Server-Side Policy Enforcement (Defense in Depth):**
+   - Frontend hiding is strictly backed by the backend `require_device_module(module_code)` dependency.
+   - Any crafted or forged HTTP request targeting a disabled module is blocked with **HTTP 403 Forbidden** and error code `MODULE_DISABLED_FOR_DEVICE`.
+3. **Multi-Tenant Fleet Isolation:**
+   - Client admins (`apex_admin`, `metro_admin`) strictly access devices owned by their organization.
+   - Cross-tenant device queries are rejected with **HTTP 403 `TENANT_ISOLATION_VIOLATION`**.
+4. **Decoupled Configuration Management:**
+   - Modifying UPI VPA gateway details, timeouts, or coin pulse ratios bumps `current_config_version` and marks `is_synced = False` without requiring firmware recompilation.
+
+---
+
+### How to Run & Verify Phase 6
+
+#### 1. Automated Test Suites
+Run the dedicated Phase 6 dynamic visibility test suite:
+```powershell
+python -m pytest backend/tests/test_dynamic_visibility.py -v
+```
+
+Run all backend test suites across the platform (35 tests):
+```powershell
+python -m pytest backend/tests/ -v
+```
+
+#### 2. Live Browser Verification
+1. Launch the FastAPI server:
+   ```powershell
+   cd c:\Projects\iot-fleet-platform\backend
+   python -m uvicorn src.main:app --port 8000 --reload
+   ```
+2. Open the Client Tenant Portal:
+   - **URL:** `http://localhost:8000/client-portal/index.html` (or open [`frontend/client-portal/index.html`](file:///c:/Projects/iot-fleet-platform/frontend/client-portal/index.html) in your browser).
+   - Log in using **Apex Vending Admin** (`apex_admin` / `Apex@Admin2026!`).
+3. Verify Dynamic Visibility in the Browser:
+   - In the top header dropdown, select **`VM-000001` (QR Only)**:
+     - Notice that the **QR Payments** tab is visible in the sidebar.
+     - Notice that the **Coin Acceptor** tab is completely hidden.
+   - Switch to **`VM-000002` (Coin Only)**:
+     - Notice that the **QR Payments** tab is immediately hidden.
+     - Notice that the **Coin Acceptor** tab appears.
+   - Switch to **`VM-000003` (Hybrid)**:
+     - Both **QR Payments** and **Coin Acceptor** tabs are visible.
+   - Switch to **`RFID-000001` (RFID Attendance)**:
+     - Vending payment tabs disappear; **RFID Cards & Logs** tab becomes active.
+4. Verify Security Policy Enforcement Testbed:
+   - Click the **Security Policy Guard** tab in the sidebar.
+   - Under "Target Module", select `COIN_PAYMENT`. Under "Target Machine", select `VM-000001` (where Coin is disabled).
+   - Click **Execute Forged Request**.
+   - Observe the live security alert box showing **HTTP 403 FORBIDDEN** with exact error code `MODULE_DISABLED_FOR_DEVICE`, proving that frontend hiding is backed by rigid server authorization.
+
+---
+
+## 11. Phase 7 Requirements (Next Milestone)
+
+Upon approval of Phase 6, development will proceed to **Phase 7: ESP32 Base Firmware Core**:
+- Base embedded C/C++ firmware foundation for ESP32 (ESP-IDF v5.x / PlatformIO with FreeRTOS).
+- Hardware abstraction layer for Wi-Fi and peripheral buses.
+- Non-Volatile Storage (NVS) manager for cryptographic device identity and offline state.
+- Secure TLS 1.3 client and resilient MQTT connectivity with exponential backoff.
+- Multi-task FreeRTOS architecture cleanly isolating the networking stack from real-time hardware I/O.
 
 ---
 *Multi-Tenant Cloud IoT Platform — Engineered for Industrial Commercial Deployment*
+

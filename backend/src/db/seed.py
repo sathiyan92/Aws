@@ -335,6 +335,82 @@ def seed_database(db: Session) -> None:
 
     print("  [✓] RFID Terminal seeded: RFID-000001")
 
+    # 7b. Seed Second Tenant (Metro Retail Networks) for Multi-Tenant Isolation Testing
+    metro_client = db.query(Client).filter_by(client_code="CLIENT_METRO").first()
+    if not metro_client:
+        metro_client = Client(
+            client_code="CLIENT_METRO",
+            name="Metro Retail Networks Pvt Ltd",
+            contact_email="fleet@metroretail.local",
+            contact_phone="+91-9876500000",
+            status="ACTIVE",
+            address="7th Floor, Metro Mall, Mumbai, Maharashtra, India",
+        )
+        db.add(metro_client)
+        db.flush()
+
+        metro_admin = User(
+            client_id=metro_client.id,
+            username="metro_admin",
+            email="admin@metroretail.local",
+            password_hash=hash_password("Metro@Retail2026!"),
+            full_name="Karan Malhotra (Metro Ops)",
+            role="CLIENT_ADMIN",
+            status="ACTIVE",
+        )
+        db.add(metro_admin)
+        db.flush()
+
+        # Seed VM-000004 for Metro Retail
+        vm4 = Device(
+            device_id="VM-000004",
+            client_id=metro_client.id,
+            device_type_id=vending_type.id,
+            hardware_id="ESP32-VM-PROD-000004",
+            chip_id="ESP32S3-D804",
+            mac_address="30:AE:A4:07:00:04",
+            factory_serial="SN-2026-VM-0004",
+            status="ACTIVE",
+            is_online=True,
+            current_firmware_version="v1.0.0",
+            current_config_version=1,
+        )
+        db.add(vm4)
+        db.flush()
+        db.add(DeviceModule(device_id=vm4.id, module_code="QR_PAYMENT", is_enabled=True))
+        db.add(DeviceModule(device_id=vm4.id, module_code="COIN_PAYMENT", is_enabled=True))
+        db.add(DeviceModule(device_id=vm4.id, module_code="RFID_ACCESS", is_enabled=False))
+        db.add(DeviceCredential(
+            device_id=vm4.id,
+            auth_type="TOKEN",
+            token_hash=hashlib.sha256("dev_token_VM-000004".encode()).hexdigest(),
+        ))
+
+        # Seed RFID-000002 for Metro Retail
+        rfid2 = Device(
+            device_id="RFID-000002",
+            client_id=metro_client.id,
+            device_type_id=rfid_type.id,
+            hardware_id="ESP32-RFID-PROD-000002",
+            chip_id="ESP32S3-R802",
+            mac_address="30:AE:A4:08:00:02",
+            factory_serial="SN-2026-RFID-0002",
+            status="ACTIVE",
+            is_online=True,
+            current_firmware_version="v1.0.0",
+            current_config_version=1,
+        )
+        db.add(rfid2)
+        db.flush()
+        db.add(DeviceModule(device_id=rfid2.id, module_code="RFID_ACCESS", is_enabled=True))
+        db.add(DeviceModule(device_id=rfid2.id, module_code="OFFLINE_SYNC", is_enabled=True))
+        db.add(DeviceCredential(
+            device_id=rfid2.id,
+            auth_type="TOKEN",
+            token_hash=hashlib.sha256("dev_token_RFID-000002".encode()).hexdigest(),
+        ))
+        print("  [✓] Second Tenant seeded: Metro Retail Networks (VM-000004, RFID-000002)")
+
     # 8. Seed Employees and RFID Cards (Demonstrating card lifecycle & replacement lineage)
     emp1 = db.query(Employee).filter_by(client_id=demo_client.id, employee_code="EMP001").first()
     if not emp1:

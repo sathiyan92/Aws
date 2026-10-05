@@ -23,6 +23,8 @@ from src.api.v1.auth.routes import router as auth_router
 from src.api.v1.devices.routes import router as device_router
 from src.api.v1.clients.routes import router as client_router
 from src.api.v1.audit.routes import router as audit_router
+from src.api.v1.vending.routes import router as vending_router
+from src.api.v1.rfid.routes import router as rfid_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -56,6 +58,8 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(device_router, prefix="/api/v1")
 app.include_router(client_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
+app.include_router(vending_router, prefix="/api/v1")
+app.include_router(rfid_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])
@@ -211,3 +215,8 @@ def get_platform_statistics(
 portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/manufacturer-portal"))
 if os.path.exists(portal_dir):
     app.mount("/portal", StaticFiles(directory=portal_dir, html=True), name="manufacturer_portal")
+
+# Mount static directory for Client Tenant Portal UI if directory exists
+client_portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/client-portal"))
+if os.path.exists(client_portal_dir):
+    app.mount("/client-portal", StaticFiles(directory=client_portal_dir, html=True), name="client_portal")
