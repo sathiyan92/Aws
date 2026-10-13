@@ -118,3 +118,58 @@ def test_audit_logs_unauthorized_for_client_admin():
     )
     assert r_denied.status_code == 403
     assert r_denied.json()["error_code"] == "FORBIDDEN_ACCESS"
+
+
+def test_manufacturer_portal_edit_and_delete_device():
+    """Verify portal hardware update, deletion, and resultant audit trail."""
+    token = get_mfg_token()
+
+    # Provision a node to test portal lifecycle operations
+    prov_res = client.post(
+        "/api/v1/devices",
+        json={
+            "device_type_code": "VENDING_MACHINE",
+            "hardware_id": "HW-ESP32S3-V1.2",
+            "chip_id": "ESP32-S3-0xPORTALTEST",
+            "mac_address": "3C:84:27:00:11:22",
+            "factory_serial": "MFG-2026-PORTAL-01",
+            "initial_modules": {"QR_PAYMENT": True},
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert prov_res.status_code == 200
+    dev_id = prov_res.json()["device_id"]
+
+    # 1. Edit hardware details
+    edit_res = client.put(
+        f"/api/v1/devices/{dev_id}",
+        json={
+            "hardware_id": "HW-ESP32S3-V2.1-REVISION",
+            "status": "MAINTENANCE",
+            "current_firmware_version": "v2.0.1",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert edit_res.status_code == 200
+    assert edit_res.json()["hardware_id"] == "HW-ESP32S3-V2.1-REVISION"
+    assert edit_res.json()["status"] == "MAINTENANCE"
+    assert edit_res.json()["current_firmware_version"] == "v2.0.1"
+
+    # 2. Delete device
+    del_res = client.delete(
+        f"/api/v1/devices/{dev_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "deleted"
+
+    # 3. Check audit trail recorded DEVICE_HARDWARE_UPDATED and DEVICE_DELETED
+    audit_res = client.get(
+        "/api/v1/audit-logs?limit=5",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert audit_res.status_code == 200
+    actions = [log["action"] for log in audit_res.json()["logs"]]
+    assert "DEVICE_DELETED" in actions
+    assert "DEVICE_HARDWARE_UPDATED" in actions
+

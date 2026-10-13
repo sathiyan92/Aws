@@ -3,7 +3,20 @@
  * Dynamic Feature Visibility & Server-Side Security Verification
  */
 
-const API_BASE = '/api/v1';
+function getClientApiBase() {
+    if (window.location.protocol === 'file:') {
+        return "http://localhost:8000/api/v1";
+    }
+    const host = window.location.hostname || "localhost";
+    const port = window.location.port;
+    if (port === "8000" || window.location.pathname.startsWith("/client-portal")) {
+        return "/api/v1";
+    }
+    return `http://${host}:8000/api/v1`;
+}
+
+const API_BASE = getClientApiBase();
+
 
 // Application State
 const state = {
@@ -727,11 +740,25 @@ async function handleSimulateSecurityAttack() {
 // ==============================================================================
 
 async function fetchWithAuth(url, options = {}) {
-    const headers = options.headers || {};
-    if (state.token) {
-        headers['Authorization'] = `Bearer ${state.token}`;
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(state.token ? { 'Authorization': `Bearer ${state.token}` } : {}),
+        ...options.headers,
+    };
+    try {
+        const res = await fetch(url, { ...options, headers });
+        if (res.status === 401) {
+            state.token = null;
+            localStorage.removeItem('iot_client_token');
+            showToast('Session expired. Please log in again.', 'warning');
+            elements.loginModal?.classList.remove('hidden');
+        }
+        return res;
+    } catch (err) {
+        console.error(`[Client API Error] ${url}:`, err);
+        showToast('Network error: Unable to connect to platform API server', 'error');
+        throw err;
     }
-    return fetch(url, { ...options, headers });
 }
 
 function showToast(message, type = 'info') {

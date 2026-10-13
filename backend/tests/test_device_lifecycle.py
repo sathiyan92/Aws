@@ -361,3 +361,89 @@ def test_client_onboarding_and_listing():
     assert "CLIENT_APEX" in codes
     assert "CLIENT_BETA" in codes
     assert "CLIENT_GAMMA" in codes
+
+
+def test_update_device_hardware_details():
+    """Verify manufacturer can edit hardware specs, and non-admin is rejected."""
+    mfg_token = get_token("admin", "Admin@SecurePlatform2026!")
+    apex_token = get_token("apex_admin", "Apex@Admin2026!")
+
+    # 1. Successful update by Manufacturer
+    update_payload = {
+        "hardware_id": "HW-ESP32S3-V2.0-PRO",
+        "current_firmware_version": "v1.5.0",
+        "status": "MAINTENANCE",
+    }
+    resp = client.put(
+        "/api/v1/devices/VM-000001",
+        json=update_payload,
+        headers={"Authorization": f"Bearer {mfg_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["hardware_id"] == "HW-ESP32S3-V2.0-PRO"
+    assert data["current_firmware_version"] == "v1.5.0"
+    assert data["status"] == "MAINTENANCE"
+
+    # 2. Rejection for non-manufacturer user (Client Admin)
+    client_attempt = client.put(
+        "/api/v1/devices/VM-000001",
+        json={"hardware_id": "HW-HACKED"},
+        headers={"Authorization": f"Bearer {apex_token}"},
+    )
+    assert client_attempt.status_code == 403
+
+    # 3. Conflict rejection when duplicate chip_id is set
+    conflict_attempt = client.put(
+        "/api/v1/devices/VM-000001",
+        json={"chip_id": "ESP32-S3-0x99BETA"},  # Belongs to VM-000099
+        headers={"Authorization": f"Bearer {mfg_token}"},
+    )
+    assert conflict_attempt.status_code == 400
+    assert "already registered" in conflict_attempt.json()["message"]
+
+
+def test_delete_device_and_cascade():
+    """Verify manufacturer can delete a device, and deleted device is no longer found."""
+    mfg_token = get_token("admin", "Admin@SecurePlatform2026!")
+    apex_token = get_token("apex_admin", "Apex@Admin2026!")
+
+    # 1. Provision a disposable device
+    prov_resp = client.post(
+        "/api/v1/devices",
+        json={
+            "device_type_code": "VENDING_MACHINE",
+            "hardware_id": "HW-ESP32-TEMP",
+            "chip_id": "ESP32-S3-0xDISPOSE",
+            "mac_address": "3C:84:27:DD:EE:FF",
+            "factory_serial": "MFG-2026-DISP-001",
+            "initial_modules": {"QR_PAYMENT": True},
+        },
+        headers={"Authorization": f"Bearer {mfg_token}"},
+    )
+    assert prov_resp.status_code == 200
+    disp_id = prov_resp.json()["device_id"]
+
+    # 2. Rejection for Client Admin trying to delete
+    del_forbidden = client.delete(
+        f"/api/v1/devices/{disp_id}",
+        headers={"Authorization": f"Bearer {apex_token}"},
+    )
+    assert del_forbidden.status_code == 403
+
+    # 3. Successful deletion by Manufacturer
+    del_resp = client.delete(
+        f"/api/v1/devices/{disp_id}",
+        headers={"Authorization": f"Bearer {mfg_token}"},
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "deleted"
+    assert del_resp.json()["device_id"] == disp_id
+
+    # 4. Confirm it is gone
+    get_resp = client.get(
+        f"/api/v1/devices/{disp_id}",
+        headers={"Authorization": f"Bearer {mfg_token}"},
+    )
+    assert get_resp.status_code == 404
+

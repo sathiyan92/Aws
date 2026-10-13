@@ -21,6 +21,8 @@ from src.api.v1.devices.schemas import (
     DeviceListResponse,
     DeviceTypeResponse,
     DeviceModuleSchema,
+    DeviceUpdateHardwareRequest,
+    DeviceDeleteResponse,
 )
 
 router = APIRouter(prefix="/devices", tags=["Device Fleet Management"])
@@ -55,6 +57,7 @@ def serialize_device(device: Device) -> DeviceResponse:
         created_at=device.created_at,
         modules=modules_list,
         credential_auth_type=device.credentials.auth_type if device.credentials else None,
+        provisioning_token=getattr(device, "provisioning_token", None),
     )
 
 
@@ -98,6 +101,7 @@ def register_device(
         initial_modules=payload.initial_modules,
         client_id=payload.client_id,
         actor_user=context.user,
+        device_token=payload.device_token,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -202,3 +206,71 @@ def toggle_module(
         context=context,
     )
     return serialize_device(device)
+
+
+@router.put("/{device_id}", response_model=DeviceResponse)
+def update_device_hardware_details(
+    device_id: str,
+    payload: DeviceUpdateHardwareRequest,
+    request: Request,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """
+    [Manufacturer Only] Update physical hardware details, board revision, MAC address,
+    chip ID, factory serial, firmware version, or operational status.
+    """
+    device = device_service.update_device_hardware(
+        db=db,
+        device_id=device_id,
+        hardware_id=payload.hardware_id,
+        chip_id=payload.chip_id,
+        mac_address=payload.mac_address,
+        factory_serial=payload.factory_serial,
+        status=payload.status,
+        current_firmware_version=payload.current_firmware_version,
+        actor_user=context.user,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return serialize_device(device)
+
+
+@router.patch("/{device_id}", response_model=DeviceResponse)
+def patch_device_hardware_details(
+    device_id: str,
+    payload: DeviceUpdateHardwareRequest,
+    request: Request,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """[Manufacturer Only] Partial update for hardware details (alias for PUT)."""
+    return update_device_hardware_details(
+        device_id=device_id,
+        payload=payload,
+        request=request,
+        context=context,
+        db=db,
+    )
+
+
+@router.delete("/{device_id}", response_model=DeviceDeleteResponse)
+def delete_device(
+    device_id: str,
+    request: Request,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """
+    [Manufacturer Only] Permanently delete a physical device and cascades all credentials,
+    modules, slot mappings, and configurations.
+    """
+    res = device_service.delete_device(
+        db=db,
+        device_id=device_id,
+        actor_user=context.user,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return DeviceDeleteResponse(**res)
+

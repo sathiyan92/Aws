@@ -524,6 +524,46 @@ body {
     font-size: 0.75rem;
 }
 
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-outline-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-outline-danger:hover {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.btn-outline-primary {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.btn-outline-primary:hover {
+    background: rgba(59, 130, 246, 0.22);
+    border-color: rgba(59, 130, 246, 0.5);
+}
+
+.actions-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: nowrap;
+}
+
+
 .input-field {
     background: rgba(14, 21, 38, 0.8);
     border: 1px solid var(--border-subtle);

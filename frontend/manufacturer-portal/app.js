@@ -3,9 +3,19 @@
  * Multi-Tenant Cloud IoT Platform for Vending and RFID Systems
  */
 
-const API_BASE = window.location.origin.includes(":8000") 
-    ? `${window.location.origin}/api/v1`
-    : "http://localhost:8000/api/v1";
+function getApiBase() {
+    if (window.location.protocol === "file:") {
+        return "http://localhost:8000/api/v1";
+    }
+    const host = window.location.hostname || "localhost";
+    const port = window.location.port;
+    if (port === "8000" || window.location.pathname.startsWith("/portal")) {
+        return `${window.location.origin}/api/v1`;
+    }
+    return `http://${host}:8000/api/v1`;
+}
+
+const API_BASE = getApiBase();
 
 // Application State
 const state = {
@@ -15,6 +25,8 @@ const state = {
     clients: [],
     devices: [],
     auditLogs: [],
+    firmwares: [],
+    deployments: [],
     activeTab: "overview",
 };
 
@@ -61,6 +73,7 @@ function switchTab(tabName) {
         devices: "All Connected Hardware",
         vending: "Vending Fleet & Modules",
         rfid: "RFID Attendance Fleet",
+        firmware: "Firmware Artifacts & OTA Distribution Hub",
         audit: "System Security & Audit Trail",
     };
     document.getElementById("pageTitle").textContent = titleMap[tabName] || "Manufacturer Portal";
@@ -69,6 +82,7 @@ function switchTab(tabName) {
     if (tabName === "devices") renderDevicesTable();
     if (tabName === "vending") renderDevicesTable("VENDING_MACHINE");
     if (tabName === "rfid") renderDevicesTable("RFID_ATTENDANCE");
+    if (tabName === "firmware") renderFirmwareTab();
     if (tabName === "audit") renderAuditTable();
 }
 
@@ -93,14 +107,37 @@ async function apiRequest(endpoint, options = {}) {
             throw new Error("Session expired. Please log in again.");
         }
 
-        const data = await response.json();
+        const text = await response.text();
+        let data = {};
+        if (text) {
+            try {
+                data = JSON.parse(text);
+            } catch (jsonErr) {
+                data = { raw: text };
+            }
+        }
+
         if (!response.ok) {
-            const msg = data.detail?.message || data.detail || "API request failed";
+            let msg = "API request failed";
+            if (data && data.detail) {
+                if (typeof data.detail === "string") {
+                    msg = data.detail;
+                } else if (Array.isArray(data.detail)) {
+                    msg = data.detail.map(d => d.msg || JSON.stringify(d)).join(", ");
+                } else if (typeof data.detail === "object") {
+                    msg = data.detail.message || JSON.stringify(data.detail);
+                }
+            } else if (data && data.message) {
+                msg = data.message;
+            } else if (response.statusText) {
+                msg = `HTTP ${response.status}: ${response.statusText}`;
+            }
             throw new Error(msg);
         }
         return data;
     } catch (err) {
-        showToast(err.message, "danger");
+        console.error(`[API Error] ${endpoint}:`, err);
+        showToast(err.message || "Network error: Unable to connect to server", "danger");
         throw err;
     }
 }
@@ -113,6 +150,8 @@ async function bootstrapPortal() {
             loadClients(),
             loadDevices(),
             loadAuditLogs(),
+            loadFirmwareVersions(),
+            loadOTADeployments(),
         ]);
         renderOverview();
         switchTab(state.activeTab);
@@ -138,6 +177,39 @@ async function loadDevices() {
 async function loadAuditLogs() {
     const res = await apiRequest("/audit-logs?limit=50");
     state.auditLogs = res.logs || [];
+}
+
+async function loadFirmwareVersions() {
+    try {
+        const res = await apiRequest("/ota/firmware");
+        state.firmwares = res.firmware_versions || [];
+        const countEl = document.getElementById("statFwCount");
+        if (countEl) countEl.textContent = state.firmwares.length;
+    } catch (e) {
+        console.warn("Could not load firmware catalog:", e);
+    }
+}
+
+async function loadOTADeployments() {
+    try {
+        const res = await apiRequest("/ota/deployments");
+        state.deployments = res.deployments || [];
+        const pendingEl = document.getElementById("statPendingDeployments");
+        const successEl = document.getElementById("statSuccessDeployments");
+        if (pendingEl) {
+            const pendingCount = state.deployments.filter(d => d.deployment_status === "PENDING" || d.deployment_status === "DOWNLOADING").length;
+            pendingEl.textContent = pendingCount;
+        }
+        if (successEl) {
+            const successCount = state.deployments.filter(d => d.deployment_status === "SUCCESS").length;
+            successEl.textContent = successCount;
+        }
+        if (state.activeTab === "firmware") {
+            renderDeploymentsTable();
+        }
+    } catch (e) {
+        console.warn("Could not load OTA deployments:", e);
+    }
 }
 
 // ==============================================================================
@@ -266,7 +338,12 @@ function renderDevicesTable(filterType = null) {
                     `}
                 </td>
                 <td>
-                    <button class="btn btn-secondary btn-sm" onclick="openAssignModal('${d.id}', '${d.device_id}', '${d.client_id || ''}')">Assign</button>
+                    <div class="actions-cell">
+                        <button class="btn btn-outline-primary btn-sm" title="Push OTA Firmware to this device" onclick="openPushOTAModal('${d.id}', '${d.device_id}')">🚀 OTA</button>
+                        <button class="btn btn-secondary btn-sm" title="Assign Tenant" onclick="openAssignModal('${d.id}', '${d.device_id}', '${d.client_id || ''}')">Assign</button>
+                        <button class="btn btn-outline-primary btn-sm" title="Edit Hardware Details" onclick="openEditHardwareModal('${d.id}')">✏️ Edit</button>
+                        <button class="btn btn-outline-danger btn-sm" title="Permanently Delete Device" onclick="openDeleteDeviceModal('${d.id}', '${d.device_id}')">🗑️</button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -294,6 +371,96 @@ function renderAuditTable() {
             <td style="font-size:0.75rem; color:var(--text-muted);">${a.ip_address || 'local'}</td>
         </tr>
     `).join("");
+}
+
+function renderFirmwareTab() {
+    // Populate quick target device dropdown
+    const quickSelect = document.getElementById("quickTargetDevice");
+    if (quickSelect) {
+        quickSelect.innerHTML = `<option value="">-- Choose Target ESP32 --</option>` +
+            state.devices.map(d => `
+                <option value="${d.device_id}">
+                    ${d.device_id} - ${d.client_name || 'Inventory Node'} (${d.current_firmware_version || 'v1.0.0'})
+                </option>
+            `).join("");
+    }
+    renderFirmwareTable();
+    renderDeploymentsTable();
+}
+
+function renderFirmwareTable() {
+    const tbody = document.getElementById("firmwareTableBody");
+    if (!tbody) return;
+
+    if (!state.firmwares.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:2.5rem; color:var(--text-secondary);">
+            <div style="font-size:1.5rem; margin-bottom:0.5rem;">📦</div>
+            <div>No firmware binaries uploaded yet.</div>
+            <button class="btn btn-primary btn-sm" style="margin-top:0.75rem;" onclick="openUploadFirmwareModal()">+ Upload Your First ESP32 Build</button>
+        </td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = state.firmwares.map(f => `
+        <tr>
+            <td>
+                <strong style="color:var(--primary); font-family:'JetBrains Mono'; font-size:0.95rem;">${f.version_string}</strong>
+                ${f.changelog ? `<div style="font-size:0.7rem; color:var(--text-secondary); margin-top:2px;">${f.changelog}</div>` : ''}
+            </td>
+            <td><span class="mono-text">${f.hardware_revision}</span></td>
+            <td><span class="badge ${f.device_type_code === 'VENDING_MACHINE' ? 'badge-module on' : 'badge-online'}">${f.device_type_code}</span></td>
+            <td style="font-weight:600;">${formatBytes(f.file_size_bytes)}</td>
+            <td>
+                <span class="mono-text" style="font-size:0.75rem; color:var(--text-secondary); background:rgba(255,255,255,0.03); padding:2px 6px; border-radius:4px;" title="Full SHA-256: ${f.sha256_checksum}">
+                    ${f.sha256_checksum.substring(0, 16)}...
+                </span>
+            </td>
+            <td style="font-size:0.75rem; color:var(--text-muted);">${formatDate(f.created_at)}</td>
+            <td>
+                <div class="actions-cell">
+                    <button class="btn btn-primary btn-sm" onclick="openDeployCatalogVersionModal('${f.id}', '${f.version_string}')" title="Deploy to an ESP32">🚀 Deploy</button>
+                    <a href="${f.binary_url}" download class="btn btn-secondary btn-sm" title="Direct download .bin file" target="_blank">⬇️ .bin</a>
+                </div>
+            </td>
+        </tr>
+    `).join("");
+}
+
+function renderDeploymentsTable() {
+    const tbody = document.getElementById("deploymentsTableBody");
+    if (!tbody) return;
+
+    if (!state.deployments.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-secondary);">No OTA deployments in history.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = state.deployments.map(d => {
+        let badgeClass = "badge";
+        let statusBadge = d.deployment_status;
+        if (d.deployment_status === "SUCCESS") badgeClass = "badge-online";
+        else if (d.deployment_status === "FAILED") badgeClass = "badge-offline";
+        else if (d.deployment_status === "DOWNLOADING") badgeClass = "badge-module on";
+        else if (d.deployment_status === "PENDING") badgeClass = "badge-module";
+
+        return `
+            <tr>
+                <td class="mono-text" style="font-weight:700; color:var(--primary); font-size:0.9rem;">${d.device_code}</td>
+                <td><strong style="font-family:'JetBrains Mono';">${d.version_string}</strong></td>
+                <td>
+                    <span class="badge ${badgeClass}">
+                        ${d.deployment_status === 'DOWNLOADING' || d.deployment_status === 'PENDING' ? '<span class="badge-pulse"></span>' : ''}
+                        ${statusBadge}
+                    </span>
+                </td>
+                <td style="font-size:0.75rem; color:var(--text-muted);">${formatDate(d.started_at || d.created_at)}</td>
+                <td style="font-size:0.75rem; color:var(--text-muted);">${formatDate(d.completed_at)}</td>
+                <td style="font-size:0.8rem; color:${d.error_message ? 'var(--danger)' : 'var(--text-secondary)'};">
+                    ${d.error_message ? `⚠️ ${d.error_message}` : (d.deployment_status === 'SUCCESS' ? '✓ Verified in flash & active' : 'Waiting for ESP32 handshake cycle...')}
+                </td>
+            </tr>
+        `;
+    }).join("");
 }
 
 // ==============================================================================
@@ -354,6 +521,7 @@ function initModals() {
         const mac = document.getElementById("provMac").value;
         const chip = document.getElementById("provChip").value;
         const serial = document.getElementById("provSerial").value;
+        const token = document.getElementById("provToken")?.value?.trim() || null;
         const qrOn = document.getElementById("provModQR").checked;
         const coinOn = document.getElementById("provModCoin").checked;
 
@@ -366,6 +534,7 @@ function initModals() {
                     chip_id: chip,
                     mac_address: mac,
                     factory_serial: serial,
+                    device_token: token,
                     initial_modules: {
                         "QR_PAYMENT": qrOn,
                         "COIN_PAYMENT": coinOn,
@@ -375,6 +544,16 @@ function initModals() {
             });
             closeModal("modalProvision");
             showToast(`Hardware registered successfully! Device ID: ${res.device_id}`, "success");
+            
+            // If provisioning token returned, show credentials modal
+            if (res.provisioning_token) {
+                document.getElementById("credDeviceId").value = res.device_id;
+                document.getElementById("credMac").value = res.mac_address;
+                document.getElementById("credChip").value = res.chip_id;
+                document.getElementById("credToken").value = res.provisioning_token;
+                openModal("modalDeviceCredentials");
+            }
+
             await loadDevices();
             await loadStats();
             renderOverview();
@@ -430,7 +609,209 @@ function initModals() {
             renderDevicesTable();
         } catch (err) {}
     });
+
+    // Edit Hardware Details Form Submit
+    document.getElementById("editHardwareForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const devId = document.getElementById("editHardwareDeviceId").value;
+        const hwRevision = document.getElementById("editHardwareRevision").value.trim();
+        const status = document.getElementById("editHardwareStatus").value;
+        const mac = document.getElementById("editHardwareMac").value.trim();
+        const chip = document.getElementById("editHardwareChip").value.trim();
+        const serial = document.getElementById("editHardwareSerial").value.trim();
+        const fw = document.getElementById("editHardwareFirmware").value.trim();
+
+        try {
+            const res = await apiRequest(`/devices/${devId}`, {
+                method: "PUT",
+                body: JSON.stringify({
+                    hardware_id: hwRevision,
+                    status: status,
+                    mac_address: mac,
+                    chip_id: chip,
+                    factory_serial: serial,
+                    current_firmware_version: fw,
+                }),
+            });
+            closeModal("modalEditHardware");
+            showToast(`Hardware specs for ${res.device_id} updated successfully!`, "success");
+            await loadDevices();
+            await loadStats();
+            renderOverview();
+            renderDevicesTable(state.activeTab === "vending" ? "VENDING_MACHINE" : state.activeTab === "rfid" ? "RFID_ATTENDANCE" : null);
+        } catch (err) {}
+    });
+
+    // Delete Device Form Submit
+    document.getElementById("deleteDeviceForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const devId = document.getElementById("deleteTargetDeviceId").value;
+
+        try {
+            const res = await apiRequest(`/devices/${devId}`, {
+                method: "DELETE",
+            });
+            closeModal("modalDeleteDevice");
+            showToast(`Device ${res.device_id} permanently deleted.`, "success");
+            await loadDevices();
+            await loadClients();
+            await loadStats();
+            renderOverview();
+            renderDevicesTable(state.activeTab === "vending" ? "VENDING_MACHINE" : state.activeTab === "rfid" ? "RFID_ATTENDANCE" : null);
+        } catch (err) {}
+    });
+
+    // Quick Push Code to Target ESP32 Submit
+    document.getElementById("quickPushForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const targetDeviceId = document.getElementById("quickTargetDevice").value;
+        const fileInput = document.getElementById("quickBinFile");
+        const version = document.getElementById("quickVersion").value.trim();
+        const submitBtn = document.getElementById("btnQuickPush");
+
+        if (!targetDeviceId) {
+            showToast("Please select a target ESP32 device first", "danger");
+            return;
+        }
+        if (!fileInput.files || !fileInput.files[0]) {
+            showToast("Please choose a compiled .bin file from your laptop", "danger");
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const targetDev = state.devices.find(d => d.device_id === targetDeviceId || d.id === targetDeviceId);
+        const devTypeCode = targetDev ? targetDev.device_type_code : "VENDING_MACHINE";
+        const hwRev = targetDev?.hardware_id || "HW-ESP32S3-V1.2";
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = "⏳ Uploading & Pushing...";
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("version_string", version);
+        formData.append("hardware_revision", hwRev);
+        formData.append("device_type_code", devTypeCode);
+        formData.append("target_device_id", targetDeviceId);
+        formData.append("changelog", "Wireless update from laptop portal");
+
+        try {
+            const response = await fetch(`${API_BASE}/ota/firmware/upload`, {
+                method: "POST",
+                headers: {
+                    ...(state.token ? { "Authorization": `Bearer ${state.token}` } : {})
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.detail || `Upload failed with status ${response.status}`);
+            }
+
+            const fw = await response.json();
+            showToast(`🚀 Pushed ${fw.version_string} to ESP32 (${targetDeviceId})! The board will update on its next check.`, "success");
+            fileInput.value = "";
+            await loadFirmwareVersions();
+            await loadOTADeployments();
+            renderFirmwareTab();
+        } catch (err) {
+            showToast(err.message || "Failed to push code to ESP32", "danger");
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = "🚀 Push to ESP32";
+            }
+        }
+    });
+
+    // Upload Firmware Binary Form Submit
+    document.getElementById("uploadFirmwareForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fileInput = document.getElementById("fwBinaryFile");
+        if (!fileInput.files || !fileInput.files[0]) {
+            showToast("Please select a .bin firmware file", "danger");
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const version = document.getElementById("fwVersionString").value.trim();
+        const hwRevision = document.getElementById("fwHardwareRevision").value.trim();
+        const devType = document.getElementById("fwDeviceTypeCode").value;
+        const targetDeviceId = document.getElementById("fwTargetDeviceSelect").value || null;
+        const changelog = document.getElementById("fwChangelog").value.trim();
+
+        const statusEl = document.getElementById("fwUploadStatus");
+        const submitBtn = document.getElementById("btnSubmitUploadFw");
+        if (statusEl) statusEl.style.display = "block";
+        if (submitBtn) submitBtn.disabled = true;
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("version_string", version);
+        formData.append("hardware_revision", hwRevision);
+        formData.append("device_type_code", devType);
+        if (changelog) formData.append("changelog", changelog);
+        if (targetDeviceId) formData.append("target_device_id", targetDeviceId);
+
+        try {
+            const response = await fetch(`${API_BASE}/ota/firmware/upload`, {
+                method: "POST",
+                headers: {
+                    ...(state.token ? { "Authorization": `Bearer ${state.token}` } : {})
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.detail || `Upload failed with status ${response.status}`);
+            }
+
+            const fw = await response.json();
+            closeModal("modalUploadFirmware");
+            const targetMsg = targetDeviceId ? ` and queued for deployment to ${targetDeviceId}` : "";
+            showToast(`Firmware ${fw.version_string} uploaded successfully${targetMsg}!`, "success");
+
+            await loadFirmwareVersions();
+            await loadOTADeployments();
+            renderFirmwareTab();
+        } catch (err) {
+            showToast(err.message || "Failed to upload firmware binary", "danger");
+        } finally {
+            if (statusEl) statusEl.style.display = "none";
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    });
+
+    // Push OTA Form Submit
+    document.getElementById("pushOTAForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const devId = document.getElementById("pushTargetDeviceId").value;
+        const fwVersionId = document.getElementById("pushFirmwareVersionSelect").value;
+        const submitBtn = document.getElementById("btnSubmitPushOTA");
+        if (submitBtn) submitBtn.disabled = true;
+
+        try {
+            const res = await apiRequest("/ota/deploy", {
+                method: "POST",
+                body: JSON.stringify({
+                    device_id: devId,
+                    firmware_version_id: fwVersionId,
+                }),
+            });
+            closeModal("modalPushOTA");
+            showToast(`OTA deployment queued for device ${res.device_code}! It will update on its next check.`, "success");
+            await loadOTADeployments();
+            if (state.activeTab === "firmware") renderDeploymentsTable();
+        } catch (err) {
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    });
 }
+
 
 async function handleLoginSubmit() {
     const u = document.getElementById("loginUsername").value;
@@ -500,6 +881,99 @@ function openAssignModal(deviceId, deviceCode, currentClientId) {
 
     openModal("modalAssign");
 }
+
+function openEditHardwareModal(deviceId) {
+    const d = state.devices.find(item => item.id === deviceId || item.device_id === deviceId);
+    if (!d) {
+        showToast("Device details not found in local fleet cache", "danger");
+        return;
+    }
+
+    document.getElementById("editHardwareDeviceId").value = d.id;
+    document.getElementById("editHardwareDevId").value = d.device_id;
+    document.getElementById("editHardwareRevision").value = d.hardware_id || "HW-ESP32S3-V1.2";
+    document.getElementById("editHardwareStatus").value = d.status || "PROVISIONED";
+    document.getElementById("editHardwareMac").value = d.mac_address || "";
+    document.getElementById("editHardwareChip").value = d.chip_id || "";
+    document.getElementById("editHardwareSerial").value = d.factory_serial || "";
+    document.getElementById("editHardwareFirmware").value = d.current_firmware_version || "v1.0.0";
+
+    openModal("modalEditHardware");
+}
+
+function openDeleteDeviceModal(deviceId, deviceCode) {
+    document.getElementById("deleteTargetDeviceId").value = deviceId;
+    document.getElementById("deleteTargetDeviceLabel").textContent = deviceCode;
+    openModal("modalDeleteDevice");
+}
+
+function openUploadFirmwareModal(targetDeviceId = null) {
+    const select = document.getElementById("fwTargetDeviceSelect");
+    if (select) {
+        select.innerHTML = `<option value="">-- Catalog Only (No instant push) --</option>` +
+            state.devices.map(d => `
+                <option value="${d.device_id}" ${targetDeviceId && (d.id === targetDeviceId || d.device_id === targetDeviceId) ? 'selected' : ''}>
+                    ${d.device_id} - ${d.client_name || 'Inventory Node'} (${d.current_firmware_version || 'v1.0.0'})
+                </option>
+            `).join("");
+    }
+
+    const fileInput = document.getElementById("fwBinaryFile");
+    if (fileInput) fileInput.value = "";
+    const verInput = document.getElementById("fwVersionString");
+    if (verInput) verInput.value = "";
+    const changeInput = document.getElementById("fwChangelog");
+    if (changeInput) changeInput.value = "";
+
+    openModal("modalUploadFirmware");
+}
+
+function openPushOTAModal(deviceId, deviceCode) {
+    const d = state.devices.find(item => item.id === deviceId || item.device_id === deviceId);
+    document.getElementById("pushTargetDeviceId").value = deviceId;
+    document.getElementById("pushTargetDeviceCodeDisplay").textContent = deviceCode || d?.device_id || "ESP32";
+    document.getElementById("pushTargetDeviceNameDisplay").textContent = d ? `${d.client_name || 'Inventory Node'} | Current: ${d.current_firmware_version || 'v1.0.0'}` : "";
+
+    const select = document.getElementById("pushFirmwareVersionSelect");
+    if (!state.firmwares.length) {
+        select.innerHTML = `<option value="">No firmware builds cataloged yet. Upload a .bin build first.</option>`;
+    } else {
+        select.innerHTML = state.firmwares.map(f => `
+            <option value="${f.id}">
+                ${f.version_string} (${f.hardware_revision} - ${formatBytes(f.file_size_bytes)}) - Uploaded ${formatDate(f.created_at)}
+            </option>
+        `).join("");
+    }
+
+    openModal("modalPushOTA");
+}
+
+function openDeployCatalogVersionModal(firmwareVersionId, versionString) {
+    const targetDevId = prompt(`Enter Device ID to push firmware ${versionString} to (e.g. VM-000001):`);
+    if (!targetDevId || !targetDevId.trim()) return;
+
+    apiRequest("/ota/deploy", {
+        method: "POST",
+        body: JSON.stringify({
+            device_id: targetDevId.trim(),
+            firmware_version_id: firmwareVersionId,
+        })
+    }).then(res => {
+        showToast(`OTA update ${versionString} queued for ${res.device_code}!`, "success");
+        loadOTADeployments().then(() => renderDeploymentsTable());
+    }).catch(err => {
+        showToast(err.message || "Failed to trigger deployment", "danger");
+    });
+}
+
+function formatBytes(bytes) {
+    if (!bytes) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
 
 function updateUserUI() {
     if (state.user) {

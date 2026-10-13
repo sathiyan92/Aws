@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manufacturer Operations Portal | Multi-Tenant IoT Fleet</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2.2">
 </head>
 <body>
     <!-- Ambient Background Glows -->
@@ -44,6 +44,10 @@
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2"></path></svg>
                     <span>RFID Terminals</span>
                 </a>
+                <a class="nav-item" data-tab="firmware">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    <span>Firmware & OTA</span>
+                </a>
 
                 <span class="nav-section-title">Compliance & Security</span>
                 <a class="nav-item" data-tab="audit">
@@ -80,6 +84,9 @@
                     </button>
                     <button class="btn btn-secondary btn-sm" onclick="openCreateClientModal()">
                         + Onboard Client
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="openUploadFirmwareModal()">
+                        🚀 Upload & Push OTA
                     </button>
                     <button class="btn btn-primary btn-sm" onclick="openProvisionModal()">
                         ⚡ Register Hardware
@@ -343,6 +350,140 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- ==========================================
+                     TAB: FIRMWARE & OTA MANAGEMENT
+                     ========================================== -->
+                <section id="tab-firmware" class="tab-pane">
+                    <!-- Stats Grid for Firmware -->
+                    <div class="stats-grid" style="margin-bottom: 1.5rem;">
+                        <div class="stat-card">
+                            <div class="stat-icon purple">💾</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statFwCount">—</div>
+                                <div class="stat-label">Cataloged Firmware Builds</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon blue">📡</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statPendingDeployments" style="color:var(--primary);">—</div>
+                                <div class="stat-label">Pending / In-Flight OTA Jobs</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon green">⚡</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statSuccessDeployments" style="color:var(--success);">—</div>
+                                <div class="stat-label">Successful Flashes</div>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="display:flex; align-items:center; justify-content:center; cursor:pointer; background:rgba(59, 130, 246, 0.08); border-color:var(--border-accent);" onclick="openUploadFirmwareModal()">
+                            <div style="text-align:center;">
+                                <div style="font-size:1.5rem; margin-bottom:0.25rem;">🚀</div>
+                                <div style="font-weight:700; color:var(--primary); font-size:0.9rem;">+ Upload New .bin</div>
+                                <div style="font-size:0.75rem; color:var(--text-secondary);">Direct Cloud-to-ESP32 Push</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Push Card: Select Device & Upload .bin from Laptop -->
+                    <div class="card-panel" style="margin-bottom: 2rem; border-color: rgba(59, 130, 246, 0.35); background: linear-gradient(180deg, rgba(16, 24, 43, 0.95) 0%, rgba(14, 21, 38, 0.9) 100%);">
+                        <div class="panel-header" style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.85rem;">
+                            <div>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem; font-size:1.1rem; color:var(--text-primary);">
+                                    <span style="font-size:1.25rem;">⚡</span> Wireless Code Push from Laptop
+                                </h3>
+                                <p style="color:var(--text-secondary); font-size:0.85rem;">
+                                    Select your ESP32, pick the compiled <code>.bin</code> file from your laptop, and push it directly through the cloud.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form id="quickPushForm" style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr auto; gap: 1rem; align-items: end; padding-top: 1rem;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-weight:600; font-size:0.8rem; color:var(--text-primary);">1. Select Target ESP32</label>
+                                <select class="input-field" id="quickTargetDevice" required style="font-family:'JetBrains Mono'; font-size:0.85rem;">
+                                    <option value="">-- Choose Target ESP32 --</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-weight:600; font-size:0.8rem; color:var(--text-primary);">2. Choose Code File (.bin)</label>
+                                <input type="file" class="input-field" id="quickBinFile" accept=".bin,.elf" required style="padding:0.4rem 0.6rem; cursor:pointer;">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-weight:600; font-size:0.8rem; color:var(--text-primary);">3. Version</label>
+                                <input type="text" class="input-field" id="quickVersion" value="v1.1.0" required style="font-family:'JetBrains Mono';">
+                            </div>
+                            <div>
+                                <button type="submit" class="btn btn-primary" id="btnQuickPush" style="height:42px; white-space:nowrap; padding:0 1.25rem; background:linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); font-weight:700;">
+                                    🚀 Push to ESP32
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Firmware Catalog Panel -->
+                    <div class="card-panel" style="margin-bottom: 2rem;">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Firmware Binary Catalog</h3>
+                                <p>Digitally signed ESP32 binary artifacts compiled from Arduino / PlatformIO</p>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="openUploadFirmwareModal()">
+                                + Upload .bin Artifact
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Version</th>
+                                        <th>Hardware Target</th>
+                                        <th>Device Family</th>
+                                        <th>Binary Size</th>
+                                        <th>SHA-256 Checksum</th>
+                                        <th>Uploaded Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="firmwareTableBody">
+                                    <tr><td colspan="7" style="text-align:center; padding:2rem;">Loading firmware catalog...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Live Deployments Panel -->
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Over-The-Air (OTA) Deployment Stream</h3>
+                                <p>Real-time delivery progress, streaming downloads, and verification across the fleet</p>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" onclick="loadOTADeployments()">
+                                Refresh Deployments
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Target Device</th>
+                                        <th>Firmware Version</th>
+                                        <th>Deployment Status</th>
+                                        <th>Started / Queued</th>
+                                        <th>Completed</th>
+                                        <th>Error / Status Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="deploymentsTableBody">
+                                    <tr><td colspan="6" style="text-align:center; padding:2rem;">Loading deployment records...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
@@ -380,6 +521,11 @@
                         <input type="text" class="input-field" id="provSerial" required>
                     </div>
                     <div class="form-group">
+                        <label>Device Secret Token (Optional)</label>
+                        <input type="text" class="input-field" id="provToken" placeholder="Leave blank to auto-generate (e.g. dev_xxxx)">
+                        <small style="color:var(--text-secondary); font-size:0.75rem;">This token will be burned into the ESP32 code/NVS to authenticate.</small>
+                    </div>
+                    <div class="form-group">
                         <label>Initial Feature Modules</label>
                         <div style="display:flex; gap:1.5rem; margin-top:0.25rem;">
                             <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; cursor:pointer;">
@@ -396,6 +542,40 @@
                     <button type="submit" class="btn btn-primary">Provision Node</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal: Device Credentials Display -->
+    <div id="modalDeviceCredentials" class="modal-overlay">
+        <div class="modal-container" style="max-width:550px;">
+            <div class="modal-header">
+                <h3>🔑 ESP32 Hardware Credentials</h3>
+                <button class="modal-close" onclick="closeModal('modalDeviceCredentials')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;">
+                    Hardware node successfully registered! Copy these credentials directly into your Arduino sketch or NVS flash:
+                </p>
+                <div class="form-group">
+                    <label>Device ID</label>
+                    <input type="text" class="input-field" id="credDeviceId" readonly>
+                </div>
+                <div class="form-group">
+                    <label>MAC Address</label>
+                    <input type="text" class="input-field" id="credMac" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Chip ID</label>
+                    <input type="text" class="input-field" id="credChip" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Secret Provisioning Token (Save this!)</label>
+                    <input type="text" class="input-field" id="credToken" style="font-family:monospace; background:rgba(16,185,129,0.1); color:var(--primary);" readonly>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="closeModal('modalDeviceCredentials')">Done</button>
+            </div>
         </div>
     </div>
 
@@ -465,6 +645,190 @@
         </div>
     </div>
 
+    <!-- Modal: Edit Hardware Details -->
+    <div id="modalEditHardware" class="modal-overlay">
+        <div class="modal-container" style="max-width:560px;">
+            <div class="modal-header">
+                <h3>✏️ Edit Hardware & Device Details</h3>
+                <button class="modal-close" onclick="closeModal('modalEditHardware')">&times;</button>
+            </div>
+            <form id="editHardwareForm">
+                <div class="modal-body">
+                    <input type="hidden" id="editHardwareDeviceId">
+                    <div class="form-group">
+                        <label>Device ID</label>
+                        <input type="text" class="input-field mono-text" id="editHardwareDevId" readonly style="font-weight:700; color:var(--primary); background:rgba(255,255,255,0.03);">
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                        <div class="form-group">
+                            <label>Hardware / PCB Revision</label>
+                            <input type="text" class="input-field" id="editHardwareRevision" placeholder="HW-ESP32S3-V1.2" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Operational Status</label>
+                            <select class="input-field" id="editHardwareStatus" required>
+                                <option value="PROVISIONED">PROVISIONED</option>
+                                <option value="ASSIGNED">ASSIGNED</option>
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="MAINTENANCE">MAINTENANCE</option>
+                                <option value="SUSPENDED">SUSPENDED</option>
+                                <option value="DECOMMISSIONED">DECOMMISSIONED</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                        <div class="form-group">
+                            <label>MAC Address</label>
+                            <input type="text" class="input-field mono-text" id="editHardwareMac" placeholder="3C:84:27:XX:XX:XX" required>
+                        </div>
+                        <div class="form-group">
+                            <label>ESP32 eFuse Chip ID</label>
+                            <input type="text" class="input-field mono-text" id="editHardwareChip" placeholder="ESP32-S3-0xXXXXXX" required>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                        <div class="form-group">
+                            <label>Factory Barcode / Serial</label>
+                            <input type="text" class="input-field" id="editHardwareSerial" placeholder="MFG-2026-ESP-XXXX" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Current Firmware Version</label>
+                            <input type="text" class="input-field" id="editHardwareFirmware" placeholder="v1.0.0" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalEditHardware')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Hardware Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Delete Device Confirmation -->
+    <div id="modalDeleteDevice" class="modal-overlay">
+        <div class="modal-container" style="max-width:480px;">
+            <div class="modal-header" style="border-bottom-color:rgba(239, 68, 68, 0.2);">
+                <h3 style="color:#f87171;">⚠️ Delete Physical Device</h3>
+                <button class="modal-close" onclick="closeModal('modalDeleteDevice')">&times;</button>
+            </div>
+            <form id="deleteDeviceForm">
+                <div class="modal-body">
+                    <input type="hidden" id="deleteTargetDeviceId">
+                    <p style="font-size:0.9rem; line-height:1.6; color:var(--text-primary); margin-bottom:1rem;">
+                        Are you sure you want to permanently delete hardware node <strong id="deleteTargetDeviceLabel" class="mono-text" style="color:#f87171; font-size:1rem;"></strong>?
+                    </p>
+                    <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.25); border-radius:var(--radius-md); padding:0.85rem; font-size:0.8rem; color:#fca5a5; line-height:1.5;">
+                        <strong>Warning:</strong> This will permanently erase the device registration, cryptographic tokens, active configurations, telemetry logs, and slot mapping from the platform. This action cannot be undone.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalDeleteDevice')">Cancel</button>
+                    <button type="submit" class="btn btn-danger">🗑️ Permanently Delete Device</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Modal: Upload Firmware & Push to Target ESP32 -->
+    <div id="modalUploadFirmware" class="modal-overlay">
+        <div class="modal-container" style="max-width:580px;">
+            <div class="modal-header">
+                <h3>🚀 Upload ESP32 Firmware Binary (.bin)</h3>
+                <button class="modal-close" onclick="closeModal('modalUploadFirmware')">&times;</button>
+            </div>
+            <form id="uploadFirmwareForm">
+                <div class="modal-body">
+                    <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem; line-height:1.5;">
+                        Upload a compiled binary (e.g. from Arduino IDE <em>Sketch &gt; Export Compiled Binary</em> or PlatformIO <em>firmware.bin</em>). The platform computes SHA-256 verification and can immediately queue the update to a specific ESP32.
+                    </p>
+
+                    <div class="form-group">
+                        <label>Firmware Binary File (.bin)</label>
+                        <input type="file" class="input-field" id="fwBinaryFile" accept=".bin,.elf" required style="padding: 0.5rem; background: rgba(59, 130, 246, 0.05); border-style: dashed;">
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
+                        <div class="form-group">
+                            <label>Version String</label>
+                            <input type="text" class="input-field" id="fwVersionString" placeholder="v1.1.0" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Hardware Target</label>
+                            <input type="text" class="input-field" id="fwHardwareRevision" value="HW-ESP32S3-V1.2" required>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
+                        <div class="form-group">
+                            <label>Device Family</label>
+                            <select class="input-field" id="fwDeviceTypeCode" required>
+                                <option value="VENDING_MACHINE">VENDING_MACHINE</option>
+                                <option value="RFID_ATTENDANCE">RFID_ATTENDANCE</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Target ESP32 Device (Optional)</label>
+                            <select class="input-field" id="fwTargetDeviceSelect">
+                                <option value="">-- Catalog Only (No instant push) --</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Release Notes / Changelog</label>
+                        <textarea class="input-field" id="fwChangelog" rows="2" placeholder="E.g., Optimized coin pulse timing, added power-fail recovery" style="resize:vertical;"></textarea>
+                    </div>
+
+                    <div id="fwUploadStatus" style="display:none; padding:0.75rem; border-radius:var(--radius-md); font-size:0.8rem; background:rgba(59,130,246,0.1); border:1px solid var(--border-accent); color:var(--primary);">
+                        Uploading binary artifact and computing cryptographic hash...
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalUploadFirmware')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitUploadFw">🚀 Upload & Dispatch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Push Existing Firmware to Specific Device -->
+    <div id="modalPushOTA" class="modal-overlay">
+        <div class="modal-container" style="max-width:500px;">
+            <div class="modal-header">
+                <h3>⚡ Push Firmware to ESP32</h3>
+                <button class="modal-close" onclick="closeModal('modalPushOTA')">&times;</button>
+            </div>
+            <form id="pushOTAForm">
+                <div class="modal-body">
+                    <input type="hidden" id="pushTargetDeviceId">
+                    
+                    <div style="background:rgba(59,130,246,0.06); border:1px solid var(--border-accent); border-radius:var(--radius-md); padding:1rem; margin-bottom:1.25rem;">
+                        <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px;">Target Hardware Node</div>
+                        <div style="font-size:1.15rem; font-weight:700; color:var(--primary); font-family:'JetBrains Mono', monospace; margin-top:0.25rem;" id="pushTargetDeviceCodeDisplay">VM-000001</div>
+                        <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;" id="pushTargetDeviceNameDisplay">Office Snack Station</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Select Firmware Version to Deploy</label>
+                        <select class="input-field" id="pushFirmwareVersionSelect" required>
+                            <option value="">Loading versions...</option>
+                        </select>
+                    </div>
+
+                    <div style="font-size:0.8rem; line-height:1.5; color:var(--text-secondary); background:rgba(255,255,255,0.02); padding:0.75rem; border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
+                        💡 <strong>How it works:</strong> The cloud backend registers a <code>PENDING</code> deployment for this device. When the ESP32 performs its next check or heartbeat, it downloads the binary stream via HTTP, updates its flash memory partition, and reboots.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalPushOTA')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitPushOTA">🚀 Push Update to Device</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
         <div class="modal-container" style="max-width:400px;">
@@ -495,6 +859,6 @@
     <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2.2"></script>
 </body>
 </html>

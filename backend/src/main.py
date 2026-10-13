@@ -4,7 +4,7 @@ Configures middleware, exception handlers, and API v1 routing.
 """
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from src.core.config.settings import settings
 from src.core.exceptions.errors import PlatformException, NotFoundException
@@ -28,6 +28,7 @@ from src.api.v1.rfid.routes import router as rfid_router
 from src.api.v1.devices.gateway_routes import router as gateway_router
 from src.api.v1.configs.routes import router as config_router
 from src.api.v1.orders.routes import router as orders_router
+from src.api.v1.ota.routes import router as ota_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -66,6 +67,13 @@ app.include_router(rfid_router, prefix="/api/v1")
 app.include_router(gateway_router, prefix="/api/v1")
 app.include_router(config_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
+app.include_router(ota_router, prefix="/api/v1")
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """Redirect root domain traffic to Manufacturer Portal."""
+    return RedirectResponse(url="/portal")
 
 
 @app.get("/health", tags=["Health"])

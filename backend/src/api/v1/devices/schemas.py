@@ -27,6 +27,7 @@ class DeviceRegisterRequest(BaseModel):
         default_factory=dict,
         description="Initial module enablement map, e.g. {'QR_PAYMENT': True, 'COIN_PAYMENT': False}",
     )
+    device_token: Optional[str] = Field(None, description="Optional custom secret provisioning token. If omitted, cryptographically generated.")
 
 
 class DeviceAssignRequest(BaseModel):
@@ -61,6 +62,7 @@ class DeviceResponse(BaseModel):
     created_at: datetime
     modules: List[DeviceModuleSchema]
     credential_auth_type: Optional[str] = None
+    provisioning_token: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -80,3 +82,21 @@ class DeviceTypeResponse(BaseModel):
     supported_modules: Optional[List[str]] = None
 
     model_config = {"from_attributes": True}
+
+
+class DeviceUpdateHardwareRequest(BaseModel):
+    """Payload to update physical hardware details and operational status."""
+    hardware_id: Optional[str] = Field(None, description="Board/PCB revision, e.g. HW-ESP32S3-V1.2")
+    chip_id: Optional[str] = Field(None, description="Unique ESP32 eFuse chip ID")
+    mac_address: Optional[str] = Field(None, description="Factory MAC address: XX:XX:XX:XX:XX:XX")
+    factory_serial: Optional[str] = Field(None, description="Permanent physical serial label")
+    status: Optional[str] = Field(None, description="Device status: PROVISIONED, ASSIGNED, ACTIVE, MAINTENANCE, SUSPENDED, DECOMMISSIONED")
+    current_firmware_version: Optional[str] = Field(None, description="Firmware version string")
+
+
+class DeviceDeleteResponse(BaseModel):
+    """Response returned upon device deletion."""
+    status: str
+    device_id: str
+    message: str
+

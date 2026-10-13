@@ -5,9 +5,11 @@ hardware module toggles, configuration version bumping, and fleet querying.
 import hashlib
 import json
 import secrets
+from datetime import timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from src.db.base import utc_now
 from src.db.models.device import Device, DeviceType, DeviceModule, DeviceCredential
 from src.db.models.config import DeviceConfig, ConfigurationVersion
 from src.db.models.client import Client
@@ -64,6 +66,7 @@ def register_physical_device(
     initial_modules: Dict[str, bool],
     client_id: Optional[str],
     actor_user: User,
+    device_token: Optional[str] = None,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
 ) -> Device:
@@ -113,7 +116,7 @@ def register_physical_device(
     db.flush()
 
     # 6. Generate cryptographic device token credential
-    raw_token = f"dev_{secrets.token_hex(24)}"
+    raw_token = device_token.strip() if device_token and device_token.strip() else f"dev_{secrets.token_hex(24)}"
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     credential = DeviceCredential(
         device_id=device.id,
@@ -121,6 +124,7 @@ def register_physical_device(
         token_hash=token_hash,
     )
     db.add(credential)
+    device.provisioning_token = raw_token
 
     # 7. Configure hardware modules
     supported_mods = dev_type.supported_modules or []
@@ -356,6 +360,19 @@ def list_devices(
     if device_type_code:
         query = query.join(DeviceType).filter(DeviceType.code == device_type_code)
 
+    # Auto-sweep stale heartbeat devices: if heartbeat hasn't been received in 75s, mark offline
+    now = utc_now()
+    cutoff = now - timedelta(seconds=75)
+    stale_devices = db.query(Device).filter(
+        Device.is_online == True,
+        Device.last_heartbeat_at != None,
+        Device.last_heartbeat_at < cutoff,
+    ).all()
+    if stale_devices:
+        for d in stale_devices:
+            d.is_online = False
+        db.commit()
+
     if status_filter:
         query = query.filter(Device.status == status_filter)
 
@@ -378,5 +395,154 @@ def get_device_by_id_or_device_id(
     if not device:
         raise NotFoundException("Device", identifier)
 
+    # Check if online device timed out
+    if device.is_online and device.last_heartbeat_at:
+        if (utc_now() - device.last_heartbeat_at).total_seconds() > 75:
+            device.is_online = False
+            db.commit()
+
     context.assert_device_access(device)
     return device
+
+
+def update_device_hardware(
+    db: Session,
+    device_id: str,
+    hardware_id: Optional[str] = None,
+    chip_id: Optional[str] = None,
+    mac_address: Optional[str] = None,
+    factory_serial: Optional[str] = None,
+    status: Optional[str] = None,
+    current_firmware_version: Optional[str] = None,
+    actor_user: Optional[User] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> Device:
+    """
+    Update physical hardware specifications, identifiers, or operational lifecycle status.
+    Asserts uniqueness for chip_id, mac_address, and factory_serial across all other devices.
+    """
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.id == device_id)
+    ).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    old_state = {
+        "hardware_id": device.hardware_id,
+        "chip_id": device.chip_id,
+        "mac_address": device.mac_address,
+        "factory_serial": device.factory_serial,
+        "status": device.status,
+        "current_firmware_version": device.current_firmware_version,
+    }
+
+    # Validate and check uniqueness of hardware identifiers
+    if chip_id and chip_id != device.chip_id:
+        existing = db.query(Device).filter(Device.chip_id == chip_id, Device.id != device.id).first()
+        if existing:
+            raise BadRequestException(f"Hardware conflict: Chip ID '{chip_id}' is already registered to device '{existing.device_id}'")
+        device.chip_id = chip_id
+
+    if mac_address and mac_address != device.mac_address:
+        existing = db.query(Device).filter(Device.mac_address == mac_address, Device.id != device.id).first()
+        if existing:
+            raise BadRequestException(f"Hardware conflict: MAC address '{mac_address}' is already registered to device '{existing.device_id}'")
+        device.mac_address = mac_address
+
+    if factory_serial and factory_serial != device.factory_serial:
+        existing = db.query(Device).filter(Device.factory_serial == factory_serial, Device.id != device.id).first()
+        if existing:
+            raise BadRequestException(f"Hardware conflict: Factory serial '{factory_serial}' is already registered to device '{existing.device_id}'")
+        device.factory_serial = factory_serial
+
+    if hardware_id:
+        device.hardware_id = hardware_id
+
+    if status:
+        valid_statuses = {"PROVISIONED", "ASSIGNED", "ACTIVE", "MAINTENANCE", "SUSPENDED", "DECOMMISSIONED"}
+        status_clean = status.strip().upper()
+        if status_clean not in valid_statuses:
+            raise BadRequestException(f"Invalid device status '{status}'. Allowed statuses: {', '.join(sorted(valid_statuses))}")
+        device.status = status_clean
+
+    if current_firmware_version:
+        device.current_firmware_version = current_firmware_version
+
+    new_state = {
+        "hardware_id": device.hardware_id,
+        "chip_id": device.chip_id,
+        "mac_address": device.mac_address,
+        "factory_serial": device.factory_serial,
+        "status": device.status,
+        "current_firmware_version": device.current_firmware_version,
+    }
+
+    if actor_user:
+        db.add(AuditLog(
+            client_id=device.client_id,
+            user_id=actor_user.id,
+            action="DEVICE_HARDWARE_UPDATED",
+            entity_type="DEVICE",
+            entity_id=device.id,
+            old_state=old_state,
+            new_state=new_state,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        ))
+
+    db.commit()
+    db.refresh(device)
+    return device
+
+
+def delete_device(
+    db: Session,
+    device_id: str,
+    actor_user: Optional[User] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> Dict[str, str]:
+    """
+    Permanently delete a physical device and cascades all credentials, modules, and slot mappings.
+    """
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.id == device_id)
+    ).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    permanent_id = device.device_id
+    client_id = device.client_id
+    old_state = {
+        "device_id": device.device_id,
+        "hardware_id": device.hardware_id,
+        "chip_id": device.chip_id,
+        "mac_address": device.mac_address,
+        "factory_serial": device.factory_serial,
+        "status": device.status,
+        "client_id": device.client_id,
+    }
+
+    if actor_user:
+        db.add(AuditLog(
+            client_id=client_id,
+            user_id=actor_user.id,
+            action="DEVICE_DELETED",
+            entity_type="DEVICE",
+            entity_id=permanent_id,
+            old_state=old_state,
+            new_state={"status": "DELETED"},
+            ip_address=ip_address,
+            user_agent=user_agent,
+        ))
+
+    db.delete(device)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "device_id": permanent_id,
+        "message": f"Device '{permanent_id}' deleted successfully.",
+    }
+
