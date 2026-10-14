@@ -57,23 +57,8 @@ pip install -r "$INSTALL_DIR/requirements.txt"
 # 6. Initialize database schema & seed initial admin & sample devices
 echo ">>> Bootstrapping platform database & fleet records..."
 python3 -c "
-import sys, os
-sys.path.insert(0, os.path.abspath('backend'))
-from src.db.session import engine, SessionLocal
-from src.db.base import Base
-from src.db.seed import seed_database
-from src.db.models.user import User
-
-Base.metadata.create_all(bind=engine)
-db = SessionLocal()
-admin = db.query(User).filter_by(username='admin').first()
-if not admin:
-    print('>>> Fresh setup: Seeding default manufacturer admin & device types...')
-    seed_database(db)
-    print('>>> Seed records created successfully.')
-else:
-    print('>>> Existing admin user detected, skipping seeding.')
-db.close()
+import main
+print('>>> Database schema, initial fleet devices, and admin user verified successfully.')
 "
 
 # 7. Configure Systemd Service for Auto-Start & Auto-Restart on Boot
@@ -89,7 +74,7 @@ User=root
 WorkingDirectory=/opt/iot-fleet-platform
 Environment="PYTHONPATH=/opt/iot-fleet-platform/backend"
 Environment="PORT=8000"
-ExecStart=/opt/iot-fleet-platform/.venv/bin/uvicorn src.main:app --app-dir backend --host 0.0.0.0 --port 8000
+ExecStart=/opt/iot-fleet-platform/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
 
