@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  iot-fleet-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iot-fleet-platform
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/uploads:/app/backend/uploads
+      - ./iot_platform_dev.db:/app/iot_platform_dev.db
+    environment:
+      - PORT=8000
+      - ENVIRONMENT=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
