@@ -6,18 +6,51 @@ import os
 import sys
 import importlib.util
 
-# 1. Determine absolute paths
+# 1. Determine project root
 project_root = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.join(project_root, "backend")
-backend_src_dir = os.path.join(backend_dir, "src")
-src_init_path = os.path.join(backend_src_dir, "__init__.py")
 
-# 2. Add backend to sys.path at position 0
+# 2. Locate backend directory and application 'src' directory
+def locate_backend_and_src(root):
+    c1 = os.path.join(root, "backend", "src")
+    if os.path.isdir(c1):
+        return os.path.join(root, "backend"), c1
+
+    c2 = os.path.join(root, "src")
+    if os.path.isdir(c2) and (os.path.exists(os.path.join(c2, "api")) or os.path.exists(os.path.join(c2, "main.py"))):
+        return root, c2
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        if os.path.basename(dirpath) == "src" and ("api" in dirnames or "db" in dirnames or "main.py" in filenames):
+            return os.path.dirname(dirpath), dirpath
+
+    return os.path.join(root, "backend"), c1
+
+backend_dir, backend_src_dir = locate_backend_and_src(project_root)
+
+# 3. Ensure __init__.py files exist
+os.makedirs(backend_src_dir, exist_ok=True)
+src_init_path = os.path.join(backend_src_dir, "__init__.py")
+if not os.path.isfile(src_init_path):
+    try:
+        with open(src_init_path, "w", encoding="utf-8") as f:
+            f.write("# Package marker\n")
+    except Exception as e:
+        print(f">>> Notice creating src/__init__.py: {e}")
+
+backend_init_path = os.path.join(backend_dir, "__init__.py")
+if not os.path.isfile(backend_init_path):
+    try:
+        with open(backend_init_path, "w", encoding="utf-8") as f:
+            f.write("# Package marker\n")
+    except Exception as e:
+        print(f">>> Notice creating backend/__init__.py: {e}")
+
+# 4. Add backend to sys.path at position 0
 if backend_dir in sys.path:
     sys.path.remove(backend_dir)
 sys.path.insert(0, backend_dir)
 
-# 3. Explicitly bind 'src' package to backend/src using standard ModuleSpec
+# 5. Explicitly bind 'src' package using standard ModuleSpec
 spec = importlib.util.spec_from_file_location(
     "src",
     src_init_path,
@@ -53,7 +86,6 @@ def init_cloud_database():
 if __name__ == "__main__":
     init_cloud_database()
 
-    # Read port from Render.com environment or fallback to 8000
     port = int(os.environ.get("PORT", 8000))
     print("==================================================")
     print(">>> Starting IoT Fleet Platform Server...")
