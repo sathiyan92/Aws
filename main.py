@@ -13,7 +13,7 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 def locate_backend_and_src(root):
     # Candidate 1: Standard monorepo layout (backend/src)
     c1 = os.path.join(root, "backend", "src")
-    if os.path.isdir(c1):
+    if os.path.isdir(c1) and (os.path.exists(os.path.join(c1, "main.py")) or os.path.exists(os.path.join(c1, "api"))):
         return os.path.join(root, "backend"), c1
 
     # Candidate 2: Root-level src layout (src)
@@ -30,6 +30,12 @@ def locate_backend_and_src(root):
     return os.path.join(root, "backend"), c1
 
 backend_dir, backend_src_dir = locate_backend_and_src(project_root)
+print(f">>> Detected Backend Directory: {backend_dir}")
+print(f">>> Detected Backend Src Directory: {backend_src_dir}")
+if os.path.exists(backend_src_dir):
+    print(f">>> Files in backend/src: {os.listdir(backend_src_dir)}")
+else:
+    print(">>> WARNING: backend_src_dir does not exist yet!")
 
 # 3. Ensure __init__.py files exist so importlib and Python loaders never fail
 os.makedirs(backend_src_dir, exist_ok=True)

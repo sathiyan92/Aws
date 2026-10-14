@@ -28,16 +28,36 @@ apt-get install -y --no-install-recommends \
     curl \
     git \
     ufw \
+    rsync \
     build-essential
 
-# 3. Synchronize application source to /opt/iot-fleet-platform
+# 3. Synchronize application source from git to ensure complete tree
+if [ -d "$SCRIPT_DIR/.git" ]; then
+    echo ">>> Pulling latest origin/main from GitHub..."
+    git -C "$SCRIPT_DIR" fetch origin main
+    git -C "$SCRIPT_DIR" reset --hard origin/main
+fi
+
 if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
     echo ">>> Deploying application files to $INSTALL_DIR..."
     mkdir -p "$INSTALL_DIR"
-    cp -ru "$SCRIPT_DIR"/* "$INSTALL_DIR"/ 2>/dev/null || rsync -av --exclude='.git' --exclude='.venv' "$SCRIPT_DIR"/ "$INSTALL_DIR"/
+    rsync -av --delete \
+        --exclude='.venv' \
+        --exclude='.git' \
+        --exclude='backend/uploads' \
+        "$SCRIPT_DIR/" "$INSTALL_DIR/"
 else
     echo ">>> Already running inside $INSTALL_DIR."
 fi
+
+# Verify backend application files exist
+if [ ! -f "$INSTALL_DIR/backend/src/main.py" ]; then
+    echo ">>> ERROR: backend/src/main.py not found in $INSTALL_DIR!"
+    echo ">>> Current contents of $INSTALL_DIR:"
+    ls -la "$INSTALL_DIR"
+    exit 1
+fi
+echo ">>> Verified: backend/src/main.py is present."
 
 cd "$INSTALL_DIR"
 
