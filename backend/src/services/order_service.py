@@ -362,3 +362,76 @@ def list_orders(
         ))
 
     return results
+
+
+def mark_order_paid(
+    db: Session,
+    order_id_or_number: str,
+    gateway_txn_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> OrderDetailResponse:
+    """
+    Transition a dynamic QR order to PAID upon receiving payment confirmation.
+    Signals the ESP32 vending machine that payment is complete and it may dispense.
+    """
+    order = db.query(Order).filter(
+        (Order.id == order_id_or_number) | (Order.order_number == order_id_or_number)
+    ).first()
+    if not order:
+        raise NotFoundException("Order", order_id_or_number)
+
+    if order.order_status in ["PAID", "DISPENSE_AUTHORIZED", "DISPENSED"]:
+        return get_order_detail(db, order.id)
+
+    order.order_status = "PAID"
+    order.paid_at = utc_now()
+    if order.payment:
+        order.payment.payment_status = "SUCCESS"
+        if gateway_txn_id:
+            order.payment.gateway_payment_intent_id = gateway_txn_id
+
+    db.add(AuditLog(
+        client_id=order.client_id,
+        user_id=user_id,
+        action="PAYMENT_RECEIVED",
+        entity_type="ORDER",
+        entity_id=order.id,
+        old_state={"order_status": "PENDING"},
+        new_state={"order_status": "PAID", "paid_at": str(order.paid_at)},
+    ))
+    db.commit()
+    return get_order_detail(db, order.id)
+
+
+def mark_order_dispensed(
+    db: Session,
+    order_id_or_number: str,
+) -> OrderDetailResponse:
+    """
+    Called by ESP32 once physical product dispense is finished.
+    Transitions order to DISPENSED and decrements machine slot inventory.
+    """
+    order = db.query(Order).filter(
+        (Order.id == order_id_or_number) | (Order.order_number == order_id_or_number)
+    ).first()
+    if not order:
+        raise NotFoundException("Order", order_id_or_number)
+
+    order.order_status = "DISPENSED"
+    order.dispensed_at = utc_now()
+
+    # Decrement stock in slot
+    if order.slot and order.slot.current_stock > 0:
+        order.slot.current_stock -= 1
+
+    db.add(AuditLog(
+        client_id=order.client_id,
+        user_id=None,
+        action="ORDER_DISPENSED",
+        entity_type="ORDER",
+        entity_id=order.id,
+        old_state={"order_status": "PAID"},
+        new_state={"order_status": "DISPENSED", "dispensed_at": str(order.dispensed_at)},
+    ))
+    db.commit()
+    return get_order_detail(db, order.id)

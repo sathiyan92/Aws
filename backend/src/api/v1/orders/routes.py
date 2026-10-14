@@ -23,6 +23,8 @@ from src.services.order_service import (
     get_order_detail,
     cancel_order,
     list_orders,
+    mark_order_paid,
+    mark_order_dispensed,
 )
 
 router = APIRouter(prefix="/orders", tags=["Dynamic QR Orders & Payments"])
@@ -69,6 +71,33 @@ def cancel_pending_order(
     Cancel an active pending dynamic QR order before payment completion.
     """
     return cancel_order(db=db, order_id_or_number=order_id, reason=reason)
+
+
+@router.post("/{order_id}/mark-paid", response_model=OrderDetailResponse)
+def mark_payment_success(
+    order_id: str,
+    gateway_txn_id: Optional[str] = Query(None, description="Optional bank / gateway transaction ref"),
+    db: Session = Depends(get_db),
+):
+    """
+    [Payment Webhook / Kiosk Simulator Endpoint]
+    Transitions a pending dynamic QR order to PAID upon receiving payment confirmation.
+    Signals the ESP32 to immediately activate vending motors.
+    """
+    return mark_order_paid(db=db, order_id_or_number=order_id, gateway_txn_id=gateway_txn_id)
+
+
+@router.post("/{order_id}/dispensed", response_model=OrderDetailResponse)
+def mark_dispense_complete(
+    order_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge Hardware Callback Endpoint]
+    Called by ESP32 once physical product dispense is confirmed (e.g., motor cycle complete).
+    Transitions order to DISPENSED and decrements machine slot inventory.
+    """
+    return mark_order_dispensed(db=db, order_id_or_number=order_id)
 
 
 @router.get("", response_model=List[OrderDetailResponse])
