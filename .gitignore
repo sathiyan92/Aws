@@ -63,6 +63,7 @@ firmware/**/*.map
 # Database / Docker volumes
 *.sqlite3
 *.db
+backend/uploads/
 pgdata/
 mosquitto/data/
 mosquitto/log/

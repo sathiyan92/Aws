@@ -1,38 +1,33 @@
 """
 Root entrypoint for Render and cloud hosting providers.
-Resolves Render /opt/render/project/src directory name collision.
+Resolves Render /opt/render/project/src directory name collision using official ModuleSpec.
 """
 import os
 import sys
-import types
+import importlib.util
 
 # 1. Determine absolute paths
 project_root = os.path.dirname(os.path.abspath(__file__))
 backend_dir = os.path.join(project_root, "backend")
 backend_src_dir = os.path.join(backend_dir, "src")
+src_init_path = os.path.join(backend_src_dir, "__init__.py")
 
 # 2. Add backend to sys.path at position 0
 if backend_dir in sys.path:
     sys.path.remove(backend_dir)
 sys.path.insert(0, backend_dir)
 
-# 3. Clean any collided 'src' from sys.path or sys.modules (Render path /opt/render/project/src)
-for p in list(sys.path):
-    if os.path.basename(os.path.normpath(p)) == "src" and p != backend_src_dir:
-        sys.path.remove(p)
+# 3. Explicitly bind 'src' package to backend/src using standard ModuleSpec
+spec = importlib.util.spec_from_file_location(
+    "src",
+    src_init_path,
+    submodule_search_locations=[backend_src_dir],
+)
+src_pkg = importlib.util.module_from_spec(spec)
+sys.modules["src"] = src_pkg
+spec.loader.exec_module(src_pkg)
 
-if "src" in sys.modules:
-    del sys.modules["src"]
-
-# 4. Explicitly bind the real 'src' package to backend/src
-src_init_path = os.path.join(backend_src_dir, "__init__.py")
-src_module = types.ModuleType("src")
-src_module.__file__ = src_init_path
-src_module.__path__ = [backend_src_dir]
-src_module.__package__ = "src"
-sys.modules["src"] = src_module
-
-# 5. Bootstrap database tables and seed records on first cloud launch
+# 4. Bootstrap database tables and seed records on first cloud launch
 try:
     from src.db.session import engine, SessionLocal
     from src.db.base import Base
@@ -50,5 +45,5 @@ try:
 except Exception as e:
     print(f">>> Cloud database bootstrap notice: {e}")
 
-# 6. Import and expose FastAPI application instance
+# 5. Import and expose FastAPI application instance
 from src.main import app

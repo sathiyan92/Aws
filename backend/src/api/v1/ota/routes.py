@@ -126,19 +126,35 @@ async def upload_firmware_binary(
     base_url = str(request.base_url).rstrip("/")
     download_url = f"{base_url}/api/v1/ota/binaries/{sanitized_name}"
 
-    # Create FirmwareVersion record
-    fw_version = FirmwareVersion(
-        device_type_id=dev_type.id,
-        version_string=v_clean,
-        hardware_revision=hardware_revision.strip(),
-        binary_url=download_url,
-        file_size_bytes=file_size,
-        sha256_checksum=checksum,
-        signature=f"sig_{checksum[:32]}",  # Internal digital verification signature
-        changelog=changelog.strip() if changelog else None,
-        created_by_user_id=context.user.id,
-    )
-    db.add(fw_version)
+    # Check if this firmware version already exists; update if re-uploading
+    existing_fw = db.query(FirmwareVersion).filter(
+        FirmwareVersion.device_type_id == dev_type.id,
+        FirmwareVersion.version_string == v_clean,
+        FirmwareVersion.hardware_revision == hardware_revision.strip(),
+    ).first()
+
+    if existing_fw:
+        existing_fw.binary_url = download_url
+        existing_fw.file_size_bytes = file_size
+        existing_fw.sha256_checksum = checksum
+        existing_fw.signature = f"sig_{checksum[:32]}"
+        if changelog:
+            existing_fw.changelog = changelog.strip()
+        existing_fw.is_deprecated = False
+        fw_version = existing_fw
+    else:
+        fw_version = FirmwareVersion(
+            device_type_id=dev_type.id,
+            version_string=v_clean,
+            hardware_revision=hardware_revision.strip(),
+            binary_url=download_url,
+            file_size_bytes=file_size,
+            sha256_checksum=checksum,
+            signature=f"sig_{checksum[:32]}",  # Internal digital verification signature
+            changelog=changelog.strip() if changelog else None,
+            created_by_user_id=context.user.id,
+        )
+        db.add(fw_version)
     db.flush()
 
     # Audit log
