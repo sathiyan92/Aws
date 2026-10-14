@@ -29,7 +29,18 @@
 #include <ArduinoJson.h>
 
 // ==============================================================================
-// 1. HARDWARE PIN DEFINITIONS
+// 1. MANUAL WI-FI CONFIGURATION (OPTIONAL - FOR LAB / DESK TESTING)
+// ==============================================================================
+// If you want to connect to your Wi-Fi immediately without using the phone Captive Portal:
+// Enter your Wi-Fi SSID and Password below.
+// The ESP32 will connect automatically AND permanently save it into Flash NVS memory.
+// Once saved, you can leave these blank ("") and the ESP32 will remember forever!
+const char* MANUAL_WIFI_SSID     = "";  // e.g. "MyHomeWiFi" (leave "" to use NVS / Captive Portal)
+const char* MANUAL_WIFI_PASSWORD = "";  // e.g. "12345678"
+const char* DEFAULT_SERVER_URL   = "http://35.154.219.82:8000";
+
+// ==============================================================================
+// 2. HARDWARE PIN DEFINITIONS
 // ==============================================================================
 const int PIN_BTN_SLOT_1    = 32;   // Pushbutton to select Slot 1
 const int PIN_BTN_SLOT_2    = 33;   // Pushbutton to select Slot 2
@@ -41,7 +52,7 @@ const int PIN_SETUP_BTN     = 0;    // BOOT button (hold 5s for Wi-Fi reconfig)
 const unsigned long MOTOR_DISPENSE_TIME_MS = 3000; // Motor runtime per dispense (3s)
 
 // ==============================================================================
-// 2. CONFIGURATION STORAGE (FLASH NVS - SURVIVES ALL OTA UPDATES)
+// 3. CONFIGURATION STORAGE (FLASH NVS - SURVIVES ALL OTA UPDATES)
 // ==============================================================================
 Preferences prefs;
 
@@ -84,7 +95,7 @@ DNSServer dnsServer;
 bool in_ap_setup_mode = false;
 
 // ==============================================================================
-// 3. FLASH NVS PERSISTENT STORAGE HANDLERS
+// 4. FLASH NVS PERSISTENT STORAGE HANDLERS
 // ==============================================================================
 void loadPersistentConfig() {
   prefs.begin("vending_cfg", false);
@@ -92,13 +103,33 @@ void loadPersistentConfig() {
   wifi_pass       = prefs.getString("pass", "");
   device_id       = prefs.getString("dev_id", "VM-000001");
   device_token    = prefs.getString("token", "dev_token_VM-000001");
-  server_base_url = prefs.getString("srv_url", "http://35.154.219.82:8000");
+  server_base_url = prefs.getString("srv_url", DEFAULT_SERVER_URL);
   prefs.end();
 
-  Serial.println("\n>>> [NVS] Loaded Persistent Configuration:");
-  Serial.print("  Wi-Fi SSID : "); Serial.println(wifi_ssid.length() > 0 ? wifi_ssid : "(Not Configured)");
-  Serial.print("  Device ID  : "); Serial.println(device_id);
-  Serial.print("  Server URL : "); Serial.println(server_base_url);
+  // If manual Wi-Fi credentials are provided at top of sketch, use them and persist to Flash NVS
+  if (strlen(MANUAL_WIFI_SSID) > 0) {
+    Serial.println("\n[Config] Using MANUAL_WIFI_SSID override from code...");
+    wifi_ssid = String(MANUAL_WIFI_SSID);
+    wifi_pass = String(MANUAL_WIFI_PASSWORD);
+    if (strlen(DEFAULT_SERVER_URL) > 0) {
+      server_base_url = String(DEFAULT_SERVER_URL);
+    }
+    savePersistentConfig(wifi_ssid, wifi_pass, device_id, server_base_url);
+  }
+
+  Serial.println("\n=======================================================");
+  Serial.println(">>> ⚡ ESP32 HARDWARE IDENTIFICATION (PERMANENT) <<<");
+  Serial.print("  Hardware MAC Address : "); Serial.println(WiFi.macAddress());
+  Serial.print("  Silicon Chip ID      : ESP32-CHIP-"); Serial.println(String((uint32_t)ESP.getEfuseMac(), HEX));
+  Serial.print("  Current Device ID    : "); Serial.println(device_id);
+  Serial.print("  Target Wi-Fi SSID    : "); Serial.println(wifi_ssid.length() > 0 ? wifi_ssid : "(Not Configured - Captive Portal will start)");
+  Serial.print("  Cloud Server Base URL: "); Serial.println(server_base_url);
+  Serial.println("-------------------------------------------------------");
+  Serial.println("  💡 ZERO-CODE MULTI-TENANT ARCHITECTURE:");
+  Serial.println("     Once this MAC is registered on the website portal,");
+  Serial.println("     the device automatically binds to its assigned tenant.");
+  Serial.println("     Future OTA firmware updates will NEVER erase your Wi-Fi!");
+  Serial.println("=======================================================\n");
 }
 
 void savePersistentConfig(String ssid, String pass, String dev_id, String srv_url) {
@@ -275,6 +306,18 @@ bool authenticateWithCloud() {
 
     session_jwt = respDoc["session_token"].as<String>();
     is_authenticated = true;
+
+    // Check if cloud resolved our device_id by hardware MAC address!
+    if (respDoc.containsKey("device_id")) {
+      String assignedId = respDoc["device_id"].as<String>();
+      if (assignedId.length() > 0 && assignedId != device_id) {
+        Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s\n", assignedId.c_str());
+        device_id = assignedId;
+        prefs.begin("vending_cfg", false);
+        prefs.putString("dev_id", device_id);
+        prefs.end();
+      }
+    }
     Serial.println("[✓] Cloud Gateway Authentication SUCCESS!");
     http.end();
     return true;

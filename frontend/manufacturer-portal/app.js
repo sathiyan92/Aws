@@ -339,6 +339,9 @@ function renderDevicesTable(filterType = null) {
                 </td>
                 <td>
                     <div class="actions-cell">
+                        ${d.device_type_code === 'VENDING_MACHINE' ? `
+                            <button class="btn btn-warning btn-sm" title="Configure Slot Prices, UPI Merchant & QR" onclick="openDevicePricingModal('${d.device_id}')">💰 Prices & QR</button>
+                        ` : ''}
                         <button class="btn btn-outline-primary btn-sm" title="Push OTA Firmware to this device" onclick="openPushOTAModal('${d.id}', '${d.device_id}')">🚀 OTA</button>
                         <button class="btn btn-secondary btn-sm" title="Assign Tenant" onclick="openAssignModal('${d.id}', '${d.device_id}', '${d.client_id || ''}')">Assign</button>
                         <button class="btn btn-outline-primary btn-sm" title="Edit Hardware Details" onclick="openEditHardwareModal('${d.id}')">✏️ Edit</button>
@@ -1008,3 +1011,342 @@ function formatDate(isoStr) {
     const d = new Date(isoStr);
     return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+
+// ==============================================================================
+// VENDING PRICING, SLOTS & QR MANAGEMENT ENGINE
+// ==============================================================================
+let activePricingDeviceId = null;
+let activeTestOrderId = null;
+let activeDeviceSlots = [];
+
+function switchPricingModalTab(tabKey) {
+    document.querySelectorAll('.modal-tab-btn').forEach(b => {
+        b.className = 'btn btn-sm btn-secondary modal-tab-btn';
+    });
+    document.getElementById('pricingModalTabSlots').style.display = 'none';
+    document.getElementById('pricingModalTabQR').style.display = 'none';
+    document.getElementById('pricingModalTabTest').style.display = 'none';
+
+    if (tabKey === 'slots') {
+        document.getElementById('modalTabBtnSlots').className = 'btn btn-sm btn-primary modal-tab-btn';
+        document.getElementById('pricingModalTabSlots').style.display = 'block';
+    } else if (tabKey === 'qr') {
+        document.getElementById('modalTabBtnQR').className = 'btn btn-sm btn-primary modal-tab-btn';
+        document.getElementById('pricingModalTabQR').style.display = 'block';
+    } else if (tabKey === 'test') {
+        document.getElementById('modalTabBtnTest').className = 'btn btn-sm btn-primary modal-tab-btn';
+        document.getElementById('pricingModalTabTest').style.display = 'block';
+        populateTestSlotSelect();
+    }
+}
+
+async function openDevicePricingModal(deviceId) {
+    activePricingDeviceId = deviceId;
+    const dev = state.devices.find(d => d.device_id === deviceId);
+    
+    document.getElementById('pricingModalDeviceId').textContent = deviceId;
+    document.getElementById('pricingModalMac').textContent = dev?.mac_address || 'Unregistered MAC';
+    document.getElementById('pricingModalClient').textContent = dev?.client_name || 'Unassigned (Inventory)';
+
+    switchPricingModalTab('slots');
+    openModal('modalDevicePricing');
+
+    await Promise.all([
+        loadDeviceSlotsAndPricing(deviceId),
+        loadDeviceQRSettings(deviceId),
+    ]);
+}
+
+async function loadDeviceSlotsAndPricing(deviceId) {
+    const tbody = document.getElementById('pricingSlotsTableBody');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;">Loading slots from cloud...</td></tr>';
+
+    try {
+        const res = await apiFetch(`/api/v1/vending/${deviceId}/slots`);
+        if (!res.ok) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--danger);">Error loading slots: ${res.statusText}</td></tr>`;
+            return;
+        }
+        activeDeviceSlots = await res.json();
+        renderSlotsTable(activeDeviceSlots);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--danger);">${err.message}</td></tr>`;
+    }
+}
+
+function renderSlotsTable(slots) {
+    const tbody = document.getElementById('pricingSlotsTableBody');
+    if (!slots || slots.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align:center; padding:2rem;">
+                    <p style="color:var(--text-muted); margin-bottom:1rem;">No dispensing slots configured for this machine yet.</p>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="initializeDefaultSlots()">⚡ Auto-Initialize Slot 1 & 2</button>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = slots.map(s => `
+        <tr id="slot-row-${s.slot_number}">
+            <td class="mono-text" style="font-weight:700; text-align:center;">
+                <span class="badge" style="background:rgba(59,130,246,0.15); color:var(--primary);">Slot ${s.slot_number}</span>
+            </td>
+            <td>
+                <input type="text" class="input-field" id="slot-name-${s.slot_number}" value="${s.product_name || `Item Slot ${s.slot_number}`}" style="font-size:0.85rem; padding:0.4rem 0.6rem;">
+            </td>
+            <td>
+                <div style="display:flex; align-items:center; gap:0.25rem;">
+                    <span style="color:var(--primary); font-weight:700;">₹</span>
+                    <input type="number" step="0.5" class="input-field" id="slot-price-${s.slot_number}" value="${s.price_rupees.toFixed(2)}" style="font-size:0.9rem; font-weight:700; color:#34d399; width:90px; padding:0.4rem 0.5rem;" required>
+                </div>
+            </td>
+            <td>
+                <input type="number" class="input-field" id="slot-stock-${s.slot_number}" value="${s.current_stock}" style="font-size:0.85rem; width:70px; padding:0.4rem 0.5rem;">
+            </td>
+            <td>
+                <input type="number" class="input-field" id="slot-cap-${s.slot_number}" value="${s.capacity}" style="font-size:0.85rem; width:70px; padding:0.4rem 0.5rem;">
+            </td>
+            <td style="text-align:center;">
+                <input type="checkbox" id="slot-active-${s.slot_number}" ${s.is_active ? 'checked' : ''} style="cursor:pointer; transform:scale(1.2);">
+            </td>
+            <td style="text-align:center;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveSingleSlotPrice(${s.slot_number})" style="padding:0.35rem 0.6rem; font-size:0.75rem;">💾 Save</button>
+            </td>
+        </tr>
+    `).join("");
+}
+
+async function saveSingleSlotPrice(slotNumber) {
+    if (!activePricingDeviceId) return;
+
+    const priceInput = document.getElementById(`slot-price-${slotNumber}`);
+    const stockInput = document.getElementById(`slot-stock-${slotNumber}`);
+    const capInput = document.getElementById(`slot-cap-${slotNumber}`);
+    const activeInput = document.getElementById(`slot-active-${slotNumber}`);
+
+    const priceRupees = priceInput ? parseFloat(priceInput.value) : 10.0;
+    const stock = stockInput ? (parseInt(stockInput.value) || 0) : 10;
+    const capacity = capInput ? (parseInt(capInput.value) || 20) : 20;
+    const isActive = activeInput ? activeInput.checked : true;
+
+    if (isNaN(priceRupees) || priceRupees < 0) {
+        showToast("Please enter a valid price in Rupees.", "danger");
+        return;
+    }
+
+    const payload = {
+        override_price: Math.round(priceRupees * 100), // Convert ₹ to paise
+        capacity: capacity,
+        current_stock: stock,
+        is_active: isActive
+    };
+
+    try {
+        const res = await apiFetch(`/api/v1/vending/${activePricingDeviceId}/slots/${slotNumber}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast(`✓ Slot ${slotNumber} price updated to ₹${priceRupees.toFixed(2)}! ESP32 resolved price dynamically.`, "success");
+            await loadDeviceSlotsAndPricing(activePricingDeviceId);
+        } else {
+            const err = await res.json();
+            showToast(`Failed to update slot: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}
+
+async function initializeDefaultSlots() {
+    if (!activePricingDeviceId) return;
+    try {
+        await apiFetch(`/api/v1/vending/${activePricingDeviceId}/slots/1`, {
+            method: 'PUT',
+            body: JSON.stringify({ override_price: 1000, capacity: 20, current_stock: 15, is_active: true })
+        });
+        await apiFetch(`/api/v1/vending/${activePricingDeviceId}/slots/2`, {
+            method: 'PUT',
+            body: JSON.stringify({ override_price: 2000, capacity: 20, current_stock: 10, is_active: true })
+        });
+        showToast("Default Slot 1 (₹10.00) and Slot 2 (₹20.00) initialized!", "success");
+        await loadDeviceSlotsAndPricing(activePricingDeviceId);
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}
+
+function addNewSlotRow() {
+    const nextSlotNum = activeDeviceSlots.length > 0 
+        ? Math.max(...activeDeviceSlots.map(s => s.slot_number)) + 1 
+        : 1;
+    
+    saveSingleSlotPrice(nextSlotNum);
+}
+
+async function loadDeviceQRSettings(deviceId) {
+    try {
+        const res = await apiFetch(`/api/v1/vending/${deviceId}/qr/settings`);
+        if (res.ok) {
+            const cfg = await res.json();
+            document.getElementById('pricingQrVpa').value = cfg.upi_merchant_vpa || '';
+            document.getElementById('pricingQrMerchantName').value = cfg.merchant_name || 'Smart Vending';
+            document.getElementById('pricingQrTimeout').value = cfg.qr_timeout_seconds || 180;
+            document.getElementById('pricingQrDynamicToggle').checked = cfg.dynamic_pricing_enabled !== false;
+            
+            if (cfg.custom_qr_image_url) {
+                document.getElementById('pricingQrImageUrl').value = cfg.custom_qr_image_url;
+                updateQrImagePreview(cfg.custom_qr_image_url);
+            } else {
+                document.getElementById('pricingQrImageUrl').value = '';
+                updateQrImagePreview('');
+            }
+        }
+    } catch (e) {
+        console.error("Failed loading QR settings:", e);
+    }
+}
+
+function updateQrImagePreview(url) {
+    const img = document.getElementById('pricingQrImagePreview');
+    const placeholder = document.getElementById('pricingQrImagePlaceholder');
+    if (url && url.trim().length > 0) {
+        img.src = url.trim();
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        placeholder.style.display = 'block';
+    }
+}
+
+function handleQRImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result;
+        document.getElementById('pricingQrImageUrl').value = base64Data;
+        updateQrImagePreview(base64Data);
+        showToast("QR Code image loaded! Click 'Save QR Settings' to store.", "info");
+    };
+    reader.readAsDataURL(file);
+}
+
+async function handleSaveDeviceQRSettings(e) {
+    e.preventDefault();
+    if (!activePricingDeviceId) return;
+
+    const payload = {
+        upi_merchant_vpa: document.getElementById('pricingQrVpa').value.trim(),
+        merchant_name: document.getElementById('pricingQrMerchantName').value.trim(),
+        qr_timeout_seconds: parseInt(document.getElementById('pricingQrTimeout').value) || 180,
+        dynamic_pricing_enabled: document.getElementById('pricingQrDynamicToggle').checked,
+        custom_qr_image_url: document.getElementById('pricingQrImageUrl').value.trim() || null
+    };
+
+    try {
+        const res = await apiFetch(`/api/v1/vending/${activePricingDeviceId}/qr/settings`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("✓ UPI QR Merchant Settings saved permanently!", "success");
+        } else {
+            const err = await res.json();
+            showToast(`Failed to save QR settings: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (err) {
+        showToast(err.message, "danger");
+    }
+}
+
+function populateTestSlotSelect() {
+    const sel = document.getElementById('testOrderSlotSelect');
+    sel.innerHTML = '';
+    if (activeDeviceSlots.length === 0) {
+        sel.innerHTML = '<option value="1">Slot 1 (₹10.00)</option><option value="2">Slot 2 (₹20.00)</option>';
+        return;
+    }
+    activeDeviceSlots.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.slot_number;
+        opt.textContent = `Slot ${s.slot_number}: ${s.product_name || 'Item'} (₹${s.price_rupees.toFixed(2)})`;
+        sel.appendChild(opt);
+    });
+}
+
+async function generateTestOrderQR() {
+    if (!activePricingDeviceId) return;
+    const slotNum = parseInt(document.getElementById('testOrderSlotSelect').value) || 1;
+
+    try {
+        const res = await apiFetch(`/api/v1/orders/initiate`, {
+            method: 'POST',
+            body: JSON.stringify({
+                device_id: activePricingDeviceId,
+                slot_number: slotNum
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            activeTestOrderId = data.order_id;
+
+            document.getElementById('testOrderNum').textContent = data.order_number;
+            document.getElementById('testOrderSlot').textContent = `Slot ${data.slot_number}`;
+            document.getElementById('testOrderProduct').textContent = data.product_name;
+            document.getElementById('testOrderPrice').textContent = `₹${data.amount_rupees.toFixed(2)}`;
+            document.getElementById('testOrderStatus').textContent = data.order_status;
+            document.getElementById('testOrderStatus').className = 'badge badge-offline';
+            document.getElementById('testOrderDetails').style.display = 'block';
+
+            // Render live QR Code
+            const qrImg = document.getElementById('testQrCodeImg');
+            const qrEmpty = document.getElementById('testQrCodeEmpty');
+            const upiUriText = document.getElementById('testUpiUriText');
+
+            qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data.qr_payload)}`;
+            qrImg.style.display = 'block';
+            qrEmpty.style.display = 'none';
+            upiUriText.textContent = data.qr_payload;
+
+            showToast(`Dynamic QR generated for Slot ${slotNum} at ₹${data.amount_rupees.toFixed(2)}!`, "success");
+        } else {
+            const err = await res.json();
+            showToast(`Failed to initiate order: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (err) {
+        showToast(err.message, "danger");
+    }
+}
+
+async function simulateTestPaymentPaid() {
+    if (!activeTestOrderId) {
+        showToast("Generate an order QR first.", "danger");
+        return;
+    }
+
+    try {
+        const res = await apiFetch(`/api/v1/orders/${activeTestOrderId}/mark-paid`, {
+            method: 'POST'
+        });
+
+        if (res.ok) {
+            document.getElementById('testOrderStatus').textContent = 'PAID (DISPENSE TRIGGERED)';
+            document.getElementById('testOrderStatus').className = 'badge badge-online';
+            showToast("✓ Payment Confirmed! Order marked as PAID. ESP32 relay motor triggered!", "success");
+        } else {
+            const err = await res.json();
+            showToast(`Error: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}
+

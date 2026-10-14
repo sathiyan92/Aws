@@ -443,6 +443,9 @@ function loadActiveTabData() {
 // ==============================================================================
 
 // QR MODULE
+let clientActiveSlots = [];
+let clientActiveTestOrderId = null;
+
 async function loadQRData(deviceId) {
     try {
         const res = await fetchWithAuth(`${API_BASE}/vending/${deviceId}/qr/settings`);
@@ -450,8 +453,17 @@ async function loadQRData(deviceId) {
             const data = await res.json();
             elements.qrVpa.value = data.upi_merchant_vpa || '';
             elements.qrTimeout.value = data.qr_timeout_seconds || 120;
-            elements.qrMerchantName.value = 'Apex Vending Solutions';
+            elements.qrMerchantName.value = data.merchant_name || 'Apex Vending Solutions';
+            
+            const qrUrlInput = document.getElementById('clientQrImageUrl');
+            if (qrUrlInput) {
+                qrUrlInput.value = data.custom_qr_image_url || '';
+                updateClientQrImagePreview(data.custom_qr_image_url || '');
+            }
         }
+
+        // Load Slots & Pricing
+        await loadClientSlotsData(deviceId);
 
         const txRes = await fetchWithAuth(`${API_BASE}/vending/${deviceId}/qr/transactions`);
         if (txRes.ok) {
@@ -463,25 +475,250 @@ async function loadQRData(deviceId) {
     }
 }
 
-function renderQRTransactions(txs) {
-    elements.qrTransactionsBody.innerHTML = '';
-    if (!txs || txs.length === 0) {
-        elements.qrTransactionsBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No recent digital QR transactions recorded.</td></tr>`;
+async function loadClientSlotsData(deviceId) {
+    const tbody = document.getElementById('clientSlotsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;">Loading slots...</td></tr>';
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/vending/${deviceId}/slots`);
+        if (res.ok) {
+            clientActiveSlots = await res.json();
+            renderClientSlots(clientActiveSlots);
+            populateClientTestSlots(clientActiveSlots);
+        }
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--danger);">${e.message}</td></tr>`;
+    }
+}
+
+function renderClientSlots(slots) {
+    const tbody = document.getElementById('clientSlotsTableBody');
+    if (!tbody) return;
+    if (!slots || slots.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align:center; padding:1.5rem;">
+                    <p style="color:var(--text-muted); margin-bottom:0.75rem;">No slots configured for this machine.</p>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="initClientDefaultSlots()">⚡ Auto-Initialize Slots (₹10 / ₹20)</button>
+                </td>
+            </tr>
+        `;
         return;
     }
 
-    txs.forEach(t => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><span class="mono-text">${t.transaction_number || t.id.slice(0, 8)}</span></td>
-            <td>${new Date(t.transacted_at).toLocaleTimeString()}</td>
-            <td>Slot #3</td>
-            <td><strong style="color: var(--primary);">₹${t.amount_in_rupees.toFixed(2)}</strong></td>
-            <td><span class="badge badge-on">UPI</span></td>
-            <td><span class="badge badge-on">${t.dispense_status}</span></td>
-        `;
-        elements.qrTransactionsBody.appendChild(tr);
+    tbody.innerHTML = slots.map(s => `
+        <tr>
+            <td class="mono-text" style="font-weight:700; text-align:center;">
+                <span class="badge badge-on">Slot ${s.slot_number}</span>
+            </td>
+            <td>
+                <input type="text" class="input-field" id="cslot-name-${s.slot_number}" value="${s.product_name || `Slot ${s.slot_number} Item`}" style="font-size:0.85rem; padding:0.4rem 0.6rem;">
+            </td>
+            <td>
+                <div style="display:flex; align-items:center; gap:0.25rem;">
+                    <span style="color:var(--primary); font-weight:700;">₹</span>
+                    <input type="number" step="0.5" class="input-field" id="cslot-price-${s.slot_number}" value="${s.price_rupees.toFixed(2)}" style="font-size:0.9rem; font-weight:700; color:#34d399; width:90px; padding:0.4rem 0.5rem;" required>
+                </div>
+            </td>
+            <td>
+                <input type="number" class="input-field" id="cslot-stock-${s.slot_number}" value="${s.current_stock}" style="font-size:0.85rem; width:70px; padding:0.4rem 0.5rem;">
+            </td>
+            <td>
+                <input type="number" class="input-field" id="cslot-cap-${s.slot_number}" value="${s.capacity}" style="font-size:0.85rem; width:70px; padding:0.4rem 0.5rem;">
+            </td>
+            <td style="text-align:center;">
+                <input type="checkbox" id="cslot-active-${s.slot_number}" ${s.is_active ? 'checked' : ''} style="cursor:pointer; transform:scale(1.2);">
+            </td>
+            <td style="text-align:center;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveClientSlotPrice(${s.slot_number})" style="padding:0.35rem 0.6rem; font-size:0.75rem;">💾 Save</button>
+            </td>
+        </tr>
+    `).join("");
+}
+
+async function saveClientSlotPrice(slotNumber) {
+    if (!state.selectedDeviceId) return;
+
+    const priceInput = document.getElementById(`cslot-price-${slotNumber}`);
+    const stockInput = document.getElementById(`cslot-stock-${slotNumber}`);
+    const capInput = document.getElementById(`cslot-cap-${slotNumber}`);
+    const activeInput = document.getElementById(`cslot-active-${slotNumber}`);
+
+    const priceRupees = priceInput ? parseFloat(priceInput.value) : 10.0;
+    const stock = stockInput ? (parseInt(stockInput.value) || 0) : 10;
+    const capacity = capInput ? (parseInt(capInput.value) || 20) : 20;
+    const isActive = activeInput ? activeInput.checked : true;
+
+    if (isNaN(priceRupees) || priceRupees < 0) {
+        showToast("Please enter a valid price in Rupees.", "error");
+        return;
+    }
+
+    const payload = {
+        override_price: Math.round(priceRupees * 100),
+        capacity: capacity,
+        current_stock: stock,
+        is_active: isActive
+    };
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/slots/${slotNumber}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast(`✓ Slot ${slotNumber} price updated to ₹${priceRupees.toFixed(2)}! ESP32 resolved dynamically.`);
+            await loadClientSlotsData(state.selectedDeviceId);
+        } else {
+            const err = await res.json();
+            showToast(err.detail || 'Failed to update slot price', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function initClientDefaultSlots() {
+    if (!state.selectedDeviceId) return;
+    try {
+        await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/slots/1`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ override_price: 1000, capacity: 20, current_stock: 15, is_active: true })
+        });
+        await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/slots/2`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ override_price: 2000, capacity: 20, current_stock: 10, is_active: true })
+        });
+        showToast("Default slots initialized!");
+        await loadClientSlotsData(state.selectedDeviceId);
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function addNewClientSlotRow() {
+    const nextSlotNum = clientActiveSlots.length > 0 
+        ? Math.max(...clientActiveSlots.map(s => s.slot_number)) + 1 
+        : 1;
+    saveClientSlotPrice(nextSlotNum);
+}
+
+function updateClientQrImagePreview(url) {
+    const img = document.getElementById('clientQrImagePreview');
+    const placeholder = document.getElementById('clientQrPlaceholder');
+    if (!img || !placeholder) return;
+    if (url && url.trim().length > 0) {
+        img.src = url.trim();
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        placeholder.style.display = 'block';
+    }
+}
+
+function handleClientQRImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result;
+        const input = document.getElementById('clientQrImageUrl');
+        if (input) input.value = base64Data;
+        updateClientQrImagePreview(base64Data);
+        showToast("QR Code image loaded! Click 'Save QR Settings' to store.");
+    };
+    reader.readAsDataURL(file);
+}
+
+function populateClientTestSlots(slots) {
+    const sel = document.getElementById('clientTestSlotSelect');
+    if (!sel) return;
+    sel.innerHTML = '';
+    if (!slots || slots.length === 0) {
+        sel.innerHTML = '<option value="1">Slot 1 (₹10.00)</option><option value="2">Slot 2 (₹20.00)</option>';
+        return;
+    }
+    slots.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.slot_number;
+        opt.textContent = `Slot ${s.slot_number}: ${s.product_name || 'Item'} (₹${s.price_rupees.toFixed(2)})`;
+        sel.appendChild(opt);
     });
+}
+
+async function generateClientTestQR() {
+    if (!state.selectedDeviceId) return;
+    const slotNum = parseInt(document.getElementById('clientTestSlotSelect').value) || 1;
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/orders/initiate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                device_id: state.selectedDeviceId,
+                slot_number: slotNum
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            clientActiveTestOrderId = data.order_id;
+
+            document.getElementById('clientTestOrderNum').textContent = data.order_number;
+            document.getElementById('clientTestProductName').textContent = data.product_name;
+            document.getElementById('clientTestPrice').textContent = `₹${data.amount_rupees.toFixed(2)}`;
+            document.getElementById('clientTestStatus').textContent = data.order_status;
+            document.getElementById('clientTestStatus').className = 'badge badge-offline';
+            document.getElementById('clientTestOrderCard').style.display = 'block';
+
+            const qrImg = document.getElementById('clientDynamicQrImg');
+            const qrEmpty = document.getElementById('clientDynamicQrEmpty');
+            const upiUriLabel = document.getElementById('clientUpiUriLabel');
+
+            qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=190x190&data=${encodeURIComponent(data.qr_payload)}`;
+            qrImg.style.display = 'block';
+            qrEmpty.style.display = 'none';
+            upiUriLabel.textContent = data.qr_payload;
+
+            showToast(`Dynamic QR generated for Slot ${slotNum} (₹${data.amount_rupees.toFixed(2)})!`);
+        } else {
+            const err = await res.json();
+            showToast(err.detail || 'Failed to initiate QR order', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function simulateClientTestPaymentPaid() {
+    if (!clientActiveTestOrderId) {
+        showToast("Generate a QR order first", "error");
+        return;
+    }
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/orders/${clientActiveTestOrderId}/mark-paid`, {
+            method: 'POST'
+        });
+
+        if (res.ok) {
+            document.getElementById('clientTestStatus').textContent = 'PAID (DISPENSE TRIGGERED)';
+            document.getElementById('clientTestStatus').className = 'badge badge-on';
+            showToast("✓ Payment Confirmed! Cloud marked order as PAID. ESP32 relay triggered!");
+        } else {
+            const err = await res.json();
+            showToast(err.detail || 'Failed to confirm payment', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
 }
 
 async function handleSaveQRSettings(e) {
@@ -489,10 +726,13 @@ async function handleSaveQRSettings(e) {
     if (!state.selectedDeviceId) return;
 
     try {
+        const qrUrlInput = document.getElementById('clientQrImageUrl');
         const payload = {
             upi_merchant_vpa: elements.qrVpa.value.trim(),
+            merchant_name: elements.qrMerchantName.value.trim(),
             qr_timeout_seconds: parseInt(elements.qrTimeout.value),
             dynamic_pricing_enabled: true,
+            custom_qr_image_url: qrUrlInput ? qrUrlInput.value.trim() || null : null
         };
 
         const res = await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/qr/settings`, {

@@ -11,16 +11,20 @@ class QRSettingsResponse(BaseModel):
     device_id: str
     provider: str
     upi_merchant_vpa: str
+    merchant_name: Optional[str] = "Smart Vending"
     qr_timeout_seconds: int
     dynamic_pricing_enabled: bool
+    custom_qr_image_url: Optional[str] = None
     is_active: bool
 
 
 class QRSettingsUpdateRequest(BaseModel):
     """Payload to update QR payment gateway settings."""
     upi_merchant_vpa: Optional[str] = Field(None, description="UPI merchant virtual payment address (e.g. apex@icici)")
+    merchant_name: Optional[str] = Field(None, description="Display name on UPI checkout")
     qr_timeout_seconds: Optional[int] = Field(None, ge=30, le=600, description="Display countdown timer in seconds")
     dynamic_pricing_enabled: Optional[bool] = None
+    custom_qr_image_url: Optional[str] = Field(None, description="Custom QR image URL or base64 data URI")
 
 
 class CoinSettingsResponse(BaseModel):

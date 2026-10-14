@@ -146,8 +146,10 @@ def get_qr_settings(
         device_id=device.device_id,
         provider=cfg.get("provider", "UPI_DYNAMIC"),
         upi_merchant_vpa=cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici"),
+        merchant_name=cfg.get("merchant_name", "Smart Vending"),
         qr_timeout_seconds=cfg.get("qr_timeout_seconds", 180),
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
+        custom_qr_image_url=cfg.get("custom_qr_image_url", None),
         is_active=qr_mod.is_enabled,
     )
 
@@ -167,10 +169,14 @@ def update_qr_settings(
 
     if payload.upi_merchant_vpa is not None:
         cfg["upi_merchant_vpa"] = payload.upi_merchant_vpa
+    if payload.merchant_name is not None:
+        cfg["merchant_name"] = payload.merchant_name
     if payload.qr_timeout_seconds is not None:
         cfg["qr_timeout_seconds"] = payload.qr_timeout_seconds
     if payload.dynamic_pricing_enabled is not None:
         cfg["dynamic_pricing_enabled"] = payload.dynamic_pricing_enabled
+    if payload.custom_qr_image_url is not None:
+        cfg["custom_qr_image_url"] = payload.custom_qr_image_url
 
     qr_mod.configuration = cfg
     device.current_config_version += 1
@@ -184,8 +190,10 @@ def update_qr_settings(
         device_id=device.device_id,
         provider=cfg.get("provider", "UPI_DYNAMIC"),
         upi_merchant_vpa=cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici"),
+        merchant_name=cfg.get("merchant_name", "Smart Vending"),
         qr_timeout_seconds=cfg.get("qr_timeout_seconds", 180),
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
+        custom_qr_image_url=cfg.get("custom_qr_image_url", None),
         is_active=qr_mod.is_enabled,
     )
 

@@ -206,11 +206,110 @@
                                     <input type="number" id="qrTimeout" class="input-field" value="120" min="30" max="600">
                                 </div>
                             </div>
+
+                            <!-- Custom QR Code Upload & Preview -->
+                            <div style="margin-top: 1.25rem; padding: 1.25rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
+                                <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.4rem;">
+                                    🖼️ Custom QR Code Image Upload / Preview
+                                </label>
+                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                                    Upload a custom merchant UPI QR code image or static payment barcode to display for this machine.
+                                </p>
+                                <div style="display: flex; gap: 1.5rem; align-items: flex-start;">
+                                    <div style="flex: 1;">
+                                        <input type="file" id="clientQrFileInput" accept="image/*" class="input-field" style="padding: 0.4rem; background: rgba(59,130,246,0.05); border-style: dashed;" onchange="handleClientQRImageUpload(event)">
+                                        <div style="margin-top: 0.5rem;">
+                                            <label style="font-size: 0.7rem; color: var(--text-secondary);">Or specify QR Image URL:</label>
+                                            <input type="url" id="clientQrImageUrl" class="input-field" placeholder="https://example.com/qr.png" style="font-size: 0.8rem;" oninput="updateClientQrImagePreview(this.value)">
+                                        </div>
+                                    </div>
+                                    <div style="width: 130px; height: 130px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #0f172a; overflow: hidden;">
+                                        <img id="clientQrImagePreview" src="" alt="QR Preview" style="max-width: 100%; max-height: 100%; display: none; object-fit: contain;">
+                                        <span id="clientQrPlaceholder" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; padding: 0.5rem;">No QR Image</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
                                 <button type="button" class="btn btn-secondary" id="resetQrBtn">Reload Settings</button>
                                 <button type="submit" class="btn btn-primary" id="saveQrBtn">Save QR Settings</button>
                             </div>
                         </form>
+                    </div>
+
+                    <!-- Machine Slot Pricing & Inventory Card -->
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>🛒 Slot Pricing & Inventory Overrides</h3>
+                                <p>Manage individual slot prices (₹) and product mappings for <span class="mono-text selected-device-label">...</span></p>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addNewClientSlotRow()">➕ Add Slot</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 80px;">Slot #</th>
+                                        <th>Product / Item Name</th>
+                                        <th style="width: 140px;">Price (₹)</th>
+                                        <th style="width: 100px;">Current Stock</th>
+                                        <th style="width: 100px;">Capacity</th>
+                                        <th style="width: 80px; text-align: center;">Active</th>
+                                        <th style="width: 100px; text-align: center;">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="clientSlotsTableBody">
+                                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading machine slots...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Live Dynamic QR Generator & Test Dispense Simulator Card -->
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>⚡ Live Dynamic QR Generator & Dispense Tester</h3>
+                                <p>Generate real-time UPI QR codes and test hardware motor dispense triggers for <span class="mono-text selected-device-label">...</span></p>
+                            </div>
+                            <span class="badge badge-on">Hardware In-Loop Simulator</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: center; padding: 1rem 0;">
+                            <div>
+                                <div class="form-group">
+                                    <label>Select Dispensing Slot to Test</label>
+                                    <select class="input-field" id="clientTestSlotSelect">
+                                        <option value="1">Slot 1</option>
+                                        <option value="2">Slot 2</option>
+                                    </select>
+                                </div>
+                                <button type="button" class="btn btn-primary" style="width: 100%; margin-top: 0.75rem; justify-content: center;" onclick="generateClientTestQR()">
+                                    📲 Generate Live Dynamic QR Code
+                                </button>
+
+                                <div id="clientTestOrderCard" style="display: none; margin-top: 1rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.85rem; font-size: 0.8rem;">
+                                    <div>Order Number: <strong id="clientTestOrderNum" class="mono-text" style="color: var(--primary);"></strong></div>
+                                    <div>Product: <span id="clientTestProductName"></span></div>
+                                    <div>Price: <strong id="clientTestPrice" style="color: #34d399; font-size: 1.05rem;"></strong></div>
+                                    <div>Status: <span id="clientTestStatus" class="badge badge-offline">AWAITING_PAYMENT</span></div>
+                                    <div style="margin-top: 0.75rem;">
+                                        <button type="button" class="btn btn-primary" id="btnClientSimulatePaid" style="width: 100%; justify-content: center; font-weight: 700; background: #059669;" onclick="simulateClientTestPaymentPaid()">
+                                            💳 Simulate Payment Received (Mark Paid)
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem; background: rgba(15,23,42,0.8); border: 1px solid var(--border-subtle); border-radius: 12px; text-align: center;">
+                                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Scannable Dynamic UPI QR</div>
+                                <div id="clientQrCodeBox" style="width: 190px; height: 190px; background: white; padding: 8px; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                                    <img id="clientDynamicQrImg" src="" alt="Dynamic QR" style="max-width: 100%; max-height: 100%; display: none;">
+                                    <div id="clientDynamicQrEmpty" style="color: #64748b; font-size: 0.75rem; padding: 1rem;">Click "Generate Live Dynamic QR Code" to test</div>
+                                </div>
+                                <div id="clientUpiUriLabel" class="mono-text" style="font-size: 0.65rem; color: var(--text-muted); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.5rem;"></div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- QR Transaction Log Table -->

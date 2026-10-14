@@ -829,6 +829,184 @@
         </div>
     </div>
 
+    <!-- Modal: Vending Pricing, Slots & QR Settings -->
+    <div id="modalDevicePricing" class="modal-overlay">
+        <div class="modal-container" style="max-width:820px; max-height:90vh; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                        <span>💰</span> Slot Pricing & QR Payment Settings
+                    </h3>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin:0.25rem 0 0 0;">
+                        Machine: <span id="pricingModalDeviceId" class="mono-text" style="color:var(--primary); font-weight:700;">VM-000001</span>
+                        &nbsp;|&nbsp; MAC: <span id="pricingModalMac" class="mono-text" style="color:#a78bfa;">--:--:--:--:--:--</span>
+                        &nbsp;|&nbsp; Tenant: <span id="pricingModalClient" style="color:var(--text-primary); font-weight:600;">Apex Vending</span>
+                    </p>
+                </div>
+                <button class="modal-close" onclick="closeModal('modalDevicePricing')">&times;</button>
+            </div>
+            
+            <!-- Modal Internal Tabs -->
+            <div style="display:flex; gap:0.5rem; padding:0.75rem 1.5rem 0; border-bottom:1px solid var(--border-subtle); background:rgba(255,255,255,0.02);">
+                <button type="button" class="btn btn-sm btn-primary modal-tab-btn" id="modalTabBtnSlots" onclick="switchPricingModalTab('slots')" style="border-radius:6px 6px 0 0;">
+                    🛒 Machine Slots & Prices
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary modal-tab-btn" id="modalTabBtnQR" onclick="switchPricingModalTab('qr')" style="border-radius:6px 6px 0 0;">
+                    📱 UPI QR & Merchant Setup
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary modal-tab-btn" id="modalTabBtnTest" onclick="switchPricingModalTab('test')" style="border-radius:6px 6px 0 0;">
+                    ⚡ Live QR Test & Dispense Simulator
+                </button>
+            </div>
+
+            <div class="modal-body" style="overflow-y:auto; flex:1; padding:1.25rem 1.5rem;">
+                
+                <!-- TAB CONTENT: SLOTS & PRICING -->
+                <div id="pricingModalTabSlots">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                        <div>
+                            <h4 style="font-size:0.95rem; margin:0; color:var(--text-primary);">Dispensing Slot Configuration</h4>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin:0.2rem 0 0 0;">Set custom price in ₹ per slot without modifying ESP32 firmware.</p>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addNewSlotRow()">➕ Add Slot</button>
+                    </div>
+                    
+                    <div class="table-responsive" style="border:1px solid var(--border-subtle); border-radius:var(--radius-md);">
+                        <table class="data-table" style="margin:0;">
+                            <thead>
+                                <tr>
+                                    <th style="width:70px;">Slot #</th>
+                                    <th>Product / Item Name</th>
+                                    <th style="width:130px;">Price (₹)</th>
+                                    <th style="width:90px;">Stock</th>
+                                    <th style="width:90px;">Capacity</th>
+                                    <th style="width:70px;">Active</th>
+                                    <th style="width:90px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pricingSlotsTableBody">
+                                <tr><td colspan="7" style="text-align:center; padding:1.5rem;">Loading slots...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENT: QR SETTINGS & CUSTOM QR UPLOAD -->
+                <div id="pricingModalTabQR" style="display:none;">
+                    <form id="pricingQRSettingsForm" onsubmit="handleSaveDeviceQRSettings(event)">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                            <div class="form-group">
+                                <label>Merchant UPI VPA / QR ID</label>
+                                <input type="text" class="input-field mono-text" id="pricingQrVpa" placeholder="e.g. merchant@icici or pay.vm000001@upi" required>
+                                <small style="color:var(--text-muted); font-size:0.7rem;">Customer UPI payments will route to this VPA address.</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Merchant Display Name</label>
+                                <input type="text" class="input-field" id="pricingQrMerchantName" placeholder="e.g. Smart Snack Station" required>
+                            </div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                            <div class="form-group">
+                                <label>QR Display Countdown (Seconds)</label>
+                                <input type="number" class="input-field" id="pricingQrTimeout" value="180" min="30" max="600" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Dynamic Pricing Mode</label>
+                                <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
+                                    <label class="switch">
+                                        <input type="checkbox" id="pricingQrDynamicToggle" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                    <span style="font-size:0.8rem; color:var(--text-secondary);">Enable slot-based dynamic amount in QR</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Custom QR Code Upload & Preview -->
+                        <div style="margin-top:1.25rem; padding:1rem; background:rgba(255,255,255,0.02); border:1px solid var(--border-subtle); border-radius:var(--radius-md);">
+                            <label style="font-size:0.85rem; font-weight:700; color:var(--text-primary); display:block; margin-bottom:0.4rem;">
+                                🖼️ Custom QR Code Image Upload / Preview
+                            </label>
+                            <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.75rem;">
+                                Upload a custom merchant QR image file (JPG/PNG) or static payment barcode to display on client machines.
+                            </p>
+                            <div style="display:flex; gap:1.5rem; align-items:flex-start;">
+                                <div style="flex:1;">
+                                    <input type="file" id="pricingQrFileInput" accept="image/*" class="input-field" style="padding:0.4rem; background:rgba(59,130,246,0.05); border-style:dashed;" onchange="handleQRImageUpload(event)">
+                                    <div style="margin-top:0.5rem;">
+                                        <label style="font-size:0.7rem; color:var(--text-secondary);">Or specify QR Image URL directly:</label>
+                                        <input type="url" id="pricingQrImageUrl" class="input-field" placeholder="https://example.com/qr-code.png" style="font-size:0.8rem;" oninput="updateQrImagePreview(this.value)">
+                                    </div>
+                                </div>
+                                <div style="width:140px; height:140px; border:1px solid var(--border-subtle); border-radius:8px; display:flex; align-items:center; justify-content:center; background:#0f172a; overflow:hidden; position:relative;">
+                                    <img id="pricingQrImagePreview" src="" alt="QR Preview" style="max-width:100%; max-height:100%; display:none; object-fit:contain;">
+                                    <span id="pricingQrImagePlaceholder" style="font-size:0.7rem; color:var(--text-muted); text-align:center; padding:0.5rem;">No QR Image Uploaded</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:1rem; display:flex; justify-content:flex-end;">
+                            <button type="submit" class="btn btn-primary" id="btnSaveQrSettings">💾 Save QR Settings</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- TAB CONTENT: LIVE QR TEST & SIMULATOR -->
+                <div id="pricingModalTabTest" style="display:none;">
+                    <div style="background:rgba(59,130,246,0.05); border:1px solid rgba(59,130,246,0.2); border-radius:var(--radius-md); padding:1rem; margin-bottom:1rem;">
+                        <h4 style="font-size:0.9rem; color:#60a5fa; margin:0 0 0.25rem 0;">🎯 Test Dynamic QR Code & Dispense Trigger</h4>
+                        <p style="font-size:0.8rem; color:var(--text-secondary); margin:0;">
+                            Simulate customer purchasing from ESP32. Generates dynamic UPI QR code with resolved slot price. Clicking "Simulate Payment Received" notifies the cloud, causing the ESP32 relay motor to spin in real time!
+                        </p>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; align-items:center;">
+                        <div>
+                            <div class="form-group">
+                                <label>Select Machine Dispense Slot to Test</label>
+                                <select class="input-field" id="testOrderSlotSelect">
+                                    <option value="1">Slot 1</option>
+                                    <option value="2">Slot 2</option>
+                                </select>
+                            </div>
+                            <button type="button" class="btn btn-primary" style="width:100%; margin-top:0.75rem; justify-content:center;" onclick="generateTestOrderQR()">
+                                📲 Generate Test Dynamic QR Code
+                            </button>
+
+                            <div id="testOrderDetails" style="display:none; margin-top:1rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:8px; padding:0.75rem; font-size:0.8rem;">
+                                <div>Order Number: <strong id="testOrderNum" class="mono-text" style="color:var(--primary);"></strong></div>
+                                <div>Slot: <strong id="testOrderSlot"></strong> (<span id="testOrderProduct"></span>)</div>
+                                <div>Price: <strong id="testOrderPrice" style="color:#34d399; font-size:1rem;"></strong></div>
+                                <div>Status: <span id="testOrderStatus" class="badge badge-offline">AWAITING_PAYMENT</span></div>
+                                <div style="margin-top:0.75rem;">
+                                    <button type="button" class="btn btn-success" id="btnSimulatePaid" style="width:100%; justify-content:center; font-weight:700;" onclick="simulateTestPaymentPaid()">
+                                        💳 Simulate Payment Received (Mark Paid)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- QR Code Display Box -->
+                        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:1.25rem; background:rgba(15,23,42,0.8); border:1px solid var(--border-subtle); border-radius:12px; text-align:center;">
+                            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:0.5rem;">Scannable Dynamic QR</div>
+                            <div id="testQrCodeWrapper" style="width:200px; height:200px; background:white; padding:8px; border-radius:8px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
+                                <img id="testQrCodeImg" src="" alt="Dynamic QR" style="max-width:100%; max-height:100%; display:none;">
+                                <div id="testQrCodeEmpty" style="color:#64748b; font-size:0.75rem; padding:1rem;">Click "Generate Test Dynamic QR Code" to generate</div>
+                            </div>
+                            <div id="testUpiUriText" class="mono-text" style="font-size:0.65rem; color:var(--text-muted); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:0.5rem;"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            
+            <div class="modal-footer" style="padding:1rem 1.5rem; border-top:1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalDevicePricing')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
         <div class="modal-container" style="max-width:400px;">
