@@ -178,7 +178,9 @@ async def upload_firmware_binary(
     # If target device specified, trigger deployment immediately
     if target_device_id and target_device_id.strip():
         target_dev = db.query(Device).filter(
-            (Device.device_id == target_device_id.strip()) | (Device.id == target_device_id.strip())
+            (Device.device_id == target_device_id.strip())
+            | (Device.id == target_device_id.strip())
+            | (Device.mac_address.ilike(target_device_id.strip()))
         ).first()
         if target_dev:
             # Supersede existing pending deployments
@@ -241,7 +243,9 @@ def trigger_ota_deployment(
     [Manufacturer Only] Push a firmware update to a particular physical ESP32 device.
     """
     device = db.query(Device).filter(
-        (Device.device_id == payload.device_id) | (Device.id == payload.device_id)
+        (Device.device_id == payload.device_id.strip())
+        | (Device.id == payload.device_id.strip())
+        | (Device.mac_address.ilike(payload.device_id.strip()))
     ).first()
     if not device:
         raise NotFoundException("Device", payload.device_id)
@@ -338,10 +342,17 @@ def check_for_pending_ota(
     [Edge Gateway] Polled by ESP32 hardware to check if an OTA firmware update is waiting.
     """
     device = db.query(Device).filter(
-        (Device.device_id == device_id) | (Device.id == device_id)
+        (Device.device_id == device_id.strip())
+        | (Device.id == device_id.strip())
+        | (Device.mac_address.ilike(device_id.strip()))
     ).first()
     if not device:
         return DeviceOTACheckResponse(has_update=False)
+
+    # Automatically mark device online on every OTA check
+    device.is_online = True
+    device.last_heartbeat_at = utc_now()
+    db.commit()
 
     deployment = db.query(OTADeployment).filter(
         OTADeployment.device_id == device.id,
@@ -387,6 +398,8 @@ def report_device_ota_status(
         # Bump running firmware on device entity
         if deployment.device and deployment.firmware_version:
             deployment.device.current_firmware_version = deployment.firmware_version.version_string
+            deployment.device.is_online = True
+            deployment.device.last_heartbeat_at = utc_now()
     elif status_clean == "FAILED":
         deployment.completed_at = utc_now()
         deployment.error_message = payload.error_message or "Unknown OTA failure"

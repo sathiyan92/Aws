@@ -444,7 +444,9 @@ def get_pending_dispense_for_device(db: Session, device_id: str) -> Dict[str, An
     physical motor dispense for this machine.
     Automatically marks machine ONLINE in the portal.
     """
-    device = db.query(Device).filter(Device.device_id == device_id).first()
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
     if not device:
         from src.db.models.client import Client
         from src.db.models.device import DeviceType
@@ -599,7 +601,9 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
     [Edge & Portal Endpoint]
     Fetch active QR code, VPA, and price configuration for a machine.
     """
-    device = db.query(Device).filter(Device.device_id == device_id).first()
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
     if not device:
         vpa = f"rzp.vending.{device_id.lower()}@icici"
         return {
@@ -645,7 +649,9 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     Allows vendor or manufacturer to change the QR code, UPI VPA, or item price online.
     Increments config_version so the ESP32 automatically pulls the update and changes its screen.
     """
-    device = db.query(Device).filter(Device.device_id == device_id).first()
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
     if not device:
         raise NotFoundException("Device", device_id)
 

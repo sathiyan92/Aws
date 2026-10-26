@@ -502,3 +502,67 @@ def test_remote_qr_config_update_by_vendor_or_manufacturer(test_client):
     assert updated_data["config_version"] > init_version
 
 
+def test_esp32_mac_auto_binding_and_ota_check(test_client):
+    """
+    Verify that an ESP32 connecting with its real physical MAC address:
+    1. Authenticates without HardwareMismatchException.
+    2. Automatically binds its real MAC address to the device entity.
+    3. Appears strictly ONLINE in the fleet portal.
+    4. Can query pending OTA updates by either device_id or MAC address.
+    """
+    real_hardware_mac = "A4:CF:12:34:56:78"
+    auth_payload = {
+        "device_id": "VM-000001",
+        "chip_id": "ESP32-CHIP-B101",
+        "mac_address": real_hardware_mac,
+        "device_token": "dev_token_VM-000001",
+        "firmware_version": "v2.1.0-razorpay-ota",
+        "boot_count": 1,
+    }
+
+    # 1. Edge Authentication
+    resp = test_client.post("/api/v1/device-gateway/authenticate", json=auth_payload)
+    assert resp.status_code == 200, f"Handshake failed: {resp.text}"
+    auth_data = resp.json()
+    assert "session_token" in auth_data
+    session_jwt = auth_data["session_token"]
+
+    # 2. Verify MAC address was automatically bound in database and device is online
+    db: Session = SessionLocal()
+    try:
+        dev = db.query(Device).filter(Device.device_id == "VM-000001").first()
+        assert dev.mac_address == real_hardware_mac
+        assert dev.is_online is True
+        assert dev.last_heartbeat_at is not None
+    finally:
+        db.close()
+
+    # 3. Check for OTA by MAC address
+    ota_resp = test_client.get(f"/api/v1/ota/check/{real_hardware_mac}")
+    assert ota_resp.status_code == 200
+    assert "has_update" in ota_resp.json()
+
+    # 4. Check for OTA by Device ID
+    ota_resp2 = test_client.get("/api/v1/ota/check/VM-000001")
+    assert ota_resp2.status_code == 200
+    assert "has_update" in ota_resp2.json()
+
+    # 5. Heartbeat ping with session token
+    hb_payload = {
+        "current_firmware_version": "v2.1.0-razorpay-ota",
+        "current_config_version": 1,
+        "uptime_seconds": 60,
+        "free_heap_bytes": 180000,
+        "wifi_rssi": -48,
+        "ip_address": "192.168.1.120",
+    }
+    hb_resp = test_client.post(
+        "/api/v1/device-gateway/heartbeat",
+        json=hb_payload,
+        headers={"Authorization": f"Bearer {session_jwt}"},
+    )
+    assert hb_resp.status_code == 200
+    assert hb_resp.json()["status"] == "acknowledged"
+
+
+

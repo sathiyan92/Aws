@@ -53,6 +53,7 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <HTTPClient.h>
+#include <Update.h>
 #include <ArduinoJson.h>
 #include <DIYables_TFT_SPI.h>
 #include "qrcode.h"
@@ -116,13 +117,18 @@ String device_id        = "VM-000001";              // Unique Machine ID in 1000
 String device_token     = "dev_token_VM-000001";
 String server_base_url  = "http://35.154.219.82:8000";
 String razorpay_upi_vpa = "rzp.vending.vm000001@icici"; // Default or dynamic Razorpay VPA
-String firmware_version = "v2.0.0-razorpay";
+String firmware_version = "v2.1.0-razorpay-ota";
+
+// Cloud Session & Online State
+String session_jwt      = "";
+bool   is_authenticated = false;
 
 // Machine Operating State Machine
 enum MachineState {
   STATE_STANDBY_QR,    // Continuously displaying QR, polling for payment
   STATE_DISPENSING,    // Payment confirmed, motor running, showing collect material
-  STATE_COMPLETE       // Dispense complete screen
+  STATE_COMPLETE,      // Dispense complete screen
+  STATE_OTA_UPDATING   // Downloading and flashing firmware wirelessly
 };
 MachineState current_state = STATE_STANDBY_QR;
 
@@ -134,7 +140,7 @@ float  pending_amount_rupee = 10.00;
 String pending_product_name = "Cold Drink";
 String custom_qr_code       = "";
 
-// Polling interval
+// Polling intervals
 unsigned long last_poll_time = 0;
 const unsigned long POLL_INTERVAL_MS = 1800; // Check cloud for Razorpay payment every 1.8 seconds
 
@@ -142,6 +148,14 @@ const unsigned long POLL_INTERVAL_MS = 1800; // Check cloud for Razorpay payment
 unsigned long last_config_check_time = 0;
 const unsigned long CONFIG_CHECK_INTERVAL_MS = 25000; // Check remote QR config every 25s
 int current_config_version = 1;
+
+// Over-The-Air (OTA) Polling
+unsigned long last_ota_check_time = 0;
+const unsigned long OTA_CHECK_INTERVAL_MS = 20000; // Check for pending OTA updates every 20s
+
+// Periodic Health Heartbeat
+unsigned long last_heartbeat_time = 0;
+const unsigned long HEARTBEAT_INTERVAL_MS = 45000; // Send telemetry heartbeat every 45s
 
 // Fallback Captive Portal for Initial Wi-Fi Setup
 WebServer webServer(80);
@@ -158,6 +172,11 @@ void confirmDispenseToCloud(String orderId);
 void pollPendingDispense();
 void testMotorHardware();
 void printHelpMenu();
+bool authenticateWithCloud();
+void sendHeartbeat();
+void checkForPendingOTA();
+bool performOTA(String downloadUrl, String deploymentId, size_t binarySize, String targetVer);
+void reportOTAStatus(String deploymentId, String status, String errorMsg = "");
 
 // ==============================================================================
 // 5. MOTOR CONTROL HELPER
@@ -719,7 +738,269 @@ void checkForRemoteQRConfigUpdates() {
 }
 
 // ==============================================================================
-// 13. HARDWARE MOTOR TEST & BENCH TESTING
+// 13. CLOUD HARDWARE HANDSHAKE & DYNAMIC MAC BINDING
+// ==============================================================================
+bool authenticateWithCloud() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClient client;
+  HTTPClient http;
+  String endpoint = server_base_url + "/api/v1/device-gateway/authenticate";
+
+  Serial.printf("\n[Cloud] Authenticating Machine '%s' (MAC: %s) with Server...\n", device_id.c_str(), WiFi.macAddress().c_str());
+  http.setConnectTimeout(8000);
+  http.setTimeout(8000);
+  http.begin(client, endpoint);
+  http.addHeader("Content-Type", "application/json");
+
+  StaticJsonDocument<512> doc;
+  doc["device_id"]        = device_id;
+  doc["chip_id"]          = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  doc["mac_address"]      = WiFi.macAddress();
+  doc["device_token"]     = device_token;
+  doc["firmware_version"] = firmware_version;
+  doc["boot_count"]       = 1;
+
+  String reqBody;
+  serializeJson(doc, reqBody);
+  int httpCode = http.POST(reqBody);
+
+  if (httpCode == 200) {
+    String resp = http.getString();
+    StaticJsonDocument<1024> respDoc;
+    deserializeJson(respDoc, resp);
+
+    session_jwt = respDoc["session_token"].as<String>();
+    is_authenticated = true;
+
+    if (respDoc.containsKey("device_id")) {
+      String assignedId = respDoc["device_id"].as<String>();
+      if (assignedId.length() > 0 && assignedId != device_id) {
+        Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s\n", assignedId.c_str());
+        device_id = assignedId;
+        prefs.begin("vending_cfg", false);
+        prefs.putString("dev_id", device_id);
+        prefs.end();
+      }
+    }
+    Serial.println("[✓] Cloud Gateway Handshake SUCCESS! Real MAC Address Bound. Machine is ONLINE.");
+    http.end();
+    return true;
+  } else {
+    Serial.printf("[!] Gateway authentication response (HTTP %d): %s\n", httpCode, http.getString().c_str());
+  }
+  http.end();
+  return false;
+}
+
+// ==============================================================================
+// 14. TELEMETRY HEARTBEAT (KEEPS MACHINE PERMANENTLY ONLINE IN DASHBOARD)
+// ==============================================================================
+void sendHeartbeat() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  String endpoint = server_base_url + "/api/v1/device-gateway/heartbeat";
+
+  http.setConnectTimeout(5000);
+  http.setTimeout(5000);
+  http.begin(client, endpoint);
+  http.addHeader("Content-Type", "application/json");
+  if (session_jwt.length() > 0) {
+    http.addHeader("Authorization", "Bearer " + session_jwt);
+  }
+  http.addHeader("X-Device-ID", device_id);
+  http.addHeader("X-Device-Token", device_token);
+
+  StaticJsonDocument<512> doc;
+  doc["current_firmware_version"] = firmware_version;
+  doc["current_config_version"]   = current_config_version;
+  doc["uptime_seconds"]           = millis() / 1000;
+  doc["free_heap_bytes"]          = ESP.getFreeHeap();
+  doc["wifi_rssi"]                = WiFi.RSSI();
+  doc["ip_address"]               = WiFi.localIP().toString();
+
+  String reqBody;
+  serializeJson(doc, reqBody);
+  int code = http.POST(reqBody);
+  if (code == 200) {
+    // Heartbeat accepted, status strictly ONLINE
+  } else if (code == 401 || code == 403) {
+    authenticateWithCloud();
+  }
+  http.end();
+}
+
+// ==============================================================================
+// 15. OVER-THE-AIR (OTA) WIRELESS UPDATE ENGINE
+// ==============================================================================
+void reportOTAStatus(String deploymentId, String status, String errorMsg) {
+  WiFiClient client;
+  HTTPClient http;
+  String endpoint = server_base_url + "/api/v1/ota/status";
+  http.setConnectTimeout(5000);
+  http.setTimeout(5000);
+  http.begin(client, endpoint);
+  http.addHeader("Content-Type", "application/json");
+
+  StaticJsonDocument<256> doc;
+  doc["deployment_id"] = deploymentId;
+  doc["status"]        = status;
+  if (errorMsg.length() > 0) doc["error_message"] = errorMsg;
+
+  String body;
+  serializeJson(doc, body);
+  http.POST(body);
+  http.end();
+}
+
+bool performOTA(String downloadUrl, String deploymentId, size_t binarySize, String targetVer) {
+  current_state = STATE_OTA_UPDATING;
+
+  // 1. Draw OTA Update Screen on ILI9488 TFT LCD
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Header Bar
+  TFT_display.fillRect(0, 0, 480, 50, COLOR_HEADER);
+  TFT_display.drawFastHLine(0, 50, 480, COLOR_CYAN);
+  TFT_display.setCursor(50, 14);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(3);
+  TFT_display.print("WIRELESS UPDATE (OTA)");
+
+  // Center Info Card
+  TFT_display.fillRect(25, 70, 430, 230, COLOR_CARD);
+  TFT_display.drawRect(25, 70, 430, 230, COLOR_CARD_BORDER);
+
+  TFT_display.setCursor(45, 95);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("Flashing Target: %s", targetVer.c_str());
+
+  TFT_display.setCursor(45, 130);
+  TFT_display.setTextColor(COLOR_AMBER);
+  TFT_display.setTextSize(2);
+  TFT_display.print("CRITICAL: DO NOT TURN OFF POWER!");
+
+  TFT_display.setCursor(45, 168);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(2);
+  TFT_display.print("Streaming binary into partition...");
+
+  // Notify Cloud Gateway: OTA in Progress
+  reportOTAStatus(deploymentId, "DOWNLOADING");
+
+  WiFiClient client;
+  HTTPClient http;
+  http.setConnectTimeout(15000);
+  http.setTimeout(90000);
+
+  if (!http.begin(client, downloadUrl)) {
+    Serial.println("[OTA ✗] Failed to connect to binary download endpoint.");
+    reportOTAStatus(deploymentId, "FAILED", "Failed to connect to binary endpoint");
+    current_state = STATE_STANDBY_QR;
+    uiDrawStandbyQRScreen();
+    return false;
+  }
+
+  int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("[OTA ✗] Binary download returned HTTP %d\n", httpCode);
+    reportOTAStatus(deploymentId, "FAILED", "HTTP error " + String(httpCode));
+    http.end();
+    current_state = STATE_STANDBY_QR;
+    uiDrawStandbyQRScreen();
+    return false;
+  }
+
+  int contentLength = http.getSize() > 0 ? http.getSize() : binarySize;
+  if (!Update.begin(contentLength > 0 ? contentLength : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+    Serial.printf("[OTA ✗] Update.begin failed. Error code: %d\n", Update.getError());
+    reportOTAStatus(deploymentId, "FAILED", "Partition begin error code " + String(Update.getError()));
+    http.end();
+    current_state = STATE_STANDBY_QR;
+    uiDrawStandbyQRScreen();
+    return false;
+  }
+
+  Serial.println("[OTA] Writing new firmware to flash partition...");
+  WiFiClient *stream = http.getStreamPtr();
+  size_t written = Update.writeStream(*stream);
+
+  if (Update.end() && Update.isFinished()) {
+    Serial.printf("[✓] OTA SUCCESS! %u bytes written to flash.\n", (unsigned int)written);
+    reportOTAStatus(deploymentId, "SUCCESS");
+
+    // Success Screen
+    TFT_display.fillRect(35, 220, 410, 60, COLOR_GREEN);
+    TFT_display.setCursor(55, 238);
+    TFT_display.setTextColor(COLOR_BLACK);
+    TFT_display.setTextSize(2);
+    TFT_display.print("SUCCESS! REBOOTING NODE...");
+
+    http.end();
+    delay(2000);
+    ESP.restart();
+    return true;
+  } else {
+    Serial.printf("[OTA ✗] Flashing failed: %u/%u bytes. Error: %d\n", (unsigned int)written, (unsigned int)contentLength, Update.getError());
+    reportOTAStatus(deploymentId, "FAILED", "Flash write error code " + String(Update.getError()));
+    http.end();
+
+    TFT_display.fillRect(35, 220, 410, 60, COLOR_RED);
+    TFT_display.setCursor(55, 238);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.setTextSize(2);
+    TFT_display.print("OTA FAILED! RESUMING...");
+
+    delay(3000);
+    current_state = STATE_STANDBY_QR;
+    uiDrawStandbyQRScreen();
+    return false;
+  }
+}
+
+void checkForPendingOTA() {
+  if (WiFi.status() != WL_CONNECTED || current_state != STATE_STANDBY_QR) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  String endpoint = server_base_url + "/api/v1/ota/check/" + device_id;
+
+  http.setConnectTimeout(6000);
+  http.setTimeout(6000);
+  http.begin(client, endpoint);
+
+  int httpCode = http.GET();
+  if (httpCode == 200) {
+    String payload = http.getString();
+    StaticJsonDocument<1024> doc;
+    DeserializationError err = deserializeJson(doc, payload);
+
+    if (!err && doc["has_update"] == true) {
+      String deploymentId = doc["deployment_id"].as<String>();
+      String targetVer    = doc["version"].as<String>();
+      String binaryUrl    = doc["binary_url"].as<String>();
+      size_t fileSize     = doc["file_size_bytes"].as<size_t>();
+
+      Serial.println("\n==================================================================");
+      Serial.println(">>> ⚡ CLOUD OVER-THE-AIR (OTA) WIRELESS UPDATE DETECTED! <<<      ");
+      Serial.printf("  Target Version : %s\n", targetVer.c_str());
+      Serial.printf("  Binary Size    : %u bytes\n", (unsigned int)fileSize);
+      Serial.printf("  Download URL   : %s\n", binaryUrl.c_str());
+      Serial.println("==================================================================");
+
+      http.end();
+      performOTA(binaryUrl, deploymentId, fileSize, targetVer);
+      return;
+    }
+  }
+  http.end();
+}
+
+// ==============================================================================
+// 16. HARDWARE MOTOR TEST & BENCH TESTING
 // ==============================================================================
 void testMotorHardware() {
   Serial.println("\n[⚙️ TEST] Starting Hardware Motor 1 Test (GPIO 26)...");
@@ -735,12 +1016,13 @@ void printHelpMenu() {
   Serial.println("==================================================================");
   Serial.println("  'p' : SIMULATE RAZORPAY PAYMENT (Rs 10 -> Motor 1 Vends)");
   Serial.println("  't' : Test Motor Hardware (Runs Motor 1 for 1.5s)");
+  Serial.println("  'o' : Force OTA Update Check Now");
   Serial.println("  'h' : Show this Help Menu");
   Serial.println("==================================================================\n");
 }
 
 // ==============================================================================
-// 14. ARDUINO SETUP
+// 17. ARDUINO SETUP
 // ==============================================================================
 void setup() {
   Serial.begin(115200);
@@ -764,7 +1046,7 @@ void setup() {
   TFT_display.setRotation(1); // Landscape: 480 wide x 320 high
   TFT_display.fillScreen(COLOR_BG);
 
-  // Quick Splash
+  // Splash Screen
   TFT_display.setTextColor(COLOR_CYAN);
   TFT_display.setTextSize(3);
   TFT_display.setCursor(60, 120);
@@ -781,24 +1063,10 @@ void setup() {
   // 4. Connect to Wi-Fi
   connectToWiFi();
 
-  // 5. Connect to Cloud Server & Mark Machine Online
+  // 5. Authenticate with Cloud Gateway & Bind Hardware MAC Address
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("[Cloud] Connecting to server at: %s ...\n", server_base_url.c_str());
-    WiFiClient testClient;
-    HTTPClient testHttp;
-    testHttp.setConnectTimeout(5000);
-    testHttp.setTimeout(5000);
-    testHttp.begin(testClient, server_base_url + "/api/v1/orders/pending-dispense/" + device_id);
-    int code = testHttp.GET();
-    if (code == 200) {
-      Serial.printf("[✓] SUCCESS! Machine '%s' is now ONLINE on Cloud!\n", device_id.c_str());
-    } else {
-      Serial.printf("[!] Cloud connection returned code: %d\n", code);
-      if (code < 0) {
-        Serial.println("    ERROR: Could not reach Lightsail server. Check port 8000 firewall and server IP!");
-      }
-    }
-    testHttp.end();
+    authenticateWithCloud();
+    sendHeartbeat();
   }
 
   // 6. Render Standby QR Screen
@@ -809,7 +1077,7 @@ void setup() {
 }
 
 // ==============================================================================
-// 14. ARDUINO MAIN LOOP
+// 18. ARDUINO MAIN LOOP
 // ==============================================================================
 void loop() {
   // 1. Factory Reset Check: Hold BOOT (GPIO 0) for 5 seconds to wipe Wi-Fi
@@ -826,7 +1094,15 @@ void loop() {
     }
   }
 
-  // 2. Serial Commands (Desk Bench Testing)
+  // 2. Wi-Fi Connection Guard & Auto-Reconnect
+  if (WiFi.status() != WL_CONNECTED) {
+    connectToWiFi();
+    if (WiFi.status() == WL_CONNECTED) {
+      authenticateWithCloud();
+    }
+  }
+
+  // 3. Serial Commands (Desk Bench Testing)
   if (Serial.available()) {
     char c = Serial.read();
     if (c == 'p' || c == 'P') {
@@ -834,19 +1110,35 @@ void loop() {
       dispenseProduct(1, 10.00, "BENCH-TEST-" + String(millis()));
     } else if (c == 't' || c == 'T') {
       testMotorHardware();
+    } else if (c == 'o' || c == 'O') {
+      Serial.println("\n[⚡ OTA] Manually triggering OTA check from Serial...");
+      checkForPendingOTA();
     } else if (c == 'h' || c == 'H' || c == '?') {
       printHelpMenu();
     }
   }
 
-  // 3. Continuous Background Polling for Razorpay Payment Confirmations
+  // 4. Periodic Telemetry Heartbeat (keeps machine strictly ONLINE in cloud)
+  if (millis() - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
+    last_heartbeat_time = millis();
+    sendHeartbeat();
+  }
+
+  // 5. Operations in Standby QR State
   if (current_state == STATE_STANDBY_QR) {
+    // 5a. Real-time polling for incoming Razorpay payment
     if (millis() - last_poll_time >= POLL_INTERVAL_MS) {
       last_poll_time = millis();
       pollPendingDispense();
     }
 
-    // 4. Periodic Check for QR & Price changes by Vendor / Manufacturer
+    // 5b. Periodic check for pending Over-The-Air (OTA) updates
+    if (millis() - last_ota_check_time >= OTA_CHECK_INTERVAL_MS) {
+      last_ota_check_time = millis();
+      checkForPendingOTA();
+    }
+
+    // 5c. Periodic check for QR & Price changes by Vendor / Manufacturer
     if (millis() - last_config_check_time >= CONFIG_CHECK_INTERVAL_MS) {
       last_config_check_time = millis();
       checkForRemoteQRConfigUpdates();

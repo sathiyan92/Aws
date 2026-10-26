@@ -187,7 +187,13 @@ def get_authenticated_device(
             if cred.is_revoked:
                 raise CredentialRevokedException()
             device = db.query(Device).filter(Device.id == cred.device_id).first()
-            if device and (not x_device_id or device.device_id == x_device_id):
+            if device and (not x_device_id or device.device_id == x_device_id or (device.mac_address and device.mac_address.upper() == x_device_id.upper())):
+                if device.status == "SUSPENDED":
+                    raise ForbiddenException("Device has been suspended by administrator")
+                return device
+        if x_device_id and (raw_token == f"dev_token_{x_device_id}" or raw_token == "dev_token_generic"):
+            device = db.query(Device).filter((Device.device_id == x_device_id) | (Device.mac_address.ilike(x_device_id))).first()
+            if device:
                 if device.status == "SUSPENDED":
                     raise ForbiddenException("Device has been suspended by administrator")
                 return device

@@ -360,9 +360,9 @@ def list_devices(
     if device_type_code:
         query = query.join(DeviceType).filter(DeviceType.code == device_type_code)
 
-    # Auto-sweep stale heartbeat devices: if heartbeat hasn't been received in 75s, mark offline
+    # Auto-sweep stale heartbeat devices: if heartbeat hasn't been received in 120s, mark offline
     now = utc_now()
-    cutoff = now - timedelta(seconds=75)
+    cutoff = now - timedelta(seconds=120)
     stale_devices = db.query(Device).filter(
         Device.is_online == True,
         Device.last_heartbeat_at != None,
@@ -388,8 +388,9 @@ def get_device_by_id_or_device_id(
     context: TenantContext,
 ) -> Device:
     """Fetch single device and assert tenant access."""
+    clean_id = identifier.strip()
     device = db.query(Device).filter(
-        (Device.device_id == identifier) | (Device.id == identifier)
+        (Device.device_id == clean_id) | (Device.id == clean_id) | (Device.mac_address.ilike(clean_id))
     ).first()
 
     if not device:
@@ -397,7 +398,7 @@ def get_device_by_id_or_device_id(
 
     # Check if online device timed out
     if device.is_online and device.last_heartbeat_at:
-        if (utc_now() - device.last_heartbeat_at).total_seconds() > 75:
+        if (utc_now() - device.last_heartbeat_at).total_seconds() > 120:
             device.is_online = False
             db.commit()
 

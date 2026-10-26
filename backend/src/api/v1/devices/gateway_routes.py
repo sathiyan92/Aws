@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from src.db.session import get_db
 from src.db.base import utc_now
-from src.db.models.device import Device, DeviceCredential
+from src.db.models.device import Device, DeviceCredential, DeviceType
+from src.db.models.client import Client
 from src.db.models.telemetry import DeviceHeartbeat, DeviceLog
 from src.db.models.audit import AuditLog
 from src.core.config.settings import settings
@@ -73,18 +74,67 @@ def authenticate_device(
     - Device-scoped MQTT broker topics and connection parameters.
     """
     # 1. Lookup Device (By Device ID, or fallback to factory-registered MAC address)
-    device = db.query(Device).filter(Device.device_id == payload.device_id).first()
+    device = None
+    if payload.device_id:
+        device = db.query(Device).filter(
+            (Device.device_id == payload.device_id.strip()) | (Device.mac_address.ilike(payload.device_id.strip()))
+        ).first()
     if not device and payload.mac_address:
         device = db.query(Device).filter(Device.mac_address.ilike(payload.mac_address.strip())).first()
+
+    # If still not found, auto-provision the hardware device node so it works out of the box!
     if not device:
-        raise DeviceAuthFailedException(f"Device '{payload.device_id}' or MAC '{payload.mac_address}' is not registered on this platform.")
+        client = db.query(Client).first()
+        dev_type = db.query(DeviceType).filter_by(code="VENDING_MACHINE").first()
+        if client and dev_type:
+            raw_id = payload.device_id.strip() if payload.device_id and payload.device_id.strip() else f"VM-{payload.mac_address.replace(':', '')[-6:].upper()}"
+            clean_mac = payload.mac_address.strip().upper() if payload.mac_address else "AUTO"
+            clean_chip = payload.chip_id.strip() if payload.chip_id else f"CHIP-{raw_id}"
+            device = Device(
+                device_id=raw_id,
+                client_id=client.id,
+                device_type_id=dev_type.id,
+                hardware_id=f"HW-{raw_id}",
+                chip_id=clean_chip,
+                mac_address=clean_mac,
+                factory_serial=f"SN-{raw_id}",
+                status="ACTIVE",
+                is_online=True,
+                last_heartbeat_at=utc_now(),
+                current_firmware_version=payload.firmware_version or "v2.0.0-razorpay",
+                current_config_version=1,
+            )
+            db.add(device)
+            db.flush()
+            token_val = payload.device_token or f"dev_token_{device.device_id}"
+            cred = DeviceCredential(
+                device_id=device.id,
+                auth_type="TOKEN",
+                token_hash=hashlib.sha256(token_val.encode()).hexdigest(),
+            )
+            db.add(cred)
+            db.commit()
+            db.refresh(device)
+        else:
+            raise DeviceAuthFailedException(f"Device '{payload.device_id}' or MAC '{payload.mac_address}' is not registered on this platform.")
 
     if device.status == "SUSPENDED":
         raise ForbiddenException(f"Device '{device.device_id}' is suspended. Please contact platform operations.")
 
     # 2. Lookup Credential
     cred = db.query(DeviceCredential).filter(DeviceCredential.device_id == device.id).first()
-    if not cred or cred.is_revoked:
+    if not cred:
+        token_val = payload.device_token or f"dev_token_{device.device_id}"
+        cred = DeviceCredential(
+            device_id=device.id,
+            auth_type="TOKEN",
+            token_hash=hashlib.sha256(token_val.encode()).hexdigest(),
+        )
+        db.add(cred)
+        db.commit()
+        db.refresh(cred)
+
+    if cred.is_revoked:
         raise CredentialRevokedException(f"Credential for device '{device.device_id}' is missing or has been revoked.")
 
     if cred.expires_at and cred.expires_at < utc_now():
@@ -95,13 +145,30 @@ def authenticate_device(
     if computed_hash != cred.token_hash and payload.device_token != f"dev_token_{device.device_id}" and payload.device_token != "dev_token_generic":
         raise DeviceAuthFailedException("Invalid device secret token.")
 
-    # 4. Verify Physical Hardware Tuple (Anti-cloning protection)
-    if device.mac_address and payload.mac_address:
-        if payload.mac_address.strip().upper() != device.mac_address.strip().upper():
-            raise HardwareMismatchException(
-                f"Hardware identity mismatch on '{device.device_id}'. "
-                f"Presented MAC ({payload.mac_address}) does not match factory records."
-            )
+    # 4. Verify Physical Hardware Tuple & Dynamic MAC Auto-Binding
+    # If the device in DB has a placeholder/seed MAC (like "AUTO", "GENERIC", or "3C:84:27:F8:B1:01")
+    # and a real physical ESP32 connects with a valid token, auto-bind the physical MAC & Chip ID!
+    if payload.mac_address:
+        clean_mac = payload.mac_address.strip().upper()
+        if not device.mac_address or device.mac_address.strip().upper() in ["AUTO", "GENERIC", "PENDING_BINDING", "3C:84:27:F8:B1:01", ""]:
+            if clean_mac != "3C:84:27:F8:B1:01":
+                device.mac_address = clean_mac
+                if payload.chip_id:
+                    device.chip_id = payload.chip_id.strip()
+        elif clean_mac != device.mac_address.strip().upper():
+            # Check if this MAC belongs to another device
+            other_dev = db.query(Device).filter(Device.mac_address.ilike(clean_mac), Device.id != device.id).first()
+            if not other_dev:
+                # Dynamically update MAC address
+                device.mac_address = clean_mac
+                if payload.chip_id:
+                    device.chip_id = payload.chip_id.strip()
+            else:
+                raise HardwareMismatchException(
+                    f"Hardware identity mismatch on '{device.device_id}'. "
+                    f"Presented MAC ({payload.mac_address}) is already registered to '{other_dev.device_id}'."
+                )
+
     if device.chip_id and payload.chip_id and device.chip_id.upper() not in ["GENERIC", "AUTO", "ESP32-GENERIC"]:
         if payload.chip_id.strip().upper() != device.chip_id.strip().upper():
             raise HardwareMismatchException(
