@@ -417,3 +417,88 @@ def test_order_audit_trail_logging(test_client):
         assert cancel_log.new_state["order_status"] == "CANCELLED"
     finally:
         db.close()
+
+
+def test_razorpay_webhook_and_pending_dispense_flow(test_client):
+    """
+    Test zero-button price-match vending flow:
+    1. Razorpay webhook sends payment.captured for VM-000001 with price matching Slot 1 (1000 paise).
+    2. Backend creates an authorized order.
+    3. ESP32 polls /orders/pending-dispense/VM-000001 and receives dispense_pending=True.
+    4. ESP32 confirms dispense via /orders/{order_id}/dispensed.
+    5. Next poll returns dispense_pending=False.
+    """
+    webhook_payload = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_test_razorpay_9988",
+                    "amount": 1000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "notes": {
+                        "device_id": "VM-000001"
+                    }
+                }
+            }
+        }
+    }
+
+    # 1. Razorpay webhook fires
+    webhook_resp = test_client.post("/api/v1/orders/razorpay-webhook", json=webhook_payload)
+    assert webhook_resp.status_code == 200
+    webhook_data = webhook_resp.json()
+    assert webhook_data["status"] == "DISPENSE_AUTHORIZED"
+    assert webhook_data["slot_number"] == 1
+    assert webhook_data["amount_rupees"] == 10.0
+    order_id = webhook_data["order_id"]
+
+    # 2. ESP32 checks pending dispense
+    poll_resp = test_client.get("/api/v1/orders/pending-dispense/VM-000001")
+    assert poll_resp.status_code == 200
+    poll_data = poll_resp.json()
+    assert poll_data["dispense_pending"] is True
+    assert poll_data["slot_number"] == 1
+    assert poll_data["order_id"] == order_id
+
+    # 3. ESP32 dispenses and marks complete
+    dispense_resp = test_client.post(f"/api/v1/orders/{order_id}/dispensed")
+    assert dispense_resp.status_code == 200
+    assert dispense_resp.json()["order_status"] == "DISPENSED"
+
+    # 4. Subsequent poll has no pending orders
+    second_poll = test_client.get("/api/v1/orders/pending-dispense/VM-000001")
+    assert second_poll.status_code == 200
+    assert second_poll.json()["dispense_pending"] is False
+
+
+def test_remote_qr_config_update_by_vendor_or_manufacturer(test_client):
+    """
+    Test that when Vendor or Manufacturer updates QR code, VPA, or price online:
+    1. Initial config returns standard default VPA and price.
+    2. Vendor updates to custom Razorpay VPA and new price.
+    3. Version increments and new config is immediately returned.
+    """
+    # 1. Fetch initial QR config
+    initial_resp = test_client.get("/api/v1/orders/qr-config/VM-000001")
+    assert initial_resp.status_code == 200
+    init_data = initial_resp.json()
+    init_version = init_data["config_version"]
+
+    # 2. Vendor updates QR VPA, price, and product name online
+    update_payload = {
+        "razorpay_upi_vpa": "vendor.premium@icici",
+        "amount_rupees": 15.00,
+        "product_name": "Premium Cold Coffee",
+    }
+    update_resp = test_client.put("/api/v1/orders/qr-config/VM-000001", json=update_payload)
+    assert update_resp.status_code == 200
+    updated_data = update_resp.json()
+    assert updated_data["razorpay_upi_vpa"] == "vendor.premium@icici"
+    assert updated_data["amount_rupees"] == 15.00
+    assert updated_data["product_name"] == "Premium Cold Coffee"
+    assert "vendor.premium@icici" in updated_data["qr_payload"]
+    assert updated_data["config_version"] > init_version
+
+

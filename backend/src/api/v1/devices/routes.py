@@ -23,6 +23,8 @@ from src.api.v1.devices.schemas import (
     DeviceModuleSchema,
     DeviceUpdateHardwareRequest,
     DeviceDeleteResponse,
+    DeviceWiFiUpdateRequest,
+    DeviceWiFiResponse,
 )
 
 router = APIRouter(prefix="/devices", tags=["Device Fleet Management"])
@@ -273,4 +275,73 @@ def delete_device(
         user_agent=request.headers.get("user-agent"),
     )
     return DeviceDeleteResponse(**res)
+
+
+@router.get("/{device_id}/wifi", response_model=DeviceWiFiResponse)
+def get_device_wifi_configuration(
+    device_id: str,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_SUPERADMIN", "MANUFACTURER_ADMIN", "CLIENT_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve current Wi-Fi configuration metadata for a device.
+    Authorized for Manufacturer operations and Client/Vendor administrators (scoped to their tenant).
+    """
+    device = device_service.get_device_by_id_or_device_id(
+        db=db,
+        identifier=device_id,
+        context=context,
+    )
+    context.assert_device_access(device)
+    res = device_service.get_device_wifi(db=db, device=device)
+    return DeviceWiFiResponse(**res)
+
+
+@router.put("/{device_id}/wifi", response_model=DeviceWiFiResponse)
+def update_device_wifi_configuration(
+    device_id: str,
+    payload: DeviceWiFiUpdateRequest,
+    request: Request,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_SUPERADMIN", "MANUFACTURER_ADMIN", "CLIENT_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """
+    Update target Wi-Fi SSID and password for a device.
+    Allows Manufacturer Operations and Client Vendors to remotely change device Wi-Fi credentials.
+    Bumps configuration version and queues sync to ESP32 Flash NVS.
+    """
+    device = device_service.get_device_by_id_or_device_id(
+        db=db,
+        identifier=device_id,
+        context=context,
+    )
+    context.assert_device_access(device)
+    res = device_service.update_device_wifi(
+        db=db,
+        device=device,
+        wifi_ssid=payload.wifi_ssid,
+        wifi_password=payload.wifi_password,
+        actor_user=context.user,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return DeviceWiFiResponse(**res)
+
+
+@router.post("/{device_id}/wifi", response_model=DeviceWiFiResponse)
+def post_device_wifi_configuration(
+    device_id: str,
+    payload: DeviceWiFiUpdateRequest,
+    request: Request,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_SUPERADMIN", "MANUFACTURER_ADMIN", "CLIENT_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """POST alias for updating Wi-Fi credentials."""
+    return update_device_wifi_configuration(
+        device_id=device_id,
+        payload=payload,
+        request=request,
+        context=context,
+        db=db,
+    )
 

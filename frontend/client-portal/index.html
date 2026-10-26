@@ -55,6 +55,12 @@
                     <span>RFID Cards & Logs</span>
                 </a>
 
+                <!-- Wi-Fi Network Credentials Configuration -->
+                <a class="nav-item" data-tab="tab-wifi" id="navWiFi">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+                    <span>Wi-Fi Network</span>
+                </a>
+
                 <div class="nav-section-title">Security & Verification</div>
                 <a class="nav-item" data-tab="tab-security" id="navSecurity">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -519,7 +525,97 @@
                     </div>
                 </section>
 
+                <!-- TAB: WI-FI & CONNECTIVITY (Vendor remote Wi-Fi configuration) -->
+                <section id="tab-wifi" class="tab-pane">
+                    <div class="card-panel">
+                        <div class="panel-header">
+                            <div>
+                                <h3>Remote Wi-Fi Network Configuration</h3>
+                                <p>Remotely update the target Wi-Fi credentials for <span class="mono-text selected-device-label" style="color:var(--primary); font-weight:700;">...</span></p>
+                            </div>
+                            <span class="badge badge-on" id="wifiSyncStatusBadge">In Sync</span>
+                        </div>
+
+                        <div style="max-width: 650px;">
+                            <form id="tabWifiForm" style="display: flex; flex-direction: column; gap: 1.25rem;">
+                                <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: var(--radius-md); padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Active Hardware Target</div>
+                                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--primary);" class="mono-text selected-device-label">VM-000001</div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 0.75rem; color: var(--text-muted);">Current Network</div>
+                                        <div id="tabWifiCurrentSsidDisplay" class="mono-text" style="font-weight: 600; color: #f8fafc;">Not Configured</div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="tabWifiSsid">Wi-Fi Network Name (SSID) <span style="color:var(--danger);">*</span></label>
+                                    <input type="text" id="tabWifiSsid" class="input-field" placeholder="e.g. Vendor_Office_WiFi" required maxlength="64">
+                                    <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Enter the exact SSID of the wireless network at the vending machine location.</p>
+                                </div>
+
+                                <div class="form-group">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                        <label for="tabWifiPassword">Wi-Fi Password <span style="color:var(--danger);">*</span></label>
+                                        <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem;" onclick="togglePasswordVisibility('tabWifiPassword', this)">👁️ Show</button>
+                                    </div>
+                                    <input type="password" id="tabWifiPassword" class="input-field" placeholder="Enter Wi-Fi network password" required maxlength="64">
+                                    <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">WPA2 / WPA3 pre-shared key. The ESP32 will reconnect with these credentials.</p>
+                                </div>
+
+                                <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.85rem; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.45;">
+                                    <strong style="color: #38bdf8;">⚡ Hardware Persistence:</strong> When updated, the cloud will bump the machine's configuration version. The physical ESP32 controller node will pull the new credentials, commit them to non-volatile Flash NVS memory, and switch networks automatically without losing inventory or transaction data.
+                                </div>
+
+                                <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                                    <button type="submit" class="btn btn-primary" id="btnSaveTabWifi" style="padding: 0.6rem 1.25rem;">
+                                        💾 Save & Push Wi-Fi Credentials
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
             </main>
+        </div>
+    </div>
+
+    <!-- Modal for Vendor Remote Wi-Fi Configuration -->
+    <div class="modal-overlay" id="clientWiFiModal">
+        <div class="modal-container" style="max-width: 480px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="font-size: 1.15rem; color: var(--text-primary); margin: 0;">📶 Change Machine Wi-Fi</h3>
+                <button type="button" class="btn btn-secondary btn-sm" id="closeClientWiFiModalBtn" style="padding: 2px 8px;">✕</button>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+                Remotely update the Wi-Fi credentials for machine <strong class="mono-text" id="modalClientWiFiDeviceId" style="color: var(--primary);">VM-000001</strong>.
+            </p>
+
+            <form id="clientWiFiModalForm">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="clientModalWifiSsid">New Wi-Fi Name (SSID) <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="clientModalWifiSsid" class="input-field" placeholder="e.g. Store_WiFi_2.4G" required maxlength="64">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                        <label for="clientModalWifiPass">New Wi-Fi Password <span style="color:var(--danger);">*</span></label>
+                        <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.7rem;" onclick="togglePasswordVisibility('clientModalWifiPass', this)">👁️ Show</button>
+                    </div>
+                    <input type="password" id="clientModalWifiPass" class="input-field" placeholder="Enter Wi-Fi password" required maxlength="64">
+                </div>
+
+                <div style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: var(--radius-sm); padding: 0.75rem; font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+                    ✓ Configuration updates are securely signed and saved into ESP32 Flash NVS (<code style="color:#38bdf8;">Preferences.h</code>), persisting across all future reboots and OTA updates.
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" id="cancelClientWiFiModalBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitClientWiFiModal">💾 Update Wi-Fi</button>
+                </div>
+            </form>
         </div>
     </div>
 

@@ -54,7 +54,24 @@ const elements = {
     navQR: document.getElementById('navQR'),
     navCoin: document.getElementById('navCoin'),
     navRFID: document.getElementById('navRFID'),
+    navWiFi: document.getElementById('navWiFi'),
     navSecurity: document.getElementById('navSecurity'),
+
+    tabWifiForm: document.getElementById('tabWifiForm'),
+    tabWifiSsid: document.getElementById('tabWifiSsid'),
+    tabWifiPassword: document.getElementById('tabWifiPassword'),
+    tabWifiCurrentSsidDisplay: document.getElementById('tabWifiCurrentSsidDisplay'),
+    wifiSyncStatusBadge: document.getElementById('wifiSyncStatusBadge'),
+    btnSaveTabWifi: document.getElementById('btnSaveTabWifi'),
+
+    clientWiFiModal: document.getElementById('clientWiFiModal'),
+    closeClientWiFiModalBtn: document.getElementById('closeClientWiFiModalBtn'),
+    cancelClientWiFiModalBtn: document.getElementById('cancelClientWiFiModalBtn'),
+    clientWiFiModalForm: document.getElementById('clientWiFiModalForm'),
+    modalClientWiFiDeviceId: document.getElementById('modalClientWiFiDeviceId'),
+    clientModalWifiSsid: document.getElementById('clientModalWifiSsid'),
+    clientModalWifiPass: document.getElementById('clientModalWifiPass'),
+    btnSubmitClientWiFiModal: document.getElementById('btnSubmitClientWiFiModal'),
 
     fleetTableBody: document.getElementById('fleetTableBody'),
     fleetCountBadge: document.getElementById('fleetCountBadge'),
@@ -153,6 +170,12 @@ function setupEventListeners() {
     // Form submissions
     elements.qrSettingsForm.addEventListener('submit', handleSaveQRSettings);
     elements.coinSettingsForm.addEventListener('submit', handleSaveCoinSettings);
+    elements.tabWifiForm?.addEventListener('submit', handleSaveTabWiFi);
+
+    // Wi-Fi Modal
+    elements.closeClientWiFiModalBtn?.addEventListener('click', closeClientWiFiModal);
+    elements.cancelClientWiFiModalBtn?.addEventListener('click', closeClientWiFiModal);
+    elements.clientWiFiModalForm?.addEventListener('submit', handleSaveClientWiFiModal);
 
     // RFID Modal
     elements.addCardBtn.addEventListener('click', () => {
@@ -318,12 +341,39 @@ function renderFleetTable(fleet) {
             <td>${moduleBadges}</td>
             <td><span class="mono-text">v${dev.config_version}</span></td>
             <td>
+                ${dev.has_qr_payment || dev.product_type === 'VENDING_MACHINE' ? `
+                    <button class="btn btn-warning pricing-fleet-btn" data-device-id="${dev.device_id}" style="padding: 0.3rem 0.6rem; font-size: 0.72rem; margin-right: 0.35rem;" title="Configure Slot Prices & UPI QR">
+                        💰 Prices & QR
+                    </button>
+                ` : ''}
+                <button class="btn btn-outline-primary wifi-fleet-btn" data-device-id="${dev.device_id}" style="padding: 0.3rem 0.6rem; font-size: 0.72rem; margin-right: 0.35rem;" title="Change Machine Wi-Fi Password">
+                    📶 Wi-Fi
+                </button>
                 <button class="btn btn-secondary select-fleet-btn" data-device-id="${dev.device_id}" style="padding: 0.3rem 0.6rem; font-size: 0.72rem;">
                     Manage &rarr;
                 </button>
             </td>
         `;
         elements.fleetTableBody.appendChild(tr);
+    });
+
+    document.querySelectorAll('.pricing-fleet-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const devId = btn.dataset.deviceId;
+            elements.deviceSelect.value = devId;
+            state.selectedDeviceId = devId;
+            onDeviceSelectionChanged();
+            switchTab('tab-qr');
+            showToast(`Opened Slot Prices & QR configuration for ${devId}`);
+        });
+    });
+
+    document.querySelectorAll('.wifi-fleet-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openClientWiFiModal(btn.dataset.deviceId);
+        });
     });
 
     document.querySelectorAll('.select-fleet-btn').forEach(btn => {
@@ -435,6 +485,8 @@ function loadActiveTabData() {
         loadCoinData(state.selectedDeviceId);
     } else if (state.currentTab === 'tab-rfid') {
         loadRFIDData(state.selectedDeviceId);
+    } else if (state.currentTab === 'tab-wifi') {
+        loadActiveDeviceWiFi(state.selectedDeviceId);
     }
 }
 
@@ -1017,6 +1069,173 @@ function showToast(message, type = 'info') {
         toast.style.transition = 'opacity 0.3s ease';
         setTimeout(() => toast.remove(), 300);
     }, 3500);
+}
+
+// ==============================================================================
+// VENDOR / CLIENT WI-FI CREDENTIALS CONFIGURATION
+// ==============================================================================
+
+async function loadActiveDeviceWiFi(deviceId) {
+    if (!deviceId) return;
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/devices/${deviceId}/wifi`);
+        if (!res.ok) {
+            if (elements.tabWifiCurrentSsidDisplay) {
+                elements.tabWifiCurrentSsidDisplay.textContent = 'Not Configured';
+            }
+            return;
+        }
+        const data = await res.json();
+        if (elements.tabWifiCurrentSsidDisplay) {
+            elements.tabWifiCurrentSsidDisplay.textContent = data.wifi_ssid || 'Not Configured';
+        }
+        if (elements.tabWifiSsid) {
+            elements.tabWifiSsid.value = data.wifi_ssid || '';
+        }
+        if (elements.tabWifiPassword) {
+            elements.tabWifiPassword.value = '';
+            elements.tabWifiPassword.placeholder = data.has_password ? '•••••••• (Enter new password to change)' : 'Enter Wi-Fi network password';
+        }
+        if (elements.wifiSyncStatusBadge) {
+            elements.wifiSyncStatusBadge.textContent = data.is_synced ? 'In Sync' : 'Sync Pending';
+            elements.wifiSyncStatusBadge.className = data.is_synced ? 'badge badge-on' : 'badge badge-off';
+        }
+    } catch (e) {
+        console.error('Failed to load Wi-Fi config', e);
+    }
+}
+
+async function handleSaveTabWiFi(e) {
+    e.preventDefault();
+    if (!state.selectedDeviceId) {
+        showToast('Please select a device first', 'warning');
+        return;
+    }
+
+    const ssid = elements.tabWifiSsid.value.trim();
+    const pass = elements.tabWifiPassword.value;
+    const btn = elements.btnSaveTabWifi;
+
+    if (!ssid) {
+        showToast('SSID cannot be empty', 'warning');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Pushing to Cloud...';
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/devices/${state.selectedDeviceId}/wifi`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                wifi_ssid: ssid,
+                wifi_password: pass
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Failed to update Wi-Fi');
+        }
+
+        const data = await res.json();
+        showToast(`✓ Wi-Fi credentials updated for ${state.selectedDeviceId}! Config bumped to v${data.config_version}`);
+        loadActiveDeviceWiFi(state.selectedDeviceId);
+        await loadFleetCapabilities();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Save & Push Wi-Fi Credentials';
+    }
+}
+
+let currentClientWiFiModalDeviceId = null;
+
+async function openClientWiFiModal(deviceId) {
+    currentClientWiFiModalDeviceId = deviceId;
+    elements.modalClientWiFiDeviceId.textContent = deviceId;
+    elements.clientModalWifiSsid.value = '';
+    elements.clientModalWifiPass.value = '';
+    elements.clientModalWifiPass.placeholder = 'Enter Wi-Fi password';
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/devices/${deviceId}/wifi`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.wifi_ssid) {
+                elements.clientModalWifiSsid.value = data.wifi_ssid;
+            }
+            if (data.has_password) {
+                elements.clientModalWifiPass.placeholder = '•••••••• (Enter new password to change)';
+            }
+        }
+    } catch (e) {}
+
+    elements.clientWiFiModal.classList.add('open');
+}
+
+function closeClientWiFiModal() {
+    elements.clientWiFiModal.classList.remove('open');
+}
+
+async function handleSaveClientWiFiModal(e) {
+    e.preventDefault();
+    if (!currentClientWiFiModalDeviceId) return;
+
+    const ssid = elements.clientModalWifiSsid.value.trim();
+    const pass = elements.clientModalWifiPass.value;
+    const btn = elements.btnSubmitClientWiFiModal;
+
+    if (!ssid) {
+        showToast('Wi-Fi SSID is required', 'warning');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Pushing to Cloud...';
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/devices/${currentClientWiFiModalDeviceId}/wifi`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                wifi_ssid: ssid,
+                wifi_password: pass
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Failed to update Wi-Fi credentials');
+        }
+
+        const data = await res.json();
+        showToast(`✓ Wi-Fi credentials updated for ${currentClientWiFiModalDeviceId}! Config bumped to v${data.config_version}`);
+        closeClientWiFiModal();
+        await loadFleetCapabilities();
+        if (state.selectedDeviceId === currentClientWiFiModalDeviceId) {
+            loadActiveDeviceWiFi(state.selectedDeviceId);
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Update Wi-Fi';
+    }
+}
+
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈 Hide';
+    } else {
+        input.type = 'password';
+        btn.textContent = '👁️ Show';
+    }
 }
 
 // Start application

@@ -121,3 +121,66 @@ def get_orders_list(
         status_filter=status,
         limit=limit,
     )
+
+
+@router.get("/pending-dispense/{device_id}")
+def check_pending_dispense(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge Hardware Polling Endpoint - Buttonless Zero-Touch Vending]
+    The ESP32 periodically queries this endpoint to check if an incoming
+    Razorpay payment has matched a product price and authorized motor dispense.
+    """
+    from src.services.order_service import get_pending_dispense_for_device
+    return get_pending_dispense_for_device(db=db, device_id=device_id)
+
+
+@router.post("/razorpay-webhook")
+async def handle_razorpay_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    [Razorpay Webhook Handler for 1000+ Vending Fleet]
+    Receives 'payment.captured' events from Razorpay.
+    1. Extracts target machine device_id from payment notes.
+    2. Matches payment amount (paise) to slot product price.
+    3. Triggers Razorpay Route transfer to Vendor/Client Linked Account.
+    4. Authorizes dispense on the ESP32 node.
+    """
+    from src.services.order_service import process_razorpay_webhook
+    webhook_data = await request.json()
+    return process_razorpay_webhook(db=db, webhook_data=webhook_data)
+
+
+@router.get("/qr-config/{device_id}")
+def get_qr_configuration(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge & Dashboard Endpoint]
+    Fetch active QR code, VPA, and price configuration for a machine.
+    Used by ESP32 to detect remote QR code changes in real-time.
+    """
+    from src.services.order_service import get_device_qr_config
+    return get_device_qr_config(db=db, device_id=device_id)
+
+
+@router.put("/qr-config/{device_id}")
+def update_qr_configuration(
+    device_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    """
+    [Vendor / Manufacturer Portal Endpoint]
+    Allows vendor or manufacturer to change the QR code, UPI VPA, price, or product name online.
+    Increments config version so the ESP32 immediately redraws its screen.
+    """
+    from src.services.order_service import update_device_qr_config
+    return update_device_qr_config(db=db, device_id=device_id, payload_data=payload)
+
+

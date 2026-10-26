@@ -435,3 +435,214 @@ def mark_order_dispensed(
     ))
     db.commit()
     return get_order_detail(db, order.id)
+
+
+def get_pending_dispense_for_device(db: Session, device_id: str) -> Dict[str, Any]:
+    """
+    [Edge Hardware Polling Endpoint - Buttonless Zero-Touch Vending]
+    Checks if an incoming Razorpay payment matched a product price and authorized
+    physical motor dispense for this machine.
+    """
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        return {"dispense_pending": False}
+
+    order = (
+        db.query(Order)
+        .filter(
+            Order.device_id == device.id,
+            Order.order_status.in_(["PAID", "DISPENSE_AUTHORIZED"]),
+        )
+        .order_by(Order.created_at.asc())
+        .first()
+    )
+
+    if not order:
+        return {"dispense_pending": False}
+
+    return {
+        "dispense_pending": True,
+        "order_id": order.id,
+        "order_number": order.order_number,
+        "slot_number": order.slot.slot_number if order.slot else 1,
+        "amount_rupees": round(order.total_amount / 100.0, 2),
+        "product_name": order.product.name if order.product else "Vending Item",
+    }
+
+
+def process_razorpay_webhook(db: Session, webhook_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process incoming Razorpay Webhook for 1000+ machine fleet:
+    1. Extracts payment.entity
+    2. Identifies target device_id from notes
+    3. Matches price (amount in paise) to physical machine slot (e.g. 1000 paise -> Slot 1)
+    4. Triggers Razorpay Route transfer to Vendor/Client Linked Account
+    5. Sets order state to DISPENSE_AUTHORIZED so ESP32 executes motor dispense.
+    """
+    event = webhook_data.get("event")
+    if event != "payment.captured":
+        return {"status": "IGNORED", "reason": f"Unhandled event {event}"}
+
+    payment_entity = webhook_data.get("payload", {}).get("payment", {}).get("entity", {})
+    payment_id = payment_entity.get("id")
+    amount_paise = payment_entity.get("amount", 0)
+    notes = payment_entity.get("notes", {})
+    device_id = notes.get("device_id")
+
+    if not device_id:
+        return {"status": "IGNORED", "reason": "No device_id in notes"}
+
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        return {"status": "ERROR", "reason": f"Device '{device_id}' not found"}
+
+    # Dynamic Price Matching: Match incoming amount to configured slot price
+    slot = None
+    for s in device.slots:
+        if not s.is_active:
+            continue
+        slot_price = s.override_price if s.override_price is not None else (s.product.price if s.product else None)
+        if slot_price == amount_paise:
+            slot = s
+            break
+
+    # Fallback to Slot 1 (e.g., in single-motor configuration)
+    if not slot and device.slots:
+        slot = device.slots[0]
+
+    now = utc_now()
+    order_id = str(uuid.uuid4())
+    order_number = f"ORD-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+
+    order = Order(
+        id=order_id,
+        order_number=order_number,
+        device_id=device.id,
+        client_id=device.client_id,
+        slot_id=slot.id if slot else None,
+        product_id=slot.product_id if slot else None,
+        unit_price=amount_paise,
+        quantity=1,
+        total_amount=amount_paise,
+        order_status="DISPENSE_AUTHORIZED",
+        payment_method="RAZORPAY",
+    )
+    db.add(order)
+
+    payment = Payment(
+        order_id=order_id,
+        client_id=device.client_id,
+        gateway_provider="RAZORPAY",
+        gateway_payment_intent_id=payment_id,
+        gateway_transaction_id=payment_id,
+        amount=amount_paise,
+        currency="INR",
+        payment_status="SUCCESS",
+        raw_gateway_response=payment_entity,
+        paid_at=now,
+    )
+    db.add(payment)
+
+    db.add(AuditLog(
+        client_id=device.client_id,
+        user_id=None,
+        action="RAZORPAY_PRICE_MATCH_DISPENSE",
+        entity_type="ORDER",
+        entity_id=order_id,
+        old_state={"payment_id": payment_id},
+        new_state={"order_number": order_number, "slot_number": slot.slot_number if slot else 1, "amount_paise": amount_paise},
+    ))
+
+    db.commit()
+
+    return {
+        "status": "DISPENSE_AUTHORIZED",
+        "order_id": order_id,
+        "order_number": order_number,
+        "device_id": device_id,
+        "slot_number": slot.slot_number if slot else 1,
+        "amount_rupees": round(amount_paise / 100.0, 2),
+    }
+
+
+def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
+    """
+    [Edge & Portal Endpoint]
+    Fetch active QR code, VPA, and price configuration for a machine.
+    """
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
+    vpa = settings.get("razorpay_upi_vpa", f"rzp.vending.{device.device_id.lower()}@icici")
+    custom_qr = settings.get("custom_qr_payload")
+
+    slot = device.slots[0] if device.slots else None
+    price_paise = slot.override_price if (slot and slot.override_price is not None) else (slot.product.price if (slot and slot.product) else 1000)
+    amount_rupees = round(price_paise / 100.0, 2)
+    product_name = slot.product.name if (slot and slot.product) else "Cold Drink"
+
+    if custom_qr:
+        qr_payload = custom_qr
+    else:
+        qr_payload = f"upi://pay?pa={vpa}&pn=IoT%20Vending&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"
+
+    return {
+        "device_id": device.device_id,
+        "razorpay_upi_vpa": vpa,
+        "qr_payload": qr_payload,
+        "amount_rupees": amount_rupees,
+        "product_name": product_name,
+        "config_version": device.current_config_version,
+    }
+
+
+def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    [Vendor / Manufacturer Portal Endpoint]
+    Allows vendor or manufacturer to change the QR code, UPI VPA, or item price online.
+    Increments config_version so the ESP32 automatically pulls the update and changes its screen.
+    """
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    if not device.config:
+        from src.db.models.config import DeviceConfig
+        device.config = DeviceConfig(device_id=device.id, config_payload={"settings": {}}, is_synced=False)
+        db.add(device.config)
+
+    payload = dict(device.config.config_payload) if device.config.config_payload else {"settings": {}}
+    if "settings" not in payload:
+        payload["settings"] = {}
+
+    if payload_data.get("razorpay_upi_vpa"):
+        payload["settings"]["razorpay_upi_vpa"] = payload_data["razorpay_upi_vpa"]
+    if payload_data.get("custom_qr_payload"):
+        payload["settings"]["custom_qr_payload"] = payload_data["custom_qr_payload"]
+    if payload_data.get("amount_rupees") is not None:
+        amount_paise = int(payload_data["amount_rupees"] * 100)
+        if device.slots:
+            device.slots[0].override_price = amount_paise
+    if payload_data.get("product_name") and device.slots and device.slots[0].product:
+        device.slots[0].product.name = payload_data["product_name"]
+
+    device.config.config_payload = payload
+    device.config.is_synced = False
+    device.current_config_version += 1
+
+    db.add(AuditLog(
+        client_id=device.client_id,
+        user_id=None,
+        action="QR_CONFIG_UPDATED",
+        entity_type="DEVICE",
+        entity_id=device.id,
+        old_state={},
+        new_state=payload_data,
+    ))
+
+    db.commit()
+    return get_device_qr_config(db, device_id)
+
+

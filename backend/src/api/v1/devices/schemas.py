@@ -100,3 +100,20 @@ class DeviceDeleteResponse(BaseModel):
     device_id: str
     message: str
 
+
+class DeviceWiFiUpdateRequest(BaseModel):
+    """Payload to update Wi-Fi credentials for an edge device."""
+    wifi_ssid: str = Field(..., min_length=1, max_length=64, description="Target Wi-Fi SSID / Network Name")
+    wifi_password: str = Field(..., max_length=64, description="Target Wi-Fi Network Password")
+
+
+class DeviceWiFiResponse(BaseModel):
+    """Response returned containing device Wi-Fi configuration status."""
+    device_id: str
+    wifi_ssid: str
+    has_password: bool
+    config_version: int
+    is_synced: bool
+    message: str
+    updated_at: Optional[datetime] = None
+

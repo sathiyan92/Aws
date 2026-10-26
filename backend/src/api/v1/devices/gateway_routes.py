@@ -3,7 +3,7 @@ Device Gateway API endpoints.
 Handles ESP32 physical hardware authentication, cryptographic handshakes,
 heartbeat telemetry ingestion, diagnostic logs, and offline sweeps.
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import hashlib
 from fastapi import APIRouter, Depends, Query, Request
@@ -331,4 +331,21 @@ def sync_offline_transactions(
     buffered in edge LittleFS flash during network disconnection.
     """
     return process_offline_transaction_batch(db=db, device=device, payload=payload)
+
+
+@router.get("/wifi-credentials", response_model=Dict[str, Any])
+def get_device_wifi_credentials(
+    device: Device = Depends(get_authenticated_device),
+):
+    """
+    [Edge Device Endpoint] Fetch active Wi-Fi SSID and password provisioned from cloud.
+    """
+    settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
+    return {
+        "device_id": device.device_id,
+        "wifi_ssid": settings.get("wifi_ssid", ""),
+        "wifi_password": settings.get("wifi_password", ""),
+        "config_version": device.current_config_version,
+        "is_synced": device.config.is_synced if device.config else False,
+    }
 

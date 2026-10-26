@@ -72,3 +72,22 @@ class OrderListResponse(BaseModel):
     """List of orders for a machine or tenant."""
     orders: List[OrderDetailResponse]
     total_count: int
+
+
+class QRConfigResponse(BaseModel):
+    """Active QR configuration returned to ESP32 node and Vendor dashboard."""
+    device_id: str
+    razorpay_upi_vpa: str
+    qr_payload: str
+    amount_rupees: float
+    product_name: str
+    config_version: int
+
+
+class QRConfigUpdate(BaseModel):
+    """Payload sent by Vendor or Manufacturer to change QR, UPI VPA, or Price dynamically."""
+    razorpay_upi_vpa: Optional[str] = Field(None, description="New Razorpay UPI VPA (e.g. vendor123@icici)")
+    custom_qr_payload: Optional[str] = Field(None, description="Custom static or dynamic QR string")
+    amount_rupees: Optional[float] = Field(None, ge=1.0, description="Updated item price in Rupees")
+    product_name: Optional[str] = Field(None, description="Updated product name")
+

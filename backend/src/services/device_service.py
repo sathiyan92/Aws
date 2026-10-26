@@ -546,3 +546,82 @@ def delete_device(
         "message": f"Device '{permanent_id}' deleted successfully.",
     }
 
+
+def get_device_wifi(db: Session, device: Device) -> Dict[str, Any]:
+    """Retrieve active Wi-Fi configuration metadata for a device."""
+    settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
+    wifi_ssid = settings.get("wifi_ssid", "")
+    wifi_pass = settings.get("wifi_password", "")
+    return {
+        "device_id": device.device_id,
+        "wifi_ssid": wifi_ssid,
+        "has_password": bool(wifi_pass),
+        "config_version": device.current_config_version,
+        "is_synced": device.config.is_synced if device.config else False,
+        "message": "Wi-Fi configuration retrieved successfully." if wifi_ssid else "Wi-Fi network not yet configured via cloud.",
+        "updated_at": device.config.updated_at if device.config else None,
+    }
+
+
+def update_device_wifi(
+    db: Session,
+    device: Device,
+    wifi_ssid: str,
+    wifi_password: str,
+    actor_user: Optional[User] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Update target Wi-Fi SSID and password for a device, bump configuration version,
+    mark synchronization pending for the ESP32 node, and log audit event.
+    """
+    from src.services.config_service import update_device_config
+    from src.api.v1.configs.schemas import ConfigUpdateRequest
+
+    update_req = ConfigUpdateRequest(
+        settings={
+            "wifi_ssid": wifi_ssid.strip(),
+            "wifi_password": wifi_password,
+        },
+        change_reason=f"Wi-Fi credentials updated remotely (SSID: {wifi_ssid.strip()})",
+    )
+
+    updated_config = update_device_config(
+        db=db,
+        device_id=device.device_id,
+        update_req=update_req,
+        actor_user=actor_user,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+    # Add specific WIFI_CREDENTIALS_UPDATED audit log entry
+    if actor_user:
+        db.add(AuditLog(
+            client_id=device.client_id,
+            user_id=actor_user.id,
+            action="WIFI_CREDENTIALS_UPDATED",
+            entity_type="DEVICE",
+            entity_id=device.id,
+            new_state={
+                "device_id": device.device_id,
+                "wifi_ssid": wifi_ssid.strip(),
+                "has_password": bool(wifi_password),
+                "config_version": updated_config.active_version,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent,
+        ))
+        db.commit()
+
+    return {
+        "device_id": device.device_id,
+        "wifi_ssid": wifi_ssid.strip(),
+        "has_password": bool(wifi_password),
+        "config_version": updated_config.active_version,
+        "is_synced": updated_config.is_synced,
+        "message": f"Wi-Fi network set to '{wifi_ssid.strip()}'. Edge node will apply on next sync.",
+        "updated_at": updated_config.updated_at,
+    }
+

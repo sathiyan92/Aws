@@ -1,23 +1,51 @@
 /**
- * Multi-Tenant Cloud IoT Platform - Complete ESP32 Vending Machine Node
+ * ==============================================================================
+ * ESP32 RAZORPAY ZERO-BUTTON VENDING MACHINE (ILI9488 TFT LCD + PRICE-MATCH VEND)
+ * ==============================================================================
+ * Multi-Tenant IoT Fleet Platform (Scale to 1,000+ Machines)
+ * Target Board: ESP32 / ESP32-WROOM-32 / ESP32-S3
+ * Display: 3.5" or 4.0" ILI9488 320x480 TFT LCD (SPI Interface)
+ * Motor: Vending Dispense Motor / Relay (Configured for 1 Motor, expandable to 2+)
  * 
- * Target Board: ESP32 / ESP32-S3 (Arduino IDE)
- * Features:
- *   1. Permanent Wi-Fi in Flash NVS (Preferences.h) - NEVER erased by OTA updates!
- *   2. First-Time Setup Captive Web Portal (Connect via phone/laptop to "ESP32-Vending-Setup")
- *   3. Dynamic QR Payment Engine (Slot-based pricing resolved from Cloud)
- *   4. Real-Time Payment Polling & Automatic Dispense Relay Trigger
- *   5. Dispense Confirmation & Inventory Deduction Callback
- *   6. Wireless Cloud Over-The-Air (OTA) Firmware Updates from Laptop Portal
- *   7. Factory Reset Button (Hold GPIO 0 for 5s to reconfigure Wi-Fi)
- *
- * Hardware Pinout (Configurable):
- *   - Slot 1 Pushbutton : GPIO 32 (Internal Pullup, Active LOW)
- *   - Slot 2 Pushbutton : GPIO 33 (Internal Pullup, Active LOW)
- *   - Slot 1 Relay Motor: GPIO 26 (Active HIGH)
- *   - Slot 2 Relay Motor: GPIO 27 (Active HIGH)
- *   - Status LED        : GPIO 2  (Built-in LED)
- *   - Reset / Setup Btn : GPIO 0  (Built-in BOOT Button)
+ * Architecture (No Buttons - Scan & Vend by Price):
+ * ------------------------------------------------------------------------------
+ * 1. Screen permanently displays the machine's Razorpay UPI QR Code on standby.
+ * 2. Customer opens PhonePe / GPay / Paytm / BHIM, scans QR, and pays (e.g. ₹10.00).
+ * 3. Razorpay captures payment -> Fires Cloud Webhook -> Splits/Transfers funds
+ *    to the Client/Vendor's Linked Account via Razorpay Route.
+ * 4. Cloud matches payment amount (₹10.00) to physical Slot/Motor 1.
+ * 5. ESP32 polls cloud -> Detects authorized payment -> Runs Motor 1!
+ * 6. Display dynamically updates to:
+ *    - "PAYMENT VERIFIED: ₹10.00"
+ *    - "VENDING IN PROGRESS..."
+ *    - "PLEASE COLLECT MATERIAL"
+ *    - Smooth animated progress bar during motor cycle.
+ * 7. Screen shows "DISPENSE COMPLETED! PLEASE COLLECT MATERIAL FROM TRAY" for 4s.
+ * 8. Machine decrements stock in cloud and returns to Standby QR Screen.
+ * 
+ * Hardware Wiring:
+ * ------------------------------------------------------------------------------
+ * ILI9488 TFT LCD (SPI):
+ *   VCC        ->  3.3V (Do NOT connect to 5V!)
+ *   GND        ->  GND
+ *   CS         ->  GPIO 5  (TFT_CS_PIN)
+ *   RESET      ->  GPIO 4  (TFT_RST_PIN)
+ *   DC / RS    ->  GPIO 2  (TFT_DC_PIN)
+ *   SDI / MOSI ->  GPIO 23 (Hardware SPI MOSI)
+ *   SCK        ->  GPIO 18 (Hardware SPI SCK)
+ *   SDO / MISO ->  GPIO 19 (Optional, VSPI MISO)
+ *   LED / BL   ->  3.3V (Backlight power)
+ * 
+ * Motors (Currently working with 1 motor):
+ *   Motor 1 (Slot 1 Relay / Driver) -> GPIO 26
+ *   Motor 2 (Slot 2 Relay / Driver) -> GPIO 27 (Optional secondary motor)
+ * 
+ * Control & Bench Test:
+ *   BOOT Button -> GPIO 0 (Press to cancel / Hold 5s for Wi-Fi factory reset)
+ *   Serial Monitor (115200 Baud):
+ *     'p' -> Simulate instant ₹10.00 Razorpay payment (Triggers motor & LCD)
+ *     't' -> Hardware Motor Test (Runs Motor 1 for 1.5s)
+ * ==============================================================================
  */
 
 #include <WiFi.h>
@@ -25,111 +53,389 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <HTTPClient.h>
-#include <Update.h>
 #include <ArduinoJson.h>
+#include <DIYables_TFT_SPI.h>
+#include "qrcode.h"
 
 // ==============================================================================
-// 1. MANUAL WI-FI CONFIGURATION (OPTIONAL - FOR LAB / DESK TESTING)
+// 1. HARDWARE PIN DEFINITIONS
 // ==============================================================================
-// If you want to connect to your Wi-Fi immediately without using the phone Captive Portal:
-// Enter your Wi-Fi SSID and Password below.
-// The ESP32 will connect automatically AND permanently save it into Flash NVS memory.
-// Once saved, you can leave these blank ("") and the ESP32 will remember forever!
-const char* MANUAL_WIFI_SSID     = "";  // e.g. "MyHomeWiFi" (leave "" to use NVS / Captive Portal)
-const char* MANUAL_WIFI_PASSWORD = "";  // e.g. "12345678"
-const char* DEFAULT_SERVER_URL   = "http://35.154.219.82:8000";
+// TFT SPI Pins (ILI9488)
+#define TFT_CS_PIN    5
+#define TFT_DC_PIN    2
+#define TFT_RST_PIN   4
+#define TFT_WIDTH     320
+#define TFT_HEIGHT    480
+
+// Motor / Relay Pins (Default: Working with 1 Motor on GPIO 26)
+const int PIN_MOTOR_SLOT_1  = 26;   // Motor 1 Relay / Driver IN1
+const int PIN_MOTOR_SLOT_2  = 27;   // Motor 2 (Optional secondary motor)
+const int PIN_SETUP_BTN     = 0;    // ESP32 BOOT Button (Hold 5s for reset)
+
+// Dispense Runtime (Milliseconds)
+const unsigned long MOTOR_DISPENSE_TIME_MS = 3000; // Motor runs for 3 seconds per dispense
 
 // ==============================================================================
-// 2. HARDWARE PIN DEFINITIONS
+// 2. RELAY POLARITY CONFIGURATION
 // ==============================================================================
-const int PIN_BTN_SLOT_1    = 32;   // Pushbutton to select Slot 1
-const int PIN_BTN_SLOT_2    = 33;   // Pushbutton to select Slot 2
-const int PIN_RELAY_SLOT_1  = 26;   // Dispense motor relay for Slot 1
-const int PIN_RELAY_SLOT_2  = 27;   // Dispense motor relay for Slot 2
-const int PIN_STATUS_LED    = 2;    // Status LED
-const int PIN_SETUP_BTN     = 0;    // BOOT button (hold 5s for Wi-Fi reconfig)
+// Set RELAY_ACTIVE_LOW to 1 if your relay module is Active-LOW (trigger on LOW).
+// Set RELAY_ACTIVE_LOW to 0 if your relay / driver is Active-HIGH (trigger on HIGH).
+#define RELAY_ACTIVE_LOW 0
 
-const unsigned long MOTOR_DISPENSE_TIME_MS = 3000; // Motor runtime per dispense (3s)
+// Number of Active Motors connected (1 or 2)
+#define ACTIVE_MOTOR_COUNT 1
 
 // ==============================================================================
-// 3. CONFIGURATION STORAGE (FLASH NVS - SURVIVES ALL OTA UPDATES)
+// 3. COLOR DEFINITIONS (16-bit RGB565)
+// ==============================================================================
+#define COLOR_BG          DIYables_TFT_SPI::colorRGB(11, 17, 32)     // Dark Navy Slate (#0B1120)
+#define COLOR_CARD        DIYables_TFT_SPI::colorRGB(26, 36, 56)     // Slate Card (#1A2438)
+#define COLOR_CARD_BORDER DIYables_TFT_SPI::colorRGB(51, 65, 85)     // Slate Border (#334155)
+#define COLOR_HEADER      DIYables_TFT_SPI::colorRGB(15, 23, 42)     // Header background
+#define COLOR_WHITE       DIYables_TFT_SPI::colorRGB(255, 255, 255)
+#define COLOR_BLACK       DIYables_TFT_SPI::colorRGB(0, 0, 0)
+#define COLOR_CYAN        DIYables_TFT_SPI::colorRGB(6, 182, 212)    // Neon Cyan (#06B6D4)
+#define COLOR_BLUE        DIYables_TFT_SPI::colorRGB(14, 165, 233)   // Sky Blue (#0EA5E9)
+#define COLOR_GREEN       DIYables_TFT_SPI::colorRGB(16, 185, 129)   // Emerald Green (#10B981)
+#define COLOR_AMBER       DIYables_TFT_SPI::colorRGB(245, 158, 11)   // Warning Gold (#F59E0B)
+#define COLOR_RED         DIYables_TFT_SPI::colorRGB(239, 68, 68)    // Coral Red (#EF4444)
+#define COLOR_GRAY        DIYables_TFT_SPI::colorRGB(148, 163, 184)  // Slate Muted (#94A3B8)
+#define COLOR_DARK_GRAY   DIYables_TFT_SPI::colorRGB(30, 41, 59)
+
+// Create Display Object for ILI9488
+DIYables_ILI9488_SPI TFT_display(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
+
+// ==============================================================================
+// 4. CONFIGURATION & STATE STORAGE (FLASH NVS)
 // ==============================================================================
 Preferences prefs;
 
-String wifi_ssid       = "";
-String wifi_pass       = "";
-String device_id       = "VM-000001";
-String device_token    = "dev_token_VM-000001";
-String server_base_url = "http://35.154.219.82:8000";
-String firmware_version = "v1.0.0";
+String wifi_ssid        = "iphone";
+String wifi_pass        = "8015885416";
+String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
+String device_token     = "dev_token_VM-000001";
+String server_base_url  = "http://35.154.219.82:8000";
+String razorpay_upi_vpa = "rzp.vending.vm000001@icici"; // Default or dynamic Razorpay VPA
+String firmware_version = "v2.0.0-razorpay";
 
-// Runtime States
-String session_jwt = "";
-bool is_authenticated = false;
-unsigned long last_heartbeat_time = 0;
-const unsigned long HEARTBEAT_INTERVAL_MS = 30000;
-unsigned long last_ota_check_time = 0;
-const unsigned long OTA_CHECK_INTERVAL_MS = 30000;
-
-// Active Vending Order State
-enum VendingState {
-  STATE_IDLE,
-  STATE_ORDER_REQUESTING,
-  STATE_AWAITING_PAYMENT,
-  STATE_DISPENSING
+// Machine Operating State Machine
+enum MachineState {
+  STATE_STANDBY_QR,    // Continuously displaying QR, polling for payment
+  STATE_DISPENSING,    // Payment confirmed, motor running, showing collect material
+  STATE_COMPLETE       // Dispense complete screen
 };
-VendingState current_vending_state = STATE_IDLE;
-String active_order_id     = "";
-String active_order_number = "";
-int    active_slot_number  = 0;
-float  active_price_rupees = 0.0;
-String active_upi_qr       = "";
-unsigned long order_started_time = 0;
-unsigned long last_payment_poll_time = 0;
-const unsigned long PAYMENT_POLL_INTERVAL_MS = 2000; // Poll cloud every 2s
-const unsigned long ORDER_TIMEOUT_MS = 180000;       // 3 minutes timeout
+MachineState current_state = STATE_STANDBY_QR;
 
-// Captive Portal Web Server & DNS
+// Dispense Order Details
+String pending_order_id     = "";
+String pending_order_number = "";
+int    pending_slot_number  = 1;
+float  pending_amount_rupee = 10.00;
+String pending_product_name = "Cold Drink";
+String custom_qr_code       = "";
+
+// Polling interval
+unsigned long last_poll_time = 0;
+const unsigned long POLL_INTERVAL_MS = 1800; // Check cloud for Razorpay payment every 1.8 seconds
+
+// Remote Config Polling (Checks if Vendor/Manufacturer changed QR or Price)
+unsigned long last_config_check_time = 0;
+const unsigned long CONFIG_CHECK_INTERVAL_MS = 25000; // Check remote QR config every 25s
+int current_config_version = 1;
+
+// Fallback Captive Portal for Initial Wi-Fi Setup
 WebServer webServer(80);
 DNSServer dnsServer;
 bool in_ap_setup_mode = false;
 
+// Forward Declarations
+void uiDrawStandbyQRScreen();
+void uiDrawVendingScreen(int slotNumber, float amount, String productName);
+void uiDrawCompleteScreen();
+void setMotor(int slotNumber, bool turnOn);
+void dispenseProduct(int slotNumber, float amount, String orderId);
+void confirmDispenseToCloud(String orderId);
+void pollPendingDispense();
+void testMotorHardware();
+void printHelpMenu();
+
 // ==============================================================================
-// 4. FLASH NVS PERSISTENT STORAGE HANDLERS
+// 5. MOTOR CONTROL HELPER
+// ==============================================================================
+void setMotor(int slotNumber, bool turnOn) {
+  int pin = (slotNumber == 2 && ACTIVE_MOTOR_COUNT > 1) ? PIN_MOTOR_SLOT_2 : PIN_MOTOR_SLOT_1;
+  int state = turnOn ? (RELAY_ACTIVE_LOW ? LOW : HIGH) : (RELAY_ACTIVE_LOW ? HIGH : LOW);
+  digitalWrite(pin, state);
+}
+
+// ==============================================================================
+// 6. QR CODE DRAWING ENGINE (ON ILI9488 TFT LCD)
+// ==============================================================================
+void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
+  QRCode qrcode;
+  uint8_t qrcodeBytes[qrcode_getBufferSize(8)];
+
+  // Automatically find the smallest QR version that fits payload
+  int version = -1;
+  for (int v = 3; v <= 8; v++) {
+    int8_t res = qrcode_initText(&qrcode, qrcodeBytes, v, ECC_LOW, text);
+    if (res == 0) {
+      version = v;
+      break;
+    }
+  }
+
+  if (version < 0) {
+    Serial.println("[QR] Error: String too long or failed to encode!");
+    TFT_display.fillRect(startX, startY, maxBoxSize, maxBoxSize, COLOR_WHITE);
+    TFT_display.setTextColor(COLOR_RED);
+    TFT_display.setTextSize(2);
+    TFT_display.setCursor(startX + 15, startY + (maxBoxSize / 2) - 10);
+    TFT_display.print("QR Error");
+    return;
+  }
+
+  int scale = maxBoxSize / qrcode.size;
+  if (scale < 2) scale = 2;
+
+  int qrPxSize = qrcode.size * scale;
+  int border = (maxBoxSize - qrPxSize) / 2;
+  if (border < 4) border = 4;
+  int outerBox = qrPxSize + (border * 2);
+
+  // Draw crisp white background card
+  TFT_display.fillRect(startX, startY, outerBox, outerBox, COLOR_WHITE);
+  TFT_display.drawRect(startX, startY, outerBox, outerBox, COLOR_BLUE);
+
+  // Render dark modules
+  for (uint8_t y = 0; y < qrcode.size; y++) {
+    for (uint8_t x = 0; x < qrcode.size; x++) {
+      if (qrcode_getModule(&qrcode, x, y)) {
+        TFT_display.fillRect(startX + border + (x * scale),
+                             startY + border + (y * scale),
+                             scale, scale, COLOR_BLACK);
+      }
+    }
+  }
+}
+
+// ==============================================================================
+// 7. USER INTERFACE (ILI9488 TFT LCD - ZERO-BUTTON STANDBY & DISPENSE SCREENS)
+// ==============================================================================
+
+/**
+ * Screen 1: Permanent Standby QR Screen
+ * Customer simply scans the QR code on screen and pays ₹10. No buttons needed!
+ */
+void uiDrawStandbyQRScreen() {
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Header Bar (y: 0 - 45)
+  TFT_display.fillRect(0, 0, 480, 45, COLOR_HEADER);
+  TFT_display.drawFastHLine(0, 45, 480, COLOR_BLUE);
+
+  TFT_display.setCursor(15, 14);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.print("SMART VENDING");
+
+  // Machine ID & Online Status Badge
+  TFT_display.setCursor(205, 15);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("[%s]", device_id.c_str());
+
+  TFT_display.setCursor(375, 15);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("● READY");
+
+  // Construct Dynamic or Static Razorpay UPI Payload
+  String upiUri = (custom_qr_code.length() > 0) ? custom_qr_code : 
+                  ("upi://pay?pa=" + razorpay_upi_vpa + 
+                  "&pn=IoT%20Vending&am=" + String(pending_amount_rupee, 2) + 
+                  "&cu=INR&tn=" + device_id);
+
+  // Left: Draw High-Contrast Razorpay QR Code Box
+  drawQRCode(upiUri.c_str(), 18, 54, 190);
+
+  // Subtext under QR
+  TFT_display.setCursor(22, 258);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(1);
+  TFT_display.print("GPay / PhonePe / Paytm / BHIM");
+
+  TFT_display.setCursor(24, 276);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Powered by Razorpay Route");
+
+  TFT_display.setCursor(20, 296);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Auto-Transfers to Vendor Account");
+
+  // Right Side: Product & Price Card
+  TFT_display.fillRect(225, 54, 245, 255, COLOR_CARD);
+  TFT_display.drawRect(225, 54, 245, 255, COLOR_CARD_BORDER);
+
+  // Product Badge
+  TFT_display.fillRect(240, 66, 120, 24, COLOR_BLUE);
+  TFT_display.setCursor(248, 70);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.print("PRODUCT 1");
+
+  // Product Title
+  TFT_display.setCursor(240, 98);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.print(pending_product_name.c_str());
+
+  // Price Display
+  TFT_display.setCursor(240, 124);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("PRICE (SCAN & PAY):");
+
+  TFT_display.setCursor(240, 140);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(4);
+  TFT_display.printf("Rs %.2f", pending_amount_rupee);
+
+  // Instructions Box (No button needed!)
+  TFT_display.fillRect(238, 196, 218, 52, COLOR_DARK_GRAY);
+  TFT_display.setCursor(244, 202);
+  TFT_display.setTextColor(COLOR_AMBER);
+  TFT_display.setTextSize(1);
+  TFT_display.print("NO BUTTON NEEDED!");
+
+  TFT_display.setCursor(244, 216);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(1);
+  TFT_display.print("1. Scan QR  2. Pay Rs 10");
+
+  TFT_display.setCursor(244, 230);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(1);
+  TFT_display.print("3. Machine vends automatically");
+
+  // Bottom Live Status
+  TFT_display.setCursor(240, 266);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("STATUS:");
+
+  TFT_display.setCursor(240, 282);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("AWAITING PAY...");
+}
+
+/**
+ * Screen 2: Vending In Progress & "PLEASE COLLECT MATERIAL"
+ * "once payment is verfity vednind has to proecess , lcd will display the process please collect material"
+ */
+void uiDrawVendingScreen(int slotNumber, float amount, String productName) {
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Top Banner (Emerald Green)
+  TFT_display.fillRect(0, 0, 480, 50, COLOR_GREEN);
+  TFT_display.setCursor(55, 14);
+  TFT_display.setTextColor(COLOR_BLACK);
+  TFT_display.setTextSize(3);
+  TFT_display.printf("PAYMENT RECEIVED: Rs %.0f", amount);
+
+  // Center Main Action Card
+  TFT_display.fillRect(20, 65, 440, 240, COLOR_CARD);
+  TFT_display.drawRect(20, 65, 440, 240, COLOR_CYAN);
+
+  // Motor Action Title
+  TFT_display.setCursor(45, 82);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(3);
+  TFT_display.printf("VENDING MOTOR %d...", slotNumber);
+
+  // Progress Bar Outer Frame
+  TFT_display.drawRect(40, 122, 400, 30, COLOR_WHITE);
+
+  // Prominent "PLEASE COLLECT MATERIAL" Banner
+  TFT_display.fillRect(30, 168, 420, 62, COLOR_GREEN);
+  TFT_display.setCursor(45, 188);
+  TFT_display.setTextColor(COLOR_BLACK);
+  TFT_display.setTextSize(3);
+  TFT_display.print("PLEASE COLLECT MATERIAL");
+
+  // Subtext
+  TFT_display.setCursor(75, 248);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.print("Dispensing from Tray Below");
+
+  TFT_display.setCursor(140, 276);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Please wait while motor cycles...");
+}
+
+/**
+ * Screen 3: Vending Complete & Collect Material from Tray
+ */
+void uiDrawCompleteScreen() {
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Top Green Header
+  TFT_display.fillRect(0, 0, 480, 50, COLOR_GREEN);
+  TFT_display.setCursor(60, 14);
+  TFT_display.setTextColor(COLOR_BLACK);
+  TFT_display.setTextSize(3);
+  TFT_display.print("DISPENSE COMPLETED!");
+
+  // Center Card
+  TFT_display.fillRect(20, 65, 440, 240, COLOR_CARD);
+  TFT_display.drawRect(20, 65, 440, 240, COLOR_GREEN);
+
+  // Big Prominent Highlight Box
+  TFT_display.fillRect(30, 95, 420, 72, COLOR_GREEN);
+  TFT_display.setCursor(45, 118);
+  TFT_display.setTextColor(COLOR_BLACK);
+  TFT_display.setTextSize(3);
+  TFT_display.print("PLEASE COLLECT MATERIAL");
+
+  // Instruction Subtitle
+  TFT_display.setCursor(90, 188);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("ITEM READY IN BOTTOM TRAY");
+
+  TFT_display.setCursor(125, 230);
+  TFT_display.setTextColor(COLOR_AMBER);
+  TFT_display.setTextSize(2);
+  TFT_display.print("THANK YOU! VISIT AGAIN");
+}
+
+// ==============================================================================
+// 8. FLASH NVS PERSISTENCE HANDLERS
 // ==============================================================================
 void loadPersistentConfig() {
   prefs.begin("vending_cfg", false);
-  wifi_ssid       = prefs.getString("ssid", "");
-  wifi_pass       = prefs.getString("pass", "");
-  device_id       = prefs.getString("dev_id", "VM-000001");
-  device_token    = prefs.getString("token", "dev_token_VM-000001");
-  server_base_url = prefs.getString("srv_url", DEFAULT_SERVER_URL);
+  wifi_ssid        = prefs.getString("ssid", "");
+  wifi_pass        = prefs.getString("pass", "");
+  device_id        = prefs.getString("dev_id", "VM-000001");
+  device_token     = prefs.getString("token", "dev_token_" + device_id);
+  server_base_url  = prefs.getString("srv_url", "http://35.154.219.82:8000");
+  razorpay_upi_vpa = prefs.getString("rzp_vpa", "rzp.vending." + device_id + "@icici");
   prefs.end();
 
-  // If manual Wi-Fi credentials are provided at top of sketch, use them and persist to Flash NVS
-  if (strlen(MANUAL_WIFI_SSID) > 0) {
-    Serial.println("\n[Config] Using MANUAL_WIFI_SSID override from code...");
-    wifi_ssid = String(MANUAL_WIFI_SSID);
-    wifi_pass = String(MANUAL_WIFI_PASSWORD);
-    if (strlen(DEFAULT_SERVER_URL) > 0) {
-      server_base_url = String(DEFAULT_SERVER_URL);
-    }
-    savePersistentConfig(wifi_ssid, wifi_pass, device_id, server_base_url);
-  }
-
-  Serial.println("\n=======================================================");
-  Serial.println(">>> ⚡ ESP32 HARDWARE IDENTIFICATION (PERMANENT) <<<");
-  Serial.print("  Hardware MAC Address : "); Serial.println(WiFi.macAddress());
-  Serial.print("  Silicon Chip ID      : ESP32-CHIP-"); Serial.println(String((uint32_t)ESP.getEfuseMac(), HEX));
-  Serial.print("  Current Device ID    : "); Serial.println(device_id);
-  Serial.print("  Target Wi-Fi SSID    : "); Serial.println(wifi_ssid.length() > 0 ? wifi_ssid : "(Not Configured - Captive Portal will start)");
-  Serial.print("  Cloud Server Base URL: "); Serial.println(server_base_url);
-  Serial.println("-------------------------------------------------------");
-  Serial.println("  💡 ZERO-CODE MULTI-TENANT ARCHITECTURE:");
-  Serial.println("     Once this MAC is registered on the website portal,");
-  Serial.println("     the device automatically binds to its assigned tenant.");
-  Serial.println("     Future OTA firmware updates will NEVER erase your Wi-Fi!");
-  Serial.println("=======================================================\n");
+  Serial.println("\n==================================================================");
+  Serial.println("  >>> ⚡ ESP32 RAZORPAY ZERO-BUTTON VENDING CONTROLLER <<<       ");
+  Serial.println("==================================================================");
+  Serial.printf("  Device ID (Machine)  : %s\n", device_id.c_str());
+  Serial.printf("  Hardware MAC Address : %s\n", WiFi.macAddress().c_str());
+  Serial.printf("  Razorpay UPI VPA     : %s\n", razorpay_upi_vpa.c_str());
+  Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.length() > 0 ? wifi_ssid.c_str() : "(Not Configured)");
+  Serial.printf("  Cloud Server Base URL: %s\n", server_base_url.c_str());
+  Serial.println("==================================================================\n");
 }
 
 void savePersistentConfig(String ssid, String pass, String dev_id, String srv_url) {
@@ -137,80 +443,27 @@ void savePersistentConfig(String ssid, String pass, String dev_id, String srv_ur
   prefs.putString("ssid", ssid);
   prefs.putString("pass", pass);
   prefs.putString("dev_id", dev_id);
+  prefs.putString("token", "dev_token_" + dev_id);
   prefs.putString("srv_url", srv_url);
   prefs.end();
-  Serial.println(">>> [NVS] Settings permanently saved to Flash memory.");
+
+  wifi_ssid = ssid;
+  wifi_pass = pass;
+  device_id = dev_id;
+  server_base_url = srv_url;
+  Serial.println("[✓] Settings saved to Flash NVS.");
 }
 
 void clearPersistentConfig() {
   prefs.begin("vending_cfg", false);
   prefs.clear();
   prefs.end();
-  Serial.println(">>> [NVS] Settings cleared.");
+  Serial.println("[!] Flash NVS wiped.");
 }
 
 // ==============================================================================
-// 4. FIRST-TIME WI-FI SETUP CAPTIVE PORTAL (192.168.4.1)
+// 9. WI-FI & CAPTIVE SETUP PORTAL
 // ==============================================================================
-const char CAPTIVE_PORTAL_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vending Machine Wi-Fi Setup</title>
-  <style>
-    body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 20px; text-align: center; }
-    .card { background: #1e293b; max-width: 420px; margin: 0 auto; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-    h2 { color: #38bdf8; margin-top: 0; }
-    p { color: #94a3b8; font-size: 14px; }
-    input { width: 100%; padding: 12px; margin: 8px 0 16px; border: 1px solid #334155; border-radius: 6px; background: #0f172a; color: #fff; box-sizing: border-box; }
-    button { width: 100%; padding: 14px; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 16px; }
-    button:hover { background: #0369a1; }
-    .tip { font-size: 12px; color: #64748b; margin-top: 15px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h2>⚡ ESP32 Vending Machine</h2>
-    <p>Configure Wi-Fi and Cloud Server. Settings are saved permanently in Flash NVS and survive all future OTA updates.</p>
-    <form action="/save" method="POST">
-      <input type="text" name="ssid" placeholder="Wi-Fi Name (SSID)" required value="%SAVED_SSID%">
-      <input type="password" name="pass" placeholder="Wi-Fi Password" required>
-      <input type="text" name="dev_id" placeholder="Device ID (e.g. VM-000001)" value="%SAVED_DEV_ID%" required>
-      <input type="text" name="srv_url" placeholder="Server URL (e.g. http://35.154.219.82:8000)" value="%SAVED_SRV_URL%" required>
-      <button type="submit">💾 Save & Connect</button>
-    </form>
-    <div class="tip">Target Hardware: ESP32 Vending Controller Node</div>
-  </div>
-</body>
-</html>
-)rawliteral";
-
-void handleRoot() {
-  String html = CAPTIVE_PORTAL_HTML;
-  html.replace("%SAVED_SSID%", wifi_ssid);
-  html.replace("%SAVED_DEV_ID%", device_id);
-  html.replace("%SAVED_SRV_URL%", server_base_url);
-  webServer.send(200, "text/html", html);
-}
-
-void handleSave() {
-  String new_ssid = webServer.arg("ssid");
-  String new_pass = webServer.arg("pass");
-  String new_dev  = webServer.arg("dev_id");
-  String new_srv  = webServer.arg("srv_url");
-
-  savePersistentConfig(new_ssid, new_pass, new_dev, new_srv);
-
-  String resp = "<html><body style='background:#0f172a;color:#38bdf8;text-align:center;padding:50px;font-family:sans-serif;'>";
-  resp += "<h2>✓ Configuration Saved Permanently!</h2>";
-  resp += "<p style='color:#94a3b8;'>Rebooting and connecting to " + new_ssid + "...</p></body></html>";
-  webServer.send(200, "text/html", resp);
-
-  delay(2000);
-  ESP.restart();
-}
-
 void startCaptivePortal() {
   in_ap_setup_mode = true;
   WiFi.disconnect();
@@ -218,216 +471,114 @@ void startCaptivePortal() {
   String ap_name = "ESP32-Vending-Setup";
   WiFi.softAP(ap_name.c_str());
 
-  Serial.println("\n=======================================================");
-  Serial.println(">>> 📶 NO WI-FI CONFIGURED: STARTED CAPTIVE PORTAL <<<");
-  Serial.print("  Connect to Wi-Fi AP : "); Serial.println(ap_name);
-  Serial.println("  Open in Browser     : http://192.168.4.1");
-  Serial.println("=======================================================\n");
+  Serial.println("\n[!] No Wi-Fi credentials in Flash NVS. Started AP: " + ap_name);
+  Serial.println("    Connect via phone/PC to: http://192.168.4.1\n");
 
   dnsServer.start(53, "*", WiFi.softAPIP());
-  webServer.on("/", handleRoot);
-  webServer.on("/save", HTTP_POST, handleSave);
-  webServer.onNotFound(handleRoot); // Redirect all captive portal queries
+  webServer.on("/", []() {
+    String html = "<html><body style='font-family:sans-serif;background:#0b1120;color:#fff;padding:25px;text-align:center;'>";
+    html += "<h2>⚡ ESP32 Vending Setup</h2><p style='color:#94a3b8;'>Enter Wi-Fi network & Device ID:</p>";
+    html += "<form action='/save' method='POST' style='max-width:320px;margin:0 auto;'>";
+    html += "<input name='ssid' placeholder='Wi-Fi Name' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
+    html += "<input name='pass' type='password' placeholder='Wi-Fi Password' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
+    html += "<input name='dev_id' placeholder='Device ID (e.g. VM-000001)' value='" + device_id + "' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
+    html += "<input name='srv_url' placeholder='Server URL' value='" + server_base_url + "' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
+    html += "<button type='submit' style='width:100%;padding:12px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin-top:10px;'>💾 Save & Connect</button></form></body></html>";
+    webServer.send(200, "text/html", html);
+  });
+  webServer.on("/save", HTTP_POST, []() {
+    savePersistentConfig(webServer.arg("ssid"), webServer.arg("pass"), webServer.arg("dev_id"), webServer.arg("srv_url"));
+    webServer.send(200, "text/html", "<html><body style='background:#0b1120;color:#38bdf8;text-align:center;padding:50px;'><h2>✓ Saved! Rebooting...</h2></body></html>");
+    delay(2000);
+    ESP.restart();
+  });
+  webServer.onNotFound([]() {
+    webServer.sendHeader("Location", "/", true);
+    webServer.send(302, "text/plain", "");
+  });
   webServer.begin();
 
-  // Fast blink LED while in setup mode
   while (in_ap_setup_mode) {
     dnsServer.processNextRequest();
     webServer.handleClient();
-    digitalWrite(PIN_STATUS_LED, (millis() / 200) % 2);
     delay(5);
   }
 }
 
-// ==============================================================================
-// 5. WI-FI CONNECTION (CONNECTS USING SAVED NVS CREDENTIALS)
-// ==============================================================================
 void connectToWiFi() {
   if (wifi_ssid.length() == 0) {
     startCaptivePortal();
     return;
   }
 
-  Serial.printf("\n[Wi-Fi] Connecting to saved network: %s\n", wifi_ssid.c_str());
+  Serial.printf("\n[Wi-Fi] Connecting to: %s\n", wifi_ssid.c_str());
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
 
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 25) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
-    digitalWrite(PIN_STATUS_LED, (attempts % 2));
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    digitalWrite(PIN_STATUS_LED, HIGH);
-    Serial.println("\n[✓] Wi-Fi Connected Successfully!");
-    Serial.print("    IP Address: "); Serial.println(WiFi.localIP());
-    Serial.print("    RSSI      : "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
+    Serial.println("\n[✓] Wi-Fi Connected!");
+    Serial.printf("    Assigned IP : %s\n", WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("\n[✗] Could not connect to saved Wi-Fi. Starting Setup Portal...");
-    startCaptivePortal();
+    Serial.println("\n[!] Wi-Fi connection timed out. Operating in Standby / Bench Mode.");
   }
 }
 
 // ==============================================================================
-// 6. CLOUD AUTHENTICATION & HANDSHAKE
+// 10. REAL-TIME DISPENSE MOTOR EXECUTION ("PLEASE COLLECT MATERIAL")
 // ==============================================================================
-bool authenticateWithCloud() {
-  if (WiFi.status() != WL_CONNECTED) return false;
+void dispenseProduct(int slotNumber, float amount, String orderId) {
+  current_state = STATE_DISPENSING;
 
-  WiFiClient client;
-  HTTPClient http;
-  String endpoint = server_base_url + "/api/v1/device-gateway/authenticate";
+  Serial.println("\n******************************************************************");
+  Serial.printf(">>> 🚀 RAZORPAY PAYMENT VERIFIED (Rs %.2f)! DISPENSING MOTOR %d...\n", amount, slotNumber);
+  Serial.println("******************************************************************");
 
-  Serial.printf("\n[-->] Authenticating Device '%s' with Cloud...\n", device_id.c_str());
-  http.setConnectTimeout(8000);
-  http.setTimeout(8000);
-  http.begin(client, endpoint);
-  http.addHeader("Content-Type", "application/json");
+  // 1. Draw "PAYMENT VERIFIED" & "PLEASE COLLECT MATERIAL" on LCD
+  uiDrawVendingScreen(slotNumber, amount, pending_product_name);
 
-  StaticJsonDocument<512> doc;
-  doc["device_id"]        = device_id;
-  doc["chip_id"]          = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-  doc["mac_address"]      = WiFi.macAddress();
-  doc["device_token"]     = device_token;
-  doc["firmware_version"] = firmware_version;
-  doc["boot_count"]       = 1;
+  // 2. Turn ON Motor 1 (GPIO 26)
+  setMotor(slotNumber, true);
 
-  String reqBody;
-  serializeJson(doc, reqBody);
-  int httpCode = http.POST(reqBody);
-
-  if (httpCode == 200) {
-    String resp = http.getString();
-    StaticJsonDocument<1024> respDoc;
-    deserializeJson(respDoc, resp);
-
-    session_jwt = respDoc["session_token"].as<String>();
-    is_authenticated = true;
-
-    // Check if cloud resolved our device_id by hardware MAC address!
-    if (respDoc.containsKey("device_id")) {
-      String assignedId = respDoc["device_id"].as<String>();
-      if (assignedId.length() > 0 && assignedId != device_id) {
-        Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s\n", assignedId.c_str());
-        device_id = assignedId;
-        prefs.begin("vending_cfg", false);
-        prefs.putString("dev_id", device_id);
-        prefs.end();
-      }
-    }
-    Serial.println("[✓] Cloud Gateway Authentication SUCCESS!");
-    http.end();
-    return true;
-  } else {
-    Serial.printf("[✗] Authentication Failed (HTTP %d): %s\n", httpCode, http.getString().c_str());
-  }
-
-  http.end();
-  is_authenticated = false;
-  return false;
-}
-
-// ==============================================================================
-// 7. DYNAMIC QR PAYMENT: INITIATE ORDER & RESOLVE PRICE FROM CLOUD
-// ==============================================================================
-void initiateQROrder(int slotNumber) {
-  if (current_vending_state != STATE_IDLE) {
-    Serial.println("[!] Machine is busy. Please wait for current transaction to finish.");
-    return;
-  }
-
-  Serial.printf("\n=======================================================\n");
-  Serial.printf(">>> 🛒 SLOT %d SELECTED: REQUESTING DYNAMIC QR PAYLOAD...\n", slotNumber);
-  Serial.printf("=======================================================\n");
-
-  current_vending_state = STATE_ORDER_REQUESTING;
-  active_slot_number = slotNumber;
-
-  WiFiClient client;
-  HTTPClient http;
-  String endpoint = server_base_url + "/api/v1/orders/initiate";
-
-  http.setConnectTimeout(8000);
-  http.setTimeout(8000);
-  http.begin(client, endpoint);
-  http.addHeader("Content-Type", "application/json");
-
-  StaticJsonDocument<256> doc;
-  doc["device_id"]   = device_id;
-  doc["slot_number"] = slotNumber;
-
-  String reqBody;
-  serializeJson(doc, reqBody);
-  int httpCode = http.POST(reqBody);
-
-  if (httpCode == 201) {
-    String resp = http.getString();
-    StaticJsonDocument<1024> respDoc;
-    deserializeJson(respDoc, resp);
-
-    active_order_id     = respDoc["order_id"].as<String>();
-    active_order_number = respDoc["order_number"].as<String>();
-    active_price_rupees = respDoc["amount_rupees"].as<float>();
-    active_upi_qr       = respDoc["qr_payload"].as<String>();
-    order_started_time  = millis();
-
-    current_vending_state = STATE_AWAITING_PAYMENT;
-
-    Serial.println("\n[✓] DYNAMIC QR PAYMENT GENERATED SUCCESSFULLY!");
-    Serial.printf("  Item Product : %s\n", respDoc["product_name"].as<const char*>());
-    Serial.printf("  Price        : Rs. %.2f (Resolved Dynamically from Cloud!)\n", active_price_rupees);
-    Serial.printf("  Order Number : %s\n", active_order_number.c_str());
-    Serial.printf("  Expires in   : %d seconds\n", respDoc["timeout_seconds"].as<int>());
-    Serial.println("-------------------------------------------------------");
-    Serial.printf("  UPI QR URI   : %s\n", active_upi_qr.c_str());
-    Serial.println("-------------------------------------------------------");
-    Serial.println("📲 SCAN TO PAY WITH GPAY / PHONEPE / PAYTM:");
-    Serial.printf("   Open in browser: https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=%s\n",
-                  active_upi_qr.c_str());
-    Serial.println("=======================================================\n");
-  } else {
-    Serial.printf("[✗] Failed to initiate order (HTTP %d): %s\n", httpCode, http.getString().c_str());
-    current_vending_state = STATE_IDLE;
-  }
-
-  http.end();
-}
-
-// ==============================================================================
-// 8. DISPENSE VENDING MOTOR
-// ==============================================================================
-void dispenseProduct(int slotNumber) {
-  current_vending_state = STATE_DISPENSING;
-  Serial.println("\n*******************************************************");
-  Serial.printf(">>> 🚀 PAYMENT CONFIRMED! DISPENSING SLOT %d MOTOR...\n", slotNumber);
-  Serial.println("*******************************************************");
-
-  int relayPin = (slotNumber == 1) ? PIN_RELAY_SLOT_1 : PIN_RELAY_SLOT_2;
-
-  // Turn ON Motor Relay
-  digitalWrite(relayPin, HIGH);
-  digitalWrite(PIN_STATUS_LED, LOW);
-
+  // 3. Smooth progress bar animation over 3 seconds
   unsigned long startTime = millis();
+  const int barX = 42;
+  const int barY = 124;
+  const int barMaxW = 396;
+  const int barH = 26;
+
   while (millis() - startTime < MOTOR_DISPENSE_TIME_MS) {
-    delay(50);
+    unsigned long elapsed = millis() - startTime;
+    int currentW = (elapsed * barMaxW) / MOTOR_DISPENSE_TIME_MS;
+    TFT_display.fillRect(barX, barY, currentW, barH, COLOR_GREEN);
+    delay(40);
   }
+  TFT_display.fillRect(barX, barY, barMaxW, barH, COLOR_GREEN);
 
-  // Turn OFF Motor Relay
-  digitalWrite(relayPin, LOW);
-  digitalWrite(PIN_STATUS_LED, HIGH);
-
+  // 4. Turn OFF Motor
+  setMotor(slotNumber, false);
   Serial.printf("[✓] Slot %d Motor Cycle Complete. Product Dispensed!\n", slotNumber);
 
-  // Notify Cloud of Successful Dispense
-  confirmDispenseToCloud(active_order_id);
+  // 5. Display "PLEASE COLLECT MATERIAL FROM TRAY"
+  uiDrawCompleteScreen();
 
-  // Reset to IDLE
-  current_vending_state = STATE_IDLE;
-  active_order_id = "";
+  // 6. Notify Cloud of successful dispense (decrements stock)
+  if (WiFi.status() == WL_CONNECTED && orderId.length() > 0 && !orderId.startsWith("BENCH")) {
+    confirmDispenseToCloud(orderId);
+  }
+
+  // 7. Hold screen for 4 seconds so customer collects material
+  delay(4000);
+
+  // 8. Return to Continuous Standby QR Screen
+  current_state = STATE_STANDBY_QR;
+  uiDrawStandbyQRScreen();
 }
 
 void confirmDispenseToCloud(String orderId) {
@@ -435,8 +586,8 @@ void confirmDispenseToCloud(String orderId) {
   HTTPClient http;
   String endpoint = server_base_url + "/api/v1/orders/" + orderId + "/dispensed";
 
-  http.setConnectTimeout(8000);
-  http.setTimeout(8000);
+  http.setConnectTimeout(6000);
+  http.setTimeout(6000);
   http.begin(client, endpoint);
   http.POST("");
   http.end();
@@ -444,43 +595,38 @@ void confirmDispenseToCloud(String orderId) {
 }
 
 // ==============================================================================
-// 9. REAL-TIME PAYMENT STATUS POLLING
+// 11. BACKGROUND CLOUD POLLING (CHECKS FOR RAZORPAY PAYMENT MATCH)
 // ==============================================================================
-void pollActivePaymentStatus() {
-  if (current_vending_state != STATE_AWAITING_PAYMENT || active_order_id.length() == 0) return;
-
-  // Check Local Timeout (3 mins)
-  if (millis() - order_started_time > ORDER_TIMEOUT_MS) {
-    Serial.println("\n[⏰] QR Payment Expired (Timeout 180s reached). Cancelling order...");
-    current_vending_state = STATE_IDLE;
-    active_order_id = "";
-    return;
-  }
+void pollPendingDispense() {
+  if (WiFi.status() != WL_CONNECTED || current_state != STATE_STANDBY_QR) return;
 
   WiFiClient client;
   HTTPClient http;
-  String endpoint = server_base_url + "/api/v1/orders/" + active_order_id;
+  String endpoint = server_base_url + "/api/v1/orders/pending-dispense/" + device_id;
 
-  http.setConnectTimeout(5000);
-  http.setTimeout(5000);
+  http.setConnectTimeout(3000);
+  http.setTimeout(3000);
   http.begin(client, endpoint);
 
   int httpCode = http.GET();
   if (httpCode == 200) {
     String resp = http.getString();
-    StaticJsonDocument<1024> respDoc;
-    deserializeJson(respDoc, resp);
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, resp);
 
-    String status = respDoc["order_status"].as<String>();
+    if (!err && doc["dispense_pending"] == true) {
+      String orderId = doc["order_id"].as<String>();
+      int slotNum = doc["slot_number"].as<int>();
+      float amount = doc["amount_rupees"].as<float>();
+      if (doc.containsKey("product_name")) {
+        pending_product_name = doc["product_name"].as<String>();
+      }
 
-    if (status == "PAID" || status == "DISPENSE_AUTHORIZED") {
       http.end();
-      dispenseProduct(active_slot_number);
+
+      // Trigger Motor Dispense sequence!
+      dispenseProduct(slotNum, amount, orderId);
       return;
-    } else if (status == "CANCELLED" || status == "EXPIRED" || status == "FAILED") {
-      Serial.printf("[!] Order %s ended with status: %s\n", active_order_number.c_str(), status.c_str());
-      current_vending_state = STATE_IDLE;
-      active_order_id = "";
     }
   }
 
@@ -488,123 +634,139 @@ void pollActivePaymentStatus() {
 }
 
 // ==============================================================================
-// 10. CLOUD OVER-THE-AIR (OTA) WIRELESS UPDATE ENGINE
+// 12. REMOTE QR & PRICE CONFIGURATION SYNC (VENDOR / MANUFACTURER REAL-TIME UPDATE)
 // ==============================================================================
-void checkForPendingOTA() {
-  if (!is_authenticated || WiFi.status() != WL_CONNECTED || current_vending_state != STATE_IDLE) return;
+void checkForRemoteQRConfigUpdates() {
+  if (WiFi.status() != WL_CONNECTED || current_state != STATE_STANDBY_QR) return;
 
   WiFiClient client;
   HTTPClient http;
-  String endpoint = server_base_url + "/api/v1/ota/check/" + device_id;
+  String endpoint = server_base_url + "/api/v1/orders/qr-config/" + device_id;
 
-  http.setConnectTimeout(8000);
-  http.setTimeout(8000);
+  http.setConnectTimeout(4000);
+  http.setTimeout(4000);
   http.begin(client, endpoint);
 
   int httpCode = http.GET();
   if (httpCode == 200) {
-    String payload = http.getString();
-    StaticJsonDocument<1024> doc;
-    deserializeJson(doc, payload);
+    String resp = http.getString();
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, resp);
 
-    if (doc["has_update"] == true) {
-      String deploymentId = doc["deployment_id"].as<String>();
-      String targetVer    = doc["version"].as<String>();
-      String binaryUrl    = doc["binary_url"].as<String>();
-      size_t fileSize     = doc["file_size_bytes"].as<size_t>();
+    if (!err) {
+      int newVersion     = doc["config_version"].as<int>();
+      String newVpa      = doc["razorpay_upi_vpa"].as<String>();
+      float newAmount    = doc["amount_rupees"].as<float>();
+      String newName     = doc["product_name"].as<String>();
+      String newQrString = doc.containsKey("qr_payload") ? doc["qr_payload"].as<String>() : "";
 
-      Serial.println("\n=======================================================");
-      Serial.println(">>> ⚡ CLOUD NOTIFICATION: WIRELESS UPDATE AVAILABLE! <<<");
-      Serial.printf("  Target Version : %s\n", targetVer.c_str());
-      Serial.printf("  Binary Size    : %u bytes\n", fileSize);
-      Serial.println("=======================================================");
+      if (newVersion > current_config_version || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
+        Serial.println("\n==================================================================");
+        Serial.println(">>> 📶 REMOTE QR / PRICE UPDATE RECEIVED FROM VENDOR / CLOUD! <<<");
+        Serial.printf("  New VPA    : %s\n", newVpa.c_str());
+        Serial.printf("  New Price  : Rs %.2f\n", newAmount);
+        Serial.printf("  New Product: %s\n", newName.c_str());
+        Serial.printf("  New Version: %d (Old: %d)\n", newVersion, current_config_version);
+        Serial.println("  Updating Flash NVS & Refreshing ILI9488 LCD Screen...");
+        Serial.println("==================================================================\n");
 
-      http.end();
-      performOTA(binaryUrl, deploymentId, fileSize, targetVer);
-      return;
+        current_config_version = newVersion;
+        razorpay_upi_vpa       = newVpa;
+        pending_amount_rupee   = newAmount;
+        pending_product_name   = newName;
+        if (newQrString.length() > 0) {
+          custom_qr_code = newQrString;
+        }
+
+        // Persist to Flash NVS
+        prefs.begin("vending_cfg", false);
+        prefs.putString("rzp_vpa", razorpay_upi_vpa);
+        prefs.putFloat("price", pending_amount_rupee);
+        prefs.putString("p_name", pending_product_name);
+        prefs.putString("cust_qr", custom_qr_code);
+        prefs.putInt("cfg_ver", current_config_version);
+        prefs.end();
+
+        // Immediately Refresh LCD Screen with brand new QR code!
+        uiDrawStandbyQRScreen();
+      }
     }
   }
   http.end();
 }
 
-bool performOTA(String downloadUrl, String deploymentId, size_t binarySize, String version) {
-  WiFiClient client;
-  HTTPClient http;
-  http.setConnectTimeout(15000);
-  http.setTimeout(45000);
+// ==============================================================================
+// 13. HARDWARE MOTOR TEST & BENCH TESTING
+// ==============================================================================
+void testMotorHardware() {
+  Serial.println("\n[⚙️ TEST] Starting Hardware Motor 1 Test (GPIO 26)...");
+  setMotor(1, true);
+  delay(1500);
+  setMotor(1, false);
+  Serial.println("[✓] Motor 1 test completed.\n");
+}
 
-  if (!http.begin(client, downloadUrl)) return false;
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    http.end();
-    return false;
-  }
-
-  int contentLength = http.getSize() > 0 ? http.getSize() : binarySize;
-  if (!Update.begin(contentLength > 0 ? contentLength : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-    http.end();
-    return false;
-  }
-
-  Serial.println("[OTA] Writing new firmware partition to flash...");
-  WiFiClient *stream = http.getStreamPtr();
-  size_t written = Update.writeStream(*stream);
-
-  if (Update.end() && Update.isFinished()) {
-    Serial.println("[✓] Firmware Flashed Successfully! Wi-Fi & NVS are preserved.");
-    Serial.println("[✓] Rebooting into new firmware...");
-    http.end();
-    delay(1000);
-    ESP.restart();
-    return true;
-  }
-
-  http.end();
-  return false;
+void printHelpMenu() {
+  Serial.println("\n==================================================================");
+  Serial.println("           ESP32 RAZORPAY VENDING DESK COMMANDS                   ");
+  Serial.println("==================================================================");
+  Serial.println("  'p' : SIMULATE RAZORPAY PAYMENT (Rs 10 -> Motor 1 Vends)");
+  Serial.println("  't' : Test Motor Hardware (Runs Motor 1 for 1.5s)");
+  Serial.println("  'h' : Show this Help Menu");
+  Serial.println("==================================================================\n");
 }
 
 // ==============================================================================
-// 11. ARDUINO SETUP
+// 13. ARDUINO SETUP
 // ==============================================================================
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("\n=======================================================");
-  Serial.println("   IoT Fleet Platform - Smart Vending Controller Node   ");
-  Serial.println("=======================================================");
+  Serial.println("\n==================================================================");
+  Serial.println("   >>> ESP32 RAZORPAY ZERO-BUTTON VENDING CONTROLLER <<<          ");
+  Serial.println("==================================================================");
 
-  // Initialize Hardware Pins
-  pinMode(PIN_BTN_SLOT_1, INPUT_PULLUP);
-  pinMode(PIN_BTN_SLOT_2, INPUT_PULLUP);
+  // 1. Initialize Motor Pins (Immediate OFF)
+  pinMode(PIN_MOTOR_SLOT_1, OUTPUT);
+  pinMode(PIN_MOTOR_SLOT_2, OUTPUT);
+  setMotor(1, false);
+  setMotor(2, false);
+
   pinMode(PIN_SETUP_BTN, INPUT_PULLUP);
-  pinMode(PIN_RELAY_SLOT_1, OUTPUT);
-  pinMode(PIN_RELAY_SLOT_2, OUTPUT);
-  pinMode(PIN_STATUS_LED, OUTPUT);
 
-  digitalWrite(PIN_RELAY_SLOT_1, LOW);
-  digitalWrite(PIN_RELAY_SLOT_2, LOW);
-  digitalWrite(PIN_STATUS_LED, LOW);
+  // 2. Initialize ILI9488 TFT LCD Display
+  Serial.println("[TFT] Initializing 320x480 ILI9488 SPI LCD Display...");
+  TFT_display.begin();
+  TFT_display.setRotation(1); // Landscape: 480 wide x 320 high
+  TFT_display.fillScreen(COLOR_BG);
 
-  // Load Wi-Fi & Server credentials from Flash NVS
+  // Quick Splash
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(3);
+  TFT_display.setCursor(60, 120);
+  TFT_display.print("SMART VENDING NODE");
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.setCursor(120, 170);
+  TFT_display.print("Razorpay Route Active");
+  delay(1200);
+
+  // 3. Load Flash NVS Config
   loadPersistentConfig();
 
-  // Connect to Wi-Fi (starts Captive Portal if not configured)
+  // 4. Connect to Wi-Fi
   connectToWiFi();
 
-  // Authenticate with Cloud Gateway
-  if (WiFi.status() == WL_CONNECTED) {
-    authenticateWithCloud();
-  }
+  // 5. Render Standby QR Screen
+  uiDrawStandbyQRScreen();
+  printHelpMenu();
 
-  Serial.println("\n>>> [READY] Machine is online and waiting for customer selection.");
-  Serial.println("    Press physical Button 1 / 2, or type '1' or '2' in Serial Monitor to vend!");
-  Serial.println("    Hold BOOT button (GPIO 0) for 5s anytime to reset Wi-Fi.\n");
+  Serial.println("[✓] Zero-Touch Vending Ready! Customer can scan QR anytime.");
 }
 
 // ==============================================================================
-// 12. ARDUINO MAIN LOOP
+// 14. ARDUINO MAIN LOOP
 // ==============================================================================
 void loop() {
   // 1. Factory Reset Check: Hold BOOT (GPIO 0) for 5 seconds to wipe Wi-Fi
@@ -614,7 +776,6 @@ void loop() {
       if (millis() - pressStart > 5000) {
         Serial.println("\n[!] FACTORY RESET DETECTED! Clearing Wi-Fi from Flash NVS...");
         clearPersistentConfig();
-        digitalWrite(PIN_STATUS_LED, HIGH);
         delay(1000);
         ESP.restart();
       }
@@ -622,45 +783,30 @@ void loop() {
     }
   }
 
-  // 2. Wi-Fi Reconnect Guard
-  if (WiFi.status() != WL_CONNECTED) {
-    connectToWiFi();
-  }
-
-  // 3. User Slot Selection (Physical Button or Serial Monitor)
-  if (current_vending_state == STATE_IDLE) {
-    if (digitalRead(PIN_BTN_SLOT_1) == LOW) {
-      delay(200); // Debounce
-      initiateQROrder(1);
-    } else if (digitalRead(PIN_BTN_SLOT_2) == LOW) {
-      delay(200); // Debounce
-      initiateQROrder(2);
-    }
-
-    // Serial Monitor Commands for easy desk testing
-    if (Serial.available()) {
-      char c = Serial.read();
-      if (c == '1') {
-        initiateQROrder(1);
-      } else if (c == '2') {
-        initiateQROrder(2);
-      }
+  // 2. Serial Commands (Desk Bench Testing)
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 'p' || c == 'P') {
+      Serial.println("\n[💳 TEST] SIMULATING RAZORPAY PAYMENT RECEIVED (Rs 10.00)!");
+      dispenseProduct(1, 10.00, "BENCH-TEST-" + String(millis()));
+    } else if (c == 't' || c == 'T') {
+      testMotorHardware();
+    } else if (c == 'h' || c == 'H' || c == '?') {
+      printHelpMenu();
     }
   }
 
-  // 4. Poll Payment Status when a QR order is active
-  if (current_vending_state == STATE_AWAITING_PAYMENT) {
-    if (millis() - last_payment_poll_time >= PAYMENT_POLL_INTERVAL_MS) {
-      last_payment_poll_time = millis();
-      pollActivePaymentStatus();
+  // 3. Continuous Background Polling for Razorpay Payment Confirmations
+  if (current_state == STATE_STANDBY_QR) {
+    if (millis() - last_poll_time >= POLL_INTERVAL_MS) {
+      last_poll_time = millis();
+      pollPendingDispense();
     }
-  }
 
-  // 5. Periodic OTA Check (every 30 seconds when idle)
-  if (current_vending_state == STATE_IDLE) {
-    if (millis() - last_ota_check_time >= OTA_CHECK_INTERVAL_MS) {
-      last_ota_check_time = millis();
-      checkForPendingOTA();
+    // 4. Periodic Check for QR & Price changes by Vendor / Manufacturer
+    if (millis() - last_config_check_time >= CONFIG_CHECK_INTERVAL_MS) {
+      last_config_check_time = millis();
+      checkForRemoteQRConfigUpdates();
     }
   }
 

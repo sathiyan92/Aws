@@ -89,6 +89,20 @@ function switchTab(tabName) {
 // ==============================================================================
 // API CALLS & BOOTSTRAP
 // ==============================================================================
+async function apiFetch(endpoint, options = {}) {
+    const url = endpoint.startsWith("http")
+        ? endpoint
+        : endpoint.startsWith("/api/v1")
+            ? endpoint
+            : `${API_BASE}${endpoint}`;
+    const headers = {
+        "Content-Type": "application/json",
+        ...(state.token ? { "Authorization": `Bearer ${state.token}` } : {}),
+        ...options.headers,
+    };
+    return fetch(url, { ...options, headers });
+}
+
 async function apiRequest(endpoint, options = {}) {
     const headers = {
         "Content-Type": "application/json",
@@ -342,6 +356,7 @@ function renderDevicesTable(filterType = null) {
                         ${d.device_type_code === 'VENDING_MACHINE' ? `
                             <button class="btn btn-warning btn-sm" title="Configure Slot Prices, UPI Merchant & QR" onclick="openDevicePricingModal('${d.device_id}')">💰 Prices & QR</button>
                         ` : ''}
+                        <button class="btn btn-outline-primary btn-sm" title="Configure Wi-Fi Credentials Online" onclick="openWiFiModal('${d.device_id}')">📶 Wi-Fi</button>
                         <button class="btn btn-outline-primary btn-sm" title="Push OTA Firmware to this device" onclick="openPushOTAModal('${d.id}', '${d.device_id}')">🚀 OTA</button>
                         <button class="btn btn-secondary btn-sm" title="Assign Tenant" onclick="openAssignModal('${d.id}', '${d.device_id}', '${d.client_id || ''}')">Assign</button>
                         <button class="btn btn-outline-primary btn-sm" title="Edit Hardware Details" onclick="openEditHardwareModal('${d.id}')">✏️ Edit</button>
@@ -1333,20 +1348,98 @@ async function simulateTestPaymentPaid() {
     }
 
     try {
-        const res = await apiFetch(`/api/v1/orders/${activeTestOrderId}/mark-paid`, {
+        const res = await apiRequest(`/orders/${activeTestOrderId}/mark-paid`, {
             method: 'POST'
         });
 
-        if (res.ok) {
-            document.getElementById('testOrderStatus').textContent = 'PAID (DISPENSE TRIGGERED)';
-            document.getElementById('testOrderStatus').className = 'badge badge-online';
-            showToast("✓ Payment Confirmed! Order marked as PAID. ESP32 relay motor triggered!", "success");
-        } else {
-            const err = await res.json();
-            showToast(`Error: ${err.detail || res.statusText}`, "danger");
-        }
+        document.getElementById('testOrderStatus').textContent = 'PAID (DISPENSE TRIGGERED)';
+        document.getElementById('testOrderStatus').className = 'badge badge-online';
+        showToast("✓ Payment Confirmed! Order marked as PAID. ESP32 relay motor triggered!", "success");
     } catch (e) {
         showToast(e.message, "danger");
+    }
+}
+
+// ==============================================================================
+// WI-FI CREDENTIALS ONLINE CONFIGURATION (MANUFACTURER)
+// ==============================================================================
+let currentWiFiDeviceId = null;
+
+async function openWiFiModal(deviceId) {
+    const dev = state.devices.find(d => d.device_id === deviceId || d.id === deviceId);
+    if (!dev) return;
+
+    currentWiFiDeviceId = dev.device_id;
+    document.getElementById("wifiModalDeviceId").textContent = dev.device_id;
+    document.getElementById("wifiModalClientName").textContent = dev.client_name || "Unassigned (Inventory)";
+    document.getElementById("wifiModalConfigVer").textContent = `v${dev.current_config_version}`;
+    
+    const ssidInput = document.getElementById("wifiInputSsid");
+    const passInput = document.getElementById("wifiInputPassword");
+    ssidInput.value = "";
+    passInput.value = "";
+    passInput.placeholder = "Enter Wi-Fi password";
+
+    try {
+        const res = await apiRequest(`/devices/${dev.device_id}/wifi`);
+        if (res && res.wifi_ssid) {
+            ssidInput.value = res.wifi_ssid;
+            if (res.has_password) {
+                passInput.placeholder = "•••••••• (Password stored. Enter to change)";
+            }
+        }
+    } catch (e) {
+        // Fallback to empty if not configured yet
+    }
+
+    openModal("modalWiFi");
+}
+
+async function handleSaveWiFi(e) {
+    e.preventDefault();
+    if (!currentWiFiDeviceId) return;
+
+    const ssid = document.getElementById("wifiInputSsid").value.trim();
+    const pass = document.getElementById("wifiInputPassword").value;
+    const btn = document.getElementById("btnSaveWiFi");
+
+    if (!ssid) {
+        showToast("Wi-Fi SSID cannot be empty", "warning");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Pushing to Cloud...";
+
+    try {
+        const res = await apiRequest(`/devices/${currentWiFiDeviceId}/wifi`, {
+            method: "PUT",
+            body: JSON.stringify({
+                wifi_ssid: ssid,
+                wifi_password: pass
+            })
+        });
+
+        showToast(`✓ Wi-Fi credentials updated for ${currentWiFiDeviceId}! Config version bumped to v${res.config_version}`, "success");
+        closeModal("modalWiFi");
+        await loadFleet();
+    } catch (err) {
+        showToast(err.message || "Failed to update Wi-Fi credentials", "danger");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "💾 Save & Push Wi-Fi";
+    }
+}
+
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === "password") {
+        input.type = "text";
+        btn.textContent = "🙈 Hide";
+    } else {
+        input.type = "password";
+        btn.textContent = "👁️ Show";
     }
 }
 
