@@ -70,6 +70,24 @@ app.include_router(orders_router, prefix="/api/v1")
 app.include_router(ota_router, prefix="/api/v1")
 
 
+@app.on_event("startup")
+def startup_init_database():
+    """Ensure database tables exist and seed initial devices if database is empty."""
+    from src.db.base import Base
+    from src.db.session import engine, SessionLocal
+    from src.db.seed import seed_database
+    from src.db.models.device import Device
+    Base.metadata.create_all(bind=engine)
+    session = SessionLocal()
+    try:
+        if not session.query(Device).first():
+            seed_database(session)
+    except Exception as e:
+        print(f"[!] Startup DB init notice: {e}")
+    finally:
+        session.close()
+
+
 @app.get("/", include_in_schema=False)
 def root_redirect():
     """Redirect root domain traffic to Manufacturer Portal."""
@@ -83,6 +101,7 @@ def health_check():
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "version": settings.PROJECT_VERSION,
+
         "environment": settings.ENVIRONMENT,
     }
 

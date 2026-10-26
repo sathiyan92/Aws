@@ -110,7 +110,7 @@ DIYables_ILI9488_SPI TFT_display(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, 
 // ==============================================================================
 Preferences prefs;
 
-String wifi_ssid        = "iphone";
+String wifi_ssid        = "iPhone";
 String wifi_pass        = "8015885416";
 String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
 String device_token     = "dev_token_VM-000001";
