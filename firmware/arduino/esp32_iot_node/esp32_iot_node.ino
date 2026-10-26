@@ -419,12 +419,22 @@ void uiDrawCompleteScreen() {
 // ==============================================================================
 void loadPersistentConfig() {
   prefs.begin("vending_cfg", false);
-  wifi_ssid        = prefs.getString("ssid", "");
-  wifi_pass        = prefs.getString("pass", "");
-  device_id        = prefs.getString("dev_id", "VM-000001");
-  device_token     = prefs.getString("token", "dev_token_" + device_id);
-  server_base_url  = prefs.getString("srv_url", "http://35.154.219.82:8000");
-  razorpay_upi_vpa = prefs.getString("rzp_vpa", "rzp.vending." + device_id + "@icici");
+  String saved_ssid = prefs.getString("ssid", "");
+  String saved_pass = prefs.getString("pass", "");
+  String saved_url  = prefs.getString("srv_url", "");
+  String saved_vpa  = prefs.getString("rzp_vpa", "");
+  String saved_qr   = prefs.getString("cust_qr", "");
+
+  if (saved_ssid.length() > 0) wifi_ssid = saved_ssid;
+  if (saved_pass.length() > 0) wifi_pass = saved_pass;
+  if (saved_url.length() > 0 && server_base_url == "http://35.154.219.82:8000") server_base_url = saved_url;
+  if (saved_vpa.length() > 0 && razorpay_upi_vpa == "rzp.vending.vm000001@icici") razorpay_upi_vpa = saved_vpa;
+  if (saved_qr.length() > 0) custom_qr_code = saved_qr;
+
+  device_id = prefs.getString("dev_id", device_id);
+  pending_amount_rupee = prefs.getFloat("price", pending_amount_rupee);
+  pending_product_name = prefs.getString("p_name", pending_product_name);
+  current_config_version = prefs.getInt("cfg_ver", current_config_version);
   prefs.end();
 
   Serial.println("\n==================================================================");
@@ -433,6 +443,7 @@ void loadPersistentConfig() {
   Serial.printf("  Device ID (Machine)  : %s\n", device_id.c_str());
   Serial.printf("  Hardware MAC Address : %s\n", WiFi.macAddress().c_str());
   Serial.printf("  Razorpay UPI VPA     : %s\n", razorpay_upi_vpa.c_str());
+  Serial.printf("  Item Price (Rupees)  : Rs %.2f\n", pending_amount_rupee);
   Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.length() > 0 ? wifi_ssid.c_str() : "(Not Configured)");
   Serial.printf("  Cloud Server Base URL: %s\n", server_base_url.c_str());
   Serial.println("==================================================================\n");
@@ -628,6 +639,18 @@ void pollPendingDispense() {
       dispenseProduct(slotNum, amount, orderId);
       return;
     }
+  } else {
+    static unsigned long last_warn_time = 0;
+    if (millis() - last_warn_time > 10000) {
+      last_warn_time = millis();
+      Serial.printf("[Cloud Poll] Response code: %d from %s\n", httpCode, endpoint.c_str());
+      if (httpCode < 0) {
+        Serial.println("  [!] Connection failed. Please verify:");
+        Serial.printf("      1. Server URL is correct (%s)\n", server_base_url.c_str());
+        Serial.println("      2. Port 8000 is open in AWS Lightsail Networking firewall");
+        Serial.println("      3. FastAPI backend is running on Lightsail");
+      }
+    }
   }
 
   http.end();
@@ -717,7 +740,7 @@ void printHelpMenu() {
 }
 
 // ==============================================================================
-// 13. ARDUINO SETUP
+// 14. ARDUINO SETUP
 // ==============================================================================
 void setup() {
   Serial.begin(115200);
@@ -758,7 +781,27 @@ void setup() {
   // 4. Connect to Wi-Fi
   connectToWiFi();
 
-  // 5. Render Standby QR Screen
+  // 5. Connect to Cloud Server & Mark Machine Online
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("[Cloud] Connecting to server at: %s ...\n", server_base_url.c_str());
+    WiFiClient testClient;
+    HTTPClient testHttp;
+    testHttp.setConnectTimeout(5000);
+    testHttp.setTimeout(5000);
+    testHttp.begin(testClient, server_base_url + "/api/v1/orders/pending-dispense/" + device_id);
+    int code = testHttp.GET();
+    if (code == 200) {
+      Serial.printf("[✓] SUCCESS! Machine '%s' is now ONLINE on Cloud!\n", device_id.c_str());
+    } else {
+      Serial.printf("[!] Cloud connection returned code: %d\n", code);
+      if (code < 0) {
+        Serial.println("    ERROR: Could not reach Lightsail server. Check port 8000 firewall and server IP!");
+      }
+    }
+    testHttp.end();
+  }
+
+  // 6. Render Standby QR Screen
   uiDrawStandbyQRScreen();
   printHelpMenu();
 

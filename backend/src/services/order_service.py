@@ -442,10 +442,39 @@ def get_pending_dispense_for_device(db: Session, device_id: str) -> Dict[str, An
     [Edge Hardware Polling Endpoint - Buttonless Zero-Touch Vending]
     Checks if an incoming Razorpay payment matched a product price and authorized
     physical motor dispense for this machine.
+    Automatically marks machine ONLINE in the portal.
     """
     device = db.query(Device).filter(Device.device_id == device_id).first()
     if not device:
-        return {"dispense_pending": False}
+        from src.db.models.client import Client
+        from src.db.models.device import DeviceType
+        client = db.query(Client).first()
+        dev_type = db.query(DeviceType).filter_by(code="VENDING_MACHINE").first()
+        if client and dev_type:
+            device = Device(
+                device_id=device_id,
+                client_id=client.id,
+                device_type_id=dev_type.id,
+                hardware_id=f"HW-{device_id}",
+                chip_id=f"CHIP-{device_id}",
+                mac_address="AUTO",
+                factory_serial=f"SN-{device_id}",
+                status="ACTIVE",
+                is_online=True,
+                last_heartbeat_at=utc_now(),
+                current_firmware_version="v2.0.0-razorpay",
+                current_config_version=1,
+            )
+            db.add(device)
+            db.commit()
+            db.refresh(device)
+        else:
+            return {"dispense_pending": False}
+    else:
+        device.is_online = True
+        device.last_heartbeat_at = utc_now()
+        db.commit()
+
 
     order = (
         db.query(Order)
@@ -581,6 +610,10 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
             "product_name": "Cold Drink",
             "config_version": 1,
         }
+
+    device.is_online = True
+    device.last_heartbeat_at = utc_now()
+    db.commit()
 
     settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
     vpa = settings.get("razorpay_upi_vpa", f"rzp.vending.{device.device_id.lower()}@icici")
