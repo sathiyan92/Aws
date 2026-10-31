@@ -29,7 +29,8 @@ apt-get install -y --no-install-recommends \
     git \
     ufw \
     rsync \
-    build-essential
+    build-essential \
+    libzbar0
 
 # 3. Synchronize application source from git to ensure complete tree
 if [ -d "$SCRIPT_DIR/.git" ]; then

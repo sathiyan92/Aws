@@ -1136,11 +1136,13 @@ function renderSlotsTable(slots) {
 async function saveSingleSlotPrice(slotNumber) {
     if (!activePricingDeviceId) return;
 
+    const nameInput = document.getElementById(`slot-name-${slotNumber}`);
     const priceInput = document.getElementById(`slot-price-${slotNumber}`);
     const stockInput = document.getElementById(`slot-stock-${slotNumber}`);
     const capInput = document.getElementById(`slot-cap-${slotNumber}`);
     const activeInput = document.getElementById(`slot-active-${slotNumber}`);
 
+    const productName = nameInput ? nameInput.value.trim() : '';
     const priceRupees = priceInput ? parseFloat(priceInput.value) : 10.0;
     const stock = stockInput ? (parseInt(stockInput.value) || 0) : 10;
     const capacity = capInput ? (parseInt(capInput.value) || 20) : 20;
@@ -1152,6 +1154,7 @@ async function saveSingleSlotPrice(slotNumber) {
     }
 
     const payload = {
+        product_name: productName,
         override_price: Math.round(priceRupees * 100), // Convert ₹ to paise
         capacity: capacity,
         current_stock: stock,
@@ -1165,7 +1168,7 @@ async function saveSingleSlotPrice(slotNumber) {
         });
 
         if (res.ok) {
-            showToast(`✓ Slot ${slotNumber} price updated to ₹${priceRupees.toFixed(2)}! ESP32 resolved price dynamically.`, "success");
+            showToast(`✓ Slot ${slotNumber} updated ("${productName || 'Item'}", ₹${priceRupees.toFixed(2)})! Machine updating...`, "success");
             await loadDeviceSlotsAndPricing(activePricingDeviceId);
         } else {
             const err = await res.json();
@@ -1356,15 +1359,52 @@ function handleQRImageUpload(event) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         const base64Data = e.target.result;
+        updateQrImagePreview(base64Data);
+        updateSlotQuickQrPreview(base64Data);
+        showToast("Scanning & decoding QR code from image...", "info");
+
+        try {
+            const decodeRes = await apiFetch('/api/v1/vending/decode-qr', {
+                method: 'POST',
+                body: JSON.stringify({ image_data: base64Data })
+            });
+
+            if (decodeRes.ok) {
+                const dec = await decodeRes.json();
+                if (dec.success && dec.qr_payload) {
+                    const qrInput = document.getElementById('pricingQrImageUrl');
+                    const quickInput = document.getElementById('slotQuickQrInput');
+                    if (qrInput) qrInput.value = dec.qr_payload;
+                    if (quickInput) quickInput.value = dec.qr_payload;
+
+                    if (dec.vpa) {
+                        const vpaInput = document.getElementById('pricingQrVpa');
+                        if (vpaInput) vpaInput.value = dec.vpa;
+                    }
+                    if (dec.merchant_name) {
+                        const mInput = document.getElementById('pricingQrMerchantName');
+                        if (mInput) mInput.value = dec.merchant_name;
+                    }
+                    if (dec.amount_rupees !== null && dec.amount_rupees !== undefined) {
+                        const slot1Price = document.getElementById('slot-price-1');
+                        if (slot1Price) slot1Price.value = dec.amount_rupees.toFixed(2);
+                    }
+
+                    showToast(`✓ QR Code Decoded: ${dec.vpa || 'UPI payload detected'}! Click 'Save QR Settings' to apply.`, "success");
+                    return;
+                }
+            }
+        } catch (err) {
+            console.warn("Server QR decode error:", err);
+        }
+
         const qrInput = document.getElementById('pricingQrImageUrl');
         const quickInput = document.getElementById('slotQuickQrInput');
         if (qrInput) qrInput.value = base64Data;
         if (quickInput) quickInput.value = base64Data;
-        updateQrImagePreview(base64Data);
-        updateSlotQuickQrPreview(base64Data);
-        showToast("QR Code image loaded! Click 'Save QR Settings' to store.", "info");
+        showToast("QR Code image loaded. Verify VPA and click 'Save QR Settings'.", "info");
     };
     reader.readAsDataURL(file);
 }

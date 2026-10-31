@@ -296,6 +296,30 @@ def configure_slot(
     elif payload.product_id == "":
         slot.product_id = None
 
+    # Handle product_name update or creation
+    if payload.product_name and payload.product_name.strip():
+        prod_name = payload.product_name.strip()
+        if slot.product:
+            slot.product.name = prod_name
+        else:
+            prod_code = f"PROD-{device.device_id}-{slot_number}"
+            prod = db.query(Product).filter_by(client_id=device.client_id, product_code=prod_code).first()
+            if not prod:
+                from src.db.base import generate_uuid
+                prod = Product(
+                    id=generate_uuid(),
+                    client_id=device.client_id,
+                    name=prod_name,
+                    product_code=prod_code,
+                    price=payload.override_price if (payload.override_price and payload.override_price > 0) else 1000,
+                    is_active=True,
+                )
+                db.add(prod)
+                db.flush()
+            else:
+                prod.name = prod_name
+            slot.product_id = prod.id
+
     if payload.override_price is not None:
         slot.override_price = payload.override_price if payload.override_price > 0 else None
     if payload.motor_pin is not None:
@@ -364,6 +388,29 @@ def bulk_configure_slots(
                 slot.product_id = prod.id
         elif item.product_id == "":
             slot.product_id = None
+
+        if item.product_name and item.product_name.strip():
+            prod_name = item.product_name.strip()
+            if slot.product:
+                slot.product.name = prod_name
+            else:
+                prod_code = f"PROD-{device.device_id}-{item.slot_number}"
+                prod = db.query(Product).filter_by(client_id=device.client_id, product_code=prod_code).first()
+                if not prod:
+                    from src.db.base import generate_uuid
+                    prod = Product(
+                        id=generate_uuid(),
+                        client_id=device.client_id,
+                        name=prod_name,
+                        product_code=prod_code,
+                        price=item.override_price if (item.override_price and item.override_price > 0) else 1000,
+                        is_active=True,
+                    )
+                    db.add(prod)
+                    db.flush()
+                else:
+                    prod.name = prod_name
+                slot.product_id = prod.id
 
         if item.override_price is not None:
             slot.override_price = item.override_price if item.override_price > 0 else None
@@ -439,3 +486,77 @@ def restock_slot(
     db.commit()
     db.refresh(slot)
     return slot
+
+
+def decode_qr_image_data(img_data_or_bytes: Any) -> Optional[Dict[str, Any]]:
+    """
+    Decodes a QR code from a base64 string, data URI, or raw image bytes.
+    Robustly handles logos and varying contrast via multi-threshold preprocessing.
+    Extracts UPI payment parameters (VPA, merchant name, amount, transaction reference).
+    """
+    import base64
+    import io
+    import urllib.parse
+    from PIL import Image, ImageOps
+
+    try:
+        from pyzbar.pyzbar import decode
+    except Exception:
+        return None
+
+    try:
+        if isinstance(img_data_or_bytes, str):
+            clean_str = img_data_or_bytes.strip()
+            if "," in clean_str and ("data:image" in clean_str or "base64" in clean_str):
+                clean_str = clean_str.split(",", 1)[1]
+            raw_bytes = base64.b64decode(clean_str)
+        elif isinstance(img_data_or_bytes, bytes):
+            raw_bytes = img_data_or_bytes
+        else:
+            return None
+
+        img = Image.open(io.BytesIO(raw_bytes))
+
+        # 1. Direct decode
+        res = decode(img)
+
+        # 2. Multi-threshold fallback with expansion
+        if not res:
+            for thresh in [80, 100, 128, 150, 180]:
+                g = img.convert("L").point(lambda p: 255 if p > thresh else 0)
+                g = ImageOps.expand(g, border=20, fill="white")
+                res = decode(g)
+                if res:
+                    break
+
+        if not res:
+            return None
+
+        qr_text = res[0].data.decode("utf-8", errors="ignore").strip()
+        if not qr_text:
+            return None
+
+        out: Dict[str, Any] = {"qr_payload": qr_text}
+
+        if qr_text.startswith("upi://pay"):
+            parsed = urllib.parse.urlparse(qr_text)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "pa" in qs and qs["pa"]:
+                out["vpa"] = qs["pa"][0]
+            if "pn" in qs and qs["pn"]:
+                out["merchant_name"] = qs["pn"][0]
+            elif "tn" in qs and qs["tn"]:
+                clean_name = qs["tn"][0].replace("Payment To ", "").replace("Payment to ", "").strip()
+                out["merchant_name"] = clean_name
+            if "am" in qs and qs["am"]:
+                try:
+                    out["amount_rupees"] = float(qs["am"][0])
+                except (ValueError, TypeError):
+                    pass
+            if "tr" in qs and qs["tr"]:
+                out["tr"] = qs["tr"][0]
+
+        return out
+    except Exception:
+        return None
+

@@ -33,6 +33,8 @@ from src.api.v1.vending.schemas import (
     CoinOfflineSyncRequest,
     CoinOfflineSyncResponse,
     CoinCashSummaryResponse,
+    QRDecodeRequest,
+    QRDecodeResponse,
 )
 from src.services.coin_service import (
     get_device_coin_settings,
@@ -182,8 +184,26 @@ def update_qr_settings(
     if payload.dynamic_pricing_enabled is not None:
         cfg["dynamic_pricing_enabled"] = payload.dynamic_pricing_enabled
     if payload.custom_qr_image_url is not None:
-        cfg["custom_qr_image_url"] = payload.custom_qr_image_url
-        update_data["custom_qr_payload"] = payload.custom_qr_image_url
+        raw_val = payload.custom_qr_image_url.strip() if payload.custom_qr_image_url else ""
+        if raw_val.startswith("data:image/") or ("base64," in raw_val):
+            from src.services.vending_service import decode_qr_image_data
+            decoded = decode_qr_image_data(raw_val)
+            if decoded and decoded.get("qr_payload"):
+                clean_payload = decoded["qr_payload"]
+                cfg["custom_qr_image_url"] = clean_payload
+                update_data["custom_qr_payload"] = clean_payload
+                if decoded.get("vpa") and not payload.upi_merchant_vpa:
+                    cfg["upi_merchant_vpa"] = decoded["vpa"]
+                    update_data["razorpay_upi_vpa"] = decoded["vpa"]
+                if decoded.get("merchant_name") and not payload.merchant_name:
+                    cfg["merchant_name"] = decoded["merchant_name"]
+                if decoded.get("amount_rupees") is not None:
+                    update_data["amount_rupees"] = decoded["amount_rupees"]
+            else:
+                cfg["custom_qr_image_url"] = raw_val
+        else:
+            cfg["custom_qr_image_url"] = payload.custom_qr_image_url
+            update_data["custom_qr_payload"] = payload.custom_qr_image_url
 
     qr_mod.configuration = cfg
 
@@ -208,6 +228,32 @@ def update_qr_settings(
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
         custom_qr_image_url=custom_qr,
         is_active=qr_mod.is_enabled,
+    )
+
+
+@router.post("/decode-qr", response_model=QRDecodeResponse)
+def decode_uploaded_qr_image(
+    payload: QRDecodeRequest,
+):
+    """
+    Decodes an uploaded QR code image (base64 string or data URL) into a clean UPI URI.
+    Auto-extracts merchant VPA, merchant name, amount in rupees, and transaction reference (tr).
+    """
+    from src.services.vending_service import decode_qr_image_data
+    decoded = decode_qr_image_data(payload.image_data)
+    if not decoded:
+        return QRDecodeResponse(
+            success=False,
+            message="No readable QR code found in the image. Please upload a clear QR code image or paste the UPI URI directly.",
+        )
+    return QRDecodeResponse(
+        success=True,
+        qr_payload=decoded.get("qr_payload"),
+        vpa=decoded.get("vpa"),
+        merchant_name=decoded.get("merchant_name"),
+        amount_rupees=decoded.get("amount_rupees"),
+        tr=decoded.get("tr"),
+        message="QR Code decoded successfully",
     )
 
 

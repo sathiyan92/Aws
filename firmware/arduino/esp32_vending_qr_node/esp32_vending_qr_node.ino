@@ -295,8 +295,8 @@ void uiDrawStandbyQRScreen() {
                   "&cu=INR&tn=" + device_id);
 
   // Requirement 15: Guard against URL encoding. Never encode image_url as QR payload
-  if (upiUri.startsWith("http://") || upiUri.startsWith("https://")) {
-    Serial.println("[QR Warning] URL detected in custom_qr_code; using clean UPI URI instead.");
+  if (upiUri.startsWith("http://") || upiUri.startsWith("https://") || upiUri.startsWith("data:")) {
+    Serial.println("[QR Warning] URL or data URI detected in custom_qr_code; using clean UPI URI instead.");
     upiUri = "upi://pay?pa=" + razorpay_upi_vpa + 
              "&pn=IoT%20Vending&am=" + String(pending_amount_rupee, 2) + 
              "&cu=INR&tn=" + device_id;
@@ -736,7 +736,7 @@ void checkForRemoteQRConfigUpdates() {
   int httpCode = http.GET();
   if (httpCode == 200) {
     String resp = http.getString();
-    StaticJsonDocument<1024> doc;
+    StaticJsonDocument<2048> doc;
     DeserializationError err = deserializeJson(doc, resp);
 
     if (!err) {
@@ -761,7 +761,7 @@ void checkForRemoteQRConfigUpdates() {
         razorpay_upi_vpa       = newVpa;
         pending_amount_rupee   = newAmount;
         pending_product_name   = newName;
-        if (newQrString.length() > 0) {
+        if (newQrString.length() > 0 && !newQrString.startsWith("data:") && !newQrString.startsWith("http")) {
           custom_qr_code = newQrString;
         }
 

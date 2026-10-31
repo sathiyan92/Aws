@@ -139,6 +139,7 @@ class MachineSlotResponse(BaseModel):
 class MachineSlotConfigureRequest(BaseModel):
     """Payload to configure or reassign a physical vending machine slot."""
     product_id: Optional[str] = Field(None, description="Catalog product ID to bind to this slot")
+    product_name: Optional[str] = Field(None, description="Product / item name for this slot")
     override_price: Optional[int] = Field(None, description="Optional slot-specific price override in paise")
     motor_pin: Optional[int] = Field(None, description="ESP32 GPIO / relay pin index driving the coil motor")
     pulse_duration_ms: Optional[int] = Field(None, ge=100, le=5000, description="Motor run pulse duration in ms")
@@ -151,6 +152,7 @@ class MachineSlotBulkItem(BaseModel):
     """Single slot entry within a bulk configuration request."""
     slot_number: int = Field(..., ge=1, le=100)
     product_id: Optional[str] = None
+    product_name: Optional[str] = None
     override_price: Optional[int] = None
     motor_pin: Optional[int] = None
     pulse_duration_ms: Optional[int] = 500
@@ -212,5 +214,22 @@ class CoinCashSummaryResponse(BaseModel):
     denomination_breakdown: Dict[str, int]
     total_change_dispensed_rupees: float
     last_sync_at: Optional[datetime] = None
+
+
+class QRDecodeRequest(BaseModel):
+    """Payload containing raw base64 image data or URL to decode QR from."""
+    image_data: str = Field(..., description="Base64 encoded image or data URL")
+
+
+class QRDecodeResponse(BaseModel):
+    """Decoded result from uploaded QR code image."""
+    success: bool
+    qr_payload: Optional[str] = None
+    vpa: Optional[str] = None
+    merchant_name: Optional[str] = None
+    amount_rupees: Optional[float] = None
+    tr: Optional[str] = None
+    message: Optional[str] = None
+
 
 

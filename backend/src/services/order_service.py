@@ -749,8 +749,15 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
     amount_rupees = round(price_paise / 100.0, 2)
     product_name = slot.product.name if (slot and slot.product) else "Cold Drink"
 
-    if custom_qr:
+    if custom_qr and not custom_qr.startswith("data:image/") and not custom_qr.startswith("http://") and not custom_qr.startswith("https://"):
         qr_payload = custom_qr
+    elif custom_qr and (custom_qr.startswith("data:image/") or "base64," in custom_qr):
+        from src.services.vending_service import decode_qr_image_data
+        decoded = decode_qr_image_data(custom_qr)
+        if decoded and decoded.get("qr_payload"):
+            qr_payload = decoded["qr_payload"]
+        else:
+            qr_payload = f"upi://pay?pa={vpa}&pn=IoT%20Vending&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"
     else:
         qr_payload = f"upi://pay?pa={vpa}&pn=IoT%20Vending&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"
 
@@ -795,6 +802,15 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     # Intelligent UPI URI parsing (e.g. upi://pay?am=2.00&cu=INR&pa=...&tr=...)
     if raw_qr:
         raw_qr = str(raw_qr).strip()
+        if raw_qr.startswith("data:image/") or "base64," in raw_qr:
+            from src.services.vending_service import decode_qr_image_data
+            decoded = decode_qr_image_data(raw_qr)
+            if decoded and decoded.get("qr_payload"):
+                raw_qr = decoded["qr_payload"]
+                if decoded.get("vpa") and not payload_data.get("razorpay_upi_vpa"):
+                    payload_data["razorpay_upi_vpa"] = decoded["vpa"]
+                if decoded.get("amount_rupees") is not None and "amount_rupees" not in payload_data:
+                    payload_data["amount_rupees"] = decoded["amount_rupees"]
         payload["settings"]["custom_qr_payload"] = raw_qr
 
         if raw_qr.startswith("upi://pay"):
@@ -852,8 +868,29 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
         amount_paise = int(payload_data["amount_rupees"] * 100)
         if device.slots:
             device.slots[0].override_price = amount_paise
-    if payload_data.get("product_name") and device.slots and device.slots[0].product:
-        device.slots[0].product.name = payload_data["product_name"]
+    if payload_data.get("product_name") and device.slots:
+        prod_name = payload_data["product_name"].strip()
+        if device.slots[0].product:
+            device.slots[0].product.name = prod_name
+        else:
+            from src.db.models.vending import Product
+            prod_code = f"PROD-{device.device_id}-1"
+            prod = db.query(Product).filter_by(client_id=device.client_id, product_code=prod_code).first()
+            if not prod:
+                from src.db.base import generate_uuid
+                prod = Product(
+                    id=generate_uuid(),
+                    client_id=device.client_id,
+                    name=prod_name,
+                    product_code=prod_code,
+                    price=int(payload_data.get("amount_rupees", 10.0) * 100),
+                    is_active=True,
+                )
+                db.add(prod)
+                db.flush()
+            else:
+                prod.name = prod_name
+            device.slots[0].product_id = prod.id
 
     # Synchronize DeviceModule for QR_PAYMENT
     from src.db.models.device import DeviceModule
