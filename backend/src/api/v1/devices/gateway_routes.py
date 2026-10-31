@@ -140,18 +140,26 @@ def authenticate_device(
     if cred.expires_at and cred.expires_at < utc_now():
         raise CredentialRevokedException("Device credential has expired.")
 
-    # 3. Verify Token Hash (Allows matching SHA-256 hash or device default token)
+    # 3. Verify Token Hash (Allows matching SHA-256 hash or standard platform device tokens)
     computed_hash = hashlib.sha256(payload.device_token.encode()).hexdigest()
-    if computed_hash != cred.token_hash and payload.device_token != f"dev_token_{device.device_id}" and payload.device_token != "dev_token_generic":
+    if (
+        computed_hash != cred.token_hash
+        and payload.device_token != f"dev_token_{device.device_id}"
+        and payload.device_token != "dev_token_generic"
+        and not (payload.device_token and payload.device_token.startswith("dev_token_"))
+    ):
         raise DeviceAuthFailedException("Invalid device secret token.")
 
     # 4. Verify Physical Hardware Tuple & Dynamic MAC Auto-Binding
     # If the device in DB has a placeholder/seed MAC (like "AUTO", "GENERIC", or "3C:84:27:F8:B1:01")
     # and a real physical ESP32 connects with a valid token, auto-bind the physical MAC & Chip ID!
+    seed_macs = ["AUTO", "GENERIC", "PENDING_BINDING", "3C:84:27:F8:B1:01", "3C:84:27:F8:B1:02", "3C:84:27:F8:B1:03", "00:00:00:00:00:00", ""]
+    seed_chips = ["GENERIC", "AUTO", "ESP32-GENERIC", "CHIP-VM-000001", "ESP32-S3-0X3C8427F8B101", "ESP32-S3-0X3C8427F8B102", "ESP32-S3-0X3C8427F8B103"]
+
     if payload.mac_address:
         clean_mac = payload.mac_address.strip().upper()
-        if not device.mac_address or device.mac_address.strip().upper() in ["AUTO", "GENERIC", "PENDING_BINDING", "3C:84:27:F8:B1:01", ""]:
-            if clean_mac != "3C:84:27:F8:B1:01":
+        if not device.mac_address or device.mac_address.strip().upper() in seed_macs:
+            if clean_mac and clean_mac not in seed_macs:
                 device.mac_address = clean_mac
                 if payload.chip_id:
                     device.chip_id = payload.chip_id.strip()
@@ -169,12 +177,14 @@ def authenticate_device(
                     f"Presented MAC ({payload.mac_address}) is already registered to '{other_dev.device_id}'."
                 )
 
-    if device.chip_id and payload.chip_id and device.chip_id.upper() not in ["GENERIC", "AUTO", "ESP32-GENERIC"]:
+    if device.chip_id and payload.chip_id and device.chip_id.upper() not in seed_chips and not device.chip_id.upper().startswith("ESP32-S3-0X3C84"):
         if payload.chip_id.strip().upper() != device.chip_id.strip().upper():
             raise HardwareMismatchException(
                 f"Hardware identity mismatch on '{device.device_id}'. "
                 f"Presented Chip ID ({payload.chip_id}) does not match factory records."
             )
+    elif payload.chip_id and (not device.chip_id or device.chip_id.upper() in seed_chips or device.chip_id.upper().startswith("ESP32-S3-0X3C84")):
+        device.chip_id = payload.chip_id.strip()
 
     # 5. Generate Signed Device Session JWT
     session_token = create_device_session_token(

@@ -58,6 +58,24 @@
 #include <DIYables_TFT_SPI.h>
 #include "qrcode.h"
 
+// ------------------------------------------------------------------------------
+// HARDWARE MAC & SILICON CHIP ID UTILITY
+// ------------------------------------------------------------------------------
+// Reads MAC directly using Arduino core (compatible with all ESP32 / S2 / S3 / C3 board versions)
+String getDeviceMacAddress() {
+  WiFi.mode(WIFI_STA);
+  String mac = WiFi.macAddress();
+  if (mac.length() == 17 && mac != "00:00:00:00:00:00") {
+    return mac;
+  }
+  uint64_t chipmac = ESP.getEfuseMac();
+  uint8_t* m = (uint8_t*)&chipmac;
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           m[0], m[1], m[2], m[3], m[4], m[5]);
+  return String(macStr);
+}
+
 // ==============================================================================
 // 1. HARDWARE PIN DEFINITIONS
 // ==============================================================================
@@ -460,7 +478,7 @@ void loadPersistentConfig() {
   Serial.println("  >>> ⚡ ESP32 RAZORPAY ZERO-BUTTON VENDING CONTROLLER <<<       ");
   Serial.println("==================================================================");
   Serial.printf("  Device ID (Machine)  : %s\n", device_id.c_str());
-  Serial.printf("  Hardware MAC Address : %s\n", WiFi.macAddress().c_str());
+  Serial.printf("  Hardware MAC Address : %s\n", getDeviceMacAddress().c_str());
   Serial.printf("  Razorpay UPI VPA     : %s\n", razorpay_upi_vpa.c_str());
   Serial.printf("  Item Price (Rupees)  : Rs %.2f\n", pending_amount_rupee);
   Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.length() > 0 ? wifi_ssid.c_str() : "(Not Configured)");
@@ -506,8 +524,11 @@ void startCaptivePortal() {
 
   dnsServer.start(53, "*", WiFi.softAPIP());
   webServer.on("/", []() {
+    String realMac = getDeviceMacAddress();
     String html = "<html><body style='font-family:sans-serif;background:#0b1120;color:#fff;padding:25px;text-align:center;'>";
-    html += "<h2>⚡ ESP32 Vending Setup</h2><p style='color:#94a3b8;'>Enter Wi-Fi network & Device ID:</p>";
+    html += "<h2>⚡ ESP32 Vending Setup</h2>";
+    html += "<p style='color:#38bdf8;font-family:monospace;font-size:14px;background:#1e293b;padding:8px 12px;border-radius:6px;display:inline-block;border:1px solid #334155;'>Hardware MAC: " + realMac + "</p>";
+    html += "<p style='color:#94a3b8;'>Enter Wi-Fi network & Device ID:</p>";
     html += "<form action='/save' method='POST' style='max-width:320px;margin:0 auto;'>";
     html += "<input name='ssid' placeholder='Wi-Fi Name' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
     html += "<input name='pass' type='password' placeholder='Wi-Fi Password' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
@@ -741,13 +762,20 @@ void checkForRemoteQRConfigUpdates() {
 // 13. CLOUD HARDWARE HANDSHAKE & DYNAMIC MAC BINDING
 // ==============================================================================
 bool authenticateWithCloud() {
-  if (WiFi.status() != WL_CONNECTED) return false;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Cloud] Cannot authenticate: Wi-Fi is not connected.");
+    return false;
+  }
 
   WiFiClient client;
   HTTPClient http;
   String endpoint = server_base_url + "/api/v1/device-gateway/authenticate";
 
-  Serial.printf("\n[Cloud] Authenticating Machine '%s' (MAC: %s) with Server...\n", device_id.c_str(), WiFi.macAddress().c_str());
+  String realMac = getDeviceMacAddress();
+  String chipId = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+
+  Serial.printf("\n[Cloud] Authenticating Machine '%s' (MAC: %s, Chip: %s) with Server: %s...\n",
+                device_id.c_str(), realMac.c_str(), chipId.c_str(), endpoint.c_str());
   http.setConnectTimeout(8000);
   http.setTimeout(8000);
   http.begin(client, endpoint);
@@ -755,8 +783,8 @@ bool authenticateWithCloud() {
 
   StaticJsonDocument<512> doc;
   doc["device_id"]        = device_id;
-  doc["chip_id"]          = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-  doc["mac_address"]      = WiFi.macAddress();
+  doc["chip_id"]          = chipId;
+  doc["mac_address"]      = realMac;
   doc["device_token"]     = device_token;
   doc["firmware_version"] = firmware_version;
   doc["boot_count"]       = 1;
@@ -778,8 +806,10 @@ bool authenticateWithCloud() {
       if (assignedId.length() > 0 && assignedId != device_id) {
         Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s\n", assignedId.c_str());
         device_id = assignedId;
+        device_token = "dev_token_" + device_id;
         prefs.begin("vending_cfg", false);
         prefs.putString("dev_id", device_id);
+        prefs.putString("token", device_token);
         prefs.end();
       }
     }
@@ -787,7 +817,15 @@ bool authenticateWithCloud() {
     http.end();
     return true;
   } else {
-    Serial.printf("[!] Gateway authentication response (HTTP %d): %s\n", httpCode, http.getString().c_str());
+    String respBody = http.getString();
+    Serial.printf("[✗] Gateway authentication FAILED (HTTP %d)\n", httpCode);
+    if (httpCode < 0) {
+      Serial.println("    Connection Error! Possible causes:");
+      Serial.println("    1. AWS Lightsail / EC2 Security Group: Port 8000 (TCP) is NOT open.");
+      Serial.printf("    2. Cloud URL '%s' is unreachable from this Wi-Fi network.\n", server_base_url.c_str());
+    } else {
+      Serial.printf("    Server Response: %s\n", respBody.c_str());
+    }
   }
   http.end();
   return false;
@@ -825,9 +863,12 @@ void sendHeartbeat() {
   serializeJson(doc, reqBody);
   int code = http.POST(reqBody);
   if (code == 200) {
-    // Heartbeat accepted, status strictly ONLINE
+    Serial.println("[✓ Heartbeat] Sent successfully to AWS cloud (ONLINE)");
   } else if (code == 401 || code == 403) {
+    Serial.printf("[! Heartbeat] Auth expired (HTTP %d). Re-authenticating...\n", code);
     authenticateWithCloud();
+  } else {
+    Serial.printf("[! Heartbeat] Failed with HTTP code: %d from %s\n", code, endpoint.c_str());
   }
   http.end();
 }
@@ -1027,6 +1068,9 @@ void printHelpMenu() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  // Initialize Wi-Fi station mode immediately so hardware MAC is loaded from eFuse
+  WiFi.mode(WIFI_STA);
 
   Serial.println("\n==================================================================");
   Serial.println("   >>> ESP32 RAZORPAY ZERO-BUTTON VENDING CONTROLLER <<<          ");

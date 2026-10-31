@@ -28,12 +28,30 @@
 #include <HTTPClient.h>
 
 // ------------------------------------------------------------------------------
+// HARDWARE MAC & SILICON CHIP ID UTILITY
+// ------------------------------------------------------------------------------
+// Reads MAC directly using Arduino core (compatible with all ESP32 / S2 / S3 / C3 board versions)
+String getDeviceMacAddress() {
+  WiFi.mode(WIFI_STA);
+  String mac = WiFi.macAddress();
+  if (mac.length() == 17 && mac != "00:00:00:00:00:00") {
+    return mac;
+  }
+  uint64_t chipmac = ESP.getEfuseMac();
+  uint8_t* m = (uint8_t*)&chipmac;
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           m[0], m[1], m[2], m[3], m[4], m[5]);
+  return String(macStr);
+}
+
+// ------------------------------------------------------------------------------
 // OPTIONAL: Quick Manual Hardcoded Defaults for Bench Testing
 // (Leave empty to configure via Captive Portal or Serial CLI)
 // ------------------------------------------------------------------------------
 const char* DEFAULT_WIFI_SSID = "";        // e.g. "MyOfficeWiFi"
 const char* DEFAULT_WIFI_PASS = "";        // e.g. "SecretPassword123"
-const char* DEFAULT_DEVICE_ID = "VM-000001";
+const char* DEFAULT_DEVICE_ID = "VM-000002";
 const char* DEFAULT_SERVER_URL = "http://35.154.219.82:8000";
 
 const int PIN_STATUS_LED = 2; // Built-in LED on GPIO 2
@@ -149,7 +167,7 @@ void saveConfigToNVS(String ssid, String pass, String dev_id, String srv_url) {
 }
 
 void printHardwareInfo() {
-  String mac = WiFi.macAddress();
+  String mac = getDeviceMacAddress();
   String chipId = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
 
   Serial.println("\n==================================================================");
@@ -170,7 +188,7 @@ void printHardwareInfo() {
 // CAPTIVE WEB SERVER HANDLERS
 // ------------------------------------------------------------------------------
 void handleWebRoot() {
-  String mac = WiFi.macAddress();
+  String mac = getDeviceMacAddress();
   String chipId = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
 
   String html = SETUP_HTML;
@@ -260,6 +278,11 @@ bool testConnection() {
         Serial.printf("[✓] Cloud Server Reachable! (HTTP Response: %d)\n", code);
       } else {
         Serial.printf("[!] Server returned HTTP %d\n", code);
+        if (code < 0) {
+          Serial.println("    [!] WARNING: Connection failed! Please check:");
+          Serial.println("        1. AWS Lightsail / EC2 Firewall has Port 8000 OPEN (TCP).");
+          Serial.println("        2. FastAPI server is actively running on AWS.");
+        }
       }
       http.end();
     }
@@ -276,6 +299,9 @@ bool testConnection() {
 void setup() {
   Serial.begin(115200);
   delay(1200);
+
+  // Initialize Wi-Fi Station mode immediately so MAC address is ready in silicon
+  WiFi.mode(WIFI_STA);
 
   pinMode(PIN_STATUS_LED, OUTPUT);
   pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
