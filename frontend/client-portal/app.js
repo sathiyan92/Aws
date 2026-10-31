@@ -664,11 +664,39 @@ function updateClientQrImagePreview(url) {
     const img = document.getElementById('clientQrImagePreview');
     const placeholder = document.getElementById('clientQrPlaceholder');
     if (!img || !placeholder) return;
+
     if (url && url.trim().length > 0) {
-        img.src = url.trim();
+        const clean = url.trim();
+
+        // Auto-extract UPI parameters if a UPI URI is pasted
+        if (clean.startsWith('upi://pay')) {
+            try {
+                const dummyUrl = new URL(clean.replace('upi://pay', 'http://dummy.pay'));
+                const pa = dummyUrl.searchParams.get('pa');
+                const tn = dummyUrl.searchParams.get('tn');
+
+                if (elements.qrVpa && pa && (!elements.qrVpa.value || elements.qrVpa.value.includes('@icici') || elements.qrVpa.value.includes('pay.vm'))) {
+                    elements.qrVpa.value = pa;
+                }
+                if (elements.qrMerchantName && tn) {
+                    const cleanName = decodeURIComponent(tn).replace(/^Payment\s+To\s+/i, '');
+                    if (cleanName) elements.qrMerchantName.value = cleanName;
+                }
+            } catch (err) {
+                console.warn('Failed parsing UPI URL params:', err);
+            }
+        }
+
+        // Render live scannable QR Code image for UPI URIs or text payloads
+        if (clean.startsWith('upi://') || (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('data:image/'))) {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
+        } else {
+            img.src = clean;
+        }
         img.style.display = 'block';
         placeholder.style.display = 'none';
     } else {
+        img.src = '';
         img.style.display = 'none';
         placeholder.style.display = 'block';
     }
@@ -798,7 +826,9 @@ async function handleSaveQRSettings(e) {
             throw new Error(err.detail || 'Failed to update QR settings');
         }
 
-        showToast(`QR payment parameters updated for ${state.selectedDeviceId}!`);
+        showToast(`✓ QR payment parameters updated for ${state.selectedDeviceId}!`);
+        await loadClientSlotsData(state.selectedDeviceId);
+        await loadQRData(state.selectedDeviceId);
         await loadFleetCapabilities();
     } catch (err) {
         showToast(err.message, 'error');

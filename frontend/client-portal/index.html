@@ -225,8 +225,8 @@
                                     <div style="flex: 1;">
                                         <input type="file" id="clientQrFileInput" accept="image/*" class="input-field" style="padding: 0.4rem; background: rgba(59,130,246,0.05); border-style: dashed;" onchange="handleClientQRImageUpload(event)">
                                         <div style="margin-top: 0.5rem;">
-                                            <label style="font-size: 0.7rem; color: var(--text-secondary);">Or specify QR Image URL:</label>
-                                            <input type="url" id="clientQrImageUrl" class="input-field" placeholder="https://example.com/qr.png" style="font-size: 0.8rem;" oninput="updateClientQrImagePreview(this.value)">
+                                            <label style="font-size: 0.7rem; color: var(--text-secondary);">Or paste UPI Link / QR Image URL:</label>
+                                            <input type="text" id="clientQrImageUrl" class="input-field" placeholder="upi://pay?am=2.00... or https://example.com/qr.png" style="font-size: 0.8rem;" oninput="updateClientQrImagePreview(this.value)">
                                         </div>
                                     </div>
                                     <div style="width: 130px; height: 130px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #0f172a; overflow: hidden;">

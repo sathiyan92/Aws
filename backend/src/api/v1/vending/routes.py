@@ -142,14 +142,18 @@ def get_qr_settings(
     qr_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="QR_PAYMENT").first()
     cfg = qr_mod.configuration or {}
 
+    dev_settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
+    custom_qr = dev_settings.get("custom_qr_payload") or cfg.get("custom_qr_image_url")
+    upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
+
     return QRSettingsResponse(
         device_id=device.device_id,
         provider=cfg.get("provider", "UPI_DYNAMIC"),
-        upi_merchant_vpa=cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici"),
+        upi_merchant_vpa=upi_vpa,
         merchant_name=cfg.get("merchant_name", "Smart Vending"),
         qr_timeout_seconds=cfg.get("qr_timeout_seconds", 180),
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
-        custom_qr_image_url=cfg.get("custom_qr_image_url", None),
+        custom_qr_image_url=custom_qr,
         is_active=qr_mod.is_enabled,
     )
 
@@ -162,13 +166,15 @@ def update_qr_settings(
 ):
     """
     [Guarded: QR_PAYMENT] Update dynamic UPI QR payment settings.
-    Bumps device configuration version.
+    Automatically synchronizes with machine edge config so ESP32 pulls new QR and price instantly.
     """
     qr_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="QR_PAYMENT").first()
     cfg = dict(qr_mod.configuration or {})
+    update_data = {}
 
     if payload.upi_merchant_vpa is not None:
         cfg["upi_merchant_vpa"] = payload.upi_merchant_vpa
+        update_data["razorpay_upi_vpa"] = payload.upi_merchant_vpa
     if payload.merchant_name is not None:
         cfg["merchant_name"] = payload.merchant_name
     if payload.qr_timeout_seconds is not None:
@@ -177,23 +183,30 @@ def update_qr_settings(
         cfg["dynamic_pricing_enabled"] = payload.dynamic_pricing_enabled
     if payload.custom_qr_image_url is not None:
         cfg["custom_qr_image_url"] = payload.custom_qr_image_url
+        update_data["custom_qr_payload"] = payload.custom_qr_image_url
 
     qr_mod.configuration = cfg
-    device.current_config_version += 1
-    if device.config:
-        device.config.active_version = device.current_config_version
-        device.config.is_synced = False
 
-    db.commit()
+    # Synchronize with edge device configuration so ESP32 immediately updates LCD!
+    from src.services.order_service import update_device_qr_config
+    if update_data:
+        update_device_qr_config(db=db, device_id=device.device_id, payload_data=update_data)
+    else:
+        device.current_config_version += 1
+        db.commit()
+
+    dev_settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
+    custom_qr = dev_settings.get("custom_qr_payload") or cfg.get("custom_qr_image_url")
+    upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
     return QRSettingsResponse(
         device_id=device.device_id,
         provider=cfg.get("provider", "UPI_DYNAMIC"),
-        upi_merchant_vpa=cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici"),
+        upi_merchant_vpa=upi_vpa,
         merchant_name=cfg.get("merchant_name", "Smart Vending"),
         qr_timeout_seconds=cfg.get("qr_timeout_seconds", 180),
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
-        custom_qr_image_url=cfg.get("custom_qr_image_url", None),
+        custom_qr_image_url=custom_qr,
         is_active=qr_mod.is_enabled,
     )
 

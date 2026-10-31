@@ -1228,11 +1228,43 @@ async function loadDeviceQRSettings(deviceId) {
 function updateQrImagePreview(url) {
     const img = document.getElementById('pricingQrImagePreview');
     const placeholder = document.getElementById('pricingQrImagePlaceholder');
+    if (!img || !placeholder) return;
+
     if (url && url.trim().length > 0) {
-        img.src = url.trim();
+        const clean = url.trim();
+
+        // Auto-extract UPI parameters if a UPI URI is pasted
+        if (clean.startsWith('upi://pay')) {
+            try {
+                const dummyUrl = new URL(clean.replace('upi://pay', 'http://dummy.pay'));
+                const pa = dummyUrl.searchParams.get('pa');
+                const tn = dummyUrl.searchParams.get('tn');
+                const am = dummyUrl.searchParams.get('am');
+
+                const vpaInput = document.getElementById('pricingQrVpa');
+                if (vpaInput && pa && (!vpaInput.value || vpaInput.value.includes('@icici') || vpaInput.value.includes('pay.vm'))) {
+                    vpaInput.value = pa;
+                }
+                const nameInput = document.getElementById('pricingQrMerchantName');
+                if (nameInput && tn) {
+                    const cleanName = decodeURIComponent(tn).replace(/^Payment\s+To\s+/i, '');
+                    if (cleanName) nameInput.value = cleanName;
+                }
+            } catch (err) {
+                console.warn('Failed parsing UPI URL params:', err);
+            }
+        }
+
+        // Render live scannable QR Code image for UPI URIs or text payloads
+        if (clean.startsWith('upi://') || (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('data:image/'))) {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
+        } else {
+            img.src = clean;
+        }
         img.style.display = 'block';
         placeholder.style.display = 'none';
     } else {
+        img.src = '';
         img.style.display = 'none';
         placeholder.style.display = 'block';
     }
@@ -1256,12 +1288,13 @@ async function handleSaveDeviceQRSettings(e) {
     e.preventDefault();
     if (!activePricingDeviceId) return;
 
+    const rawQrInput = document.getElementById('pricingQrImageUrl').value.trim();
     const payload = {
         upi_merchant_vpa: document.getElementById('pricingQrVpa').value.trim(),
         merchant_name: document.getElementById('pricingQrMerchantName').value.trim(),
         qr_timeout_seconds: parseInt(document.getElementById('pricingQrTimeout').value) || 180,
         dynamic_pricing_enabled: document.getElementById('pricingQrDynamicToggle').checked,
-        custom_qr_image_url: document.getElementById('pricingQrImageUrl').value.trim() || null
+        custom_qr_image_url: rawQrInput || null
     };
 
     try {
@@ -1271,7 +1304,9 @@ async function handleSaveDeviceQRSettings(e) {
         });
 
         if (res.ok) {
-            showToast("✓ UPI QR Merchant Settings saved permanently!", "success");
+            showToast("✓ UPI QR & Merchant Settings saved! Machine updated instantly.", "success");
+            await loadDeviceSlotPricing(activePricingDeviceId);
+            await loadDeviceQRSettings(activePricingDeviceId);
         } else {
             const err = await res.json();
             showToast(`Failed to save QR settings: ${err.detail || res.statusText}`, "danger");

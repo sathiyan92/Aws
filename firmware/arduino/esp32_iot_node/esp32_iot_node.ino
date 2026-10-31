@@ -210,11 +210,11 @@ void setMotor(int slotNumber, bool turnOn) {
 // ==============================================================================
 void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
   QRCode qrcode;
-  uint8_t qrcodeBytes[qrcode_getBufferSize(8)];
+  uint8_t qrcodeBytes[qrcode_getBufferSize(10)];
 
-  // Automatically find the smallest QR version that fits payload
+  // Automatically find the smallest QR version that fits payload (supports long UPI URIs up to v10)
   int version = -1;
-  for (int v = 3; v <= 8; v++) {
+  for (int v = 3; v <= 10; v++) {
     int8_t res = qrcode_initText(&qrcode, qrcodeBytes, v, ECC_LOW, text);
     if (res == 0) {
       version = v;
@@ -735,7 +735,7 @@ void checkForRemoteQRConfigUpdates() {
   int httpCode = http.GET();
   if (httpCode == 200) {
     String resp = http.getString();
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
     DeserializationError err = deserializeJson(doc, resp);
 
     if (!err) {
