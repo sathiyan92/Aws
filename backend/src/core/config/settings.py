@@ -39,8 +39,11 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_SECRET: str = "placeholder_secret"
     RAZORPAY_WEBHOOK_SECRET: str = "placeholder_webhook_secret"
     RAZORPAY_CURRENCY: str = "INR"
+    RAZORPAY_UPI_VPA: str = "gtech282722.rzp@rxairtel"
     RAZORPAY_AUTO_CAPTURE: bool = True
     RAZORPAY_TEST_MODE: bool = True
+    OFFLINE_DISPENSE_HOLD_MINUTES: int = 60
+    ORDER_DISPENSE_TIMEOUT_SECONDS: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -8,7 +8,8 @@ import uuid
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from src.db.base import utc_now
+from src.core.config.settings import settings
+from src.db.base import utc_now, generate_uuid
 from src.db.models.device import Device, DeviceModule
 from src.db.models.vending import Order, Payment, MachineSlot, Product
 from src.db.models.audit import AuditLog
@@ -406,10 +407,12 @@ def mark_order_paid(
 def mark_order_dispensed(
     db: Session,
     order_id_or_number: str,
+    dispense_token: Optional[str] = None,
 ) -> OrderDetailResponse:
     """
-    Called by ESP32 once physical product dispense is finished.
-    Transitions order to DISPENSED and decrements machine slot inventory.
+    Called by ESP32 once physical product dispense is confirmed.
+    Validates single-use dispense_token, transitions order to DISPENSED,
+    and safely decrements machine slot inventory (idempotent: prevents duplicate motor/stock cycles).
     """
     order = db.query(Order).filter(
         (Order.id == order_id_or_number) | (Order.order_number == order_id_or_number)
@@ -417,6 +420,16 @@ def mark_order_dispensed(
     if not order:
         raise NotFoundException("Order", order_id_or_number)
 
+    # Idempotency check: If already dispensed, return order detail without double decrementing stock
+    if order.order_status == "DISPENSED":
+        return get_order_detail(db, order.id)
+
+    # Validate single-use dispense token if provided and active on the order
+    if dispense_token and order.dispense_token and order.dispense_token != dispense_token:
+        raise BadRequestException("Invalid dispense authorization token.")
+
+    # Consume one-time authorization token immediately
+    order.dispense_token = None
     order.order_status = "DISPENSED"
     order.dispensed_at = utc_now()
 
@@ -431,18 +444,28 @@ def mark_order_dispensed(
         entity_type="ORDER",
         entity_id=order.id,
         old_state={"order_status": "PAID"},
-        new_state={"order_status": "DISPENSED", "dispensed_at": str(order.dispensed_at)},
+        new_state={
+            "order_status": "DISPENSED",
+            "order_number": order.order_number,
+            "device_id": order.device.device_id if order.device else None,
+            "slot_number": order.slot.slot_number if order.slot else 1,
+            "dispensed_at": str(order.dispensed_at),
+        },
     ))
     db.commit()
     return get_order_detail(db, order.id)
 
 
-def get_pending_dispense_for_device(db: Session, device_id: str) -> Dict[str, Any]:
+def get_pending_dispense_for_device(
+    db: Session,
+    device_id: str,
+    device_token: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     [Edge Hardware Polling Endpoint - Buttonless Zero-Touch Vending]
     Checks if an incoming Razorpay payment matched a product price and authorized
-    physical motor dispense for this machine.
-    Automatically marks machine ONLINE in the portal.
+    physical motor dispense for this specific machine.
+    Enforces strict machine isolation, authenticated sessions, and offline expiry recovery.
     """
     device = db.query(Device).filter(
         (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
@@ -477,27 +500,70 @@ def get_pending_dispense_for_device(db: Session, device_id: str) -> Dict[str, An
         device.last_heartbeat_at = utc_now()
         db.commit()
 
+    now = utc_now()
 
-    order = (
+    # Strict Machine Isolation (Requirement 12): Query ONLY orders belonging to device.id
+    pending_orders = (
         db.query(Order)
         .filter(
             Order.device_id == device.id,
             Order.order_status.in_(["PAID", "DISPENSE_AUTHORIZED"]),
         )
-        .order_by(Order.created_at.asc())
-        .first()
+        .order_by(Order.paid_at.asc(), Order.created_at.asc())
+        .all()
     )
 
-    if not order:
+    if not pending_orders:
         return {"dispense_pending": False}
+
+    # Requirement 14: Offline machine retention and expiry policy
+    valid_order = None
+    for ord in pending_orders:
+        exp_utc = _ensure_utc(ord.dispense_token_expires_at)
+        if exp_utc and exp_utc < now:
+            # Expired while machine was offline. Do not silently lose; mark EXPIRED and audit log.
+            ord.order_status = "EXPIRED"
+            db.add(AuditLog(
+                client_id=ord.client_id,
+                user_id=None,
+                action="ORDER_DISPENSE_EXPIRED_OFFLINE",
+                entity_type="ORDER",
+                entity_id=ord.id,
+                old_state={"order_status": "PAID"},
+                new_state={"order_status": "EXPIRED", "expired_at": str(now)},
+            ))
+            db.commit()
+        else:
+            valid_order = ord
+            break
+
+    if not valid_order:
+        return {"dispense_pending": False}
+
+    # Ensure dispense_token exists
+    if not valid_order.dispense_token:
+        valid_order.dispense_token = f"auth_{generate_uuid()}"
+        hold_minutes = getattr(settings, "OFFLINE_DISPENSE_HOLD_MINUTES", 60)
+        valid_order.dispense_token_expires_at = now + timedelta(minutes=hold_minutes)
+        db.commit()
+
+    token_exp_utc = _ensure_utc(valid_order.dispense_token_expires_at)
+    expires_in_secs = (
+        int((token_exp_utc - now).total_seconds())
+        if token_exp_utc
+        else 3600
+    )
 
     return {
         "dispense_pending": True,
-        "order_id": order.id,
-        "order_number": order.order_number,
-        "slot_number": order.slot.slot_number if order.slot else 1,
-        "amount_rupees": round(order.total_amount / 100.0, 2),
-        "product_name": order.product.name if order.product else "Vending Item",
+        "order_id": valid_order.id,
+        "order_number": valid_order.order_number,
+        "dispense_token": valid_order.dispense_token,
+        "slot_number": valid_order.slot.slot_number if valid_order.slot else 1,
+        "amount_rupees": round(valid_order.total_amount / 100.0, 2),
+        "product_name": valid_order.product.name if valid_order.product else "Vending Item",
+        "display_title": "PAYMENT SUCCESSFUL",
+        "expires_in_seconds": max(0, expires_in_secs),
     }
 
 

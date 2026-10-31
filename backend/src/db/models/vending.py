@@ -141,6 +141,7 @@ class Order(Base, TimestampMixin):
         nullable=False,
     )  # PENDING, PAYMENT_PENDING, PAID, DISPENSE_AUTHORIZED, DISPENSED, FAILED, REFUNDED, CANCELLED, EXPIRED
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispense_token: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     dispense_token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispensed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

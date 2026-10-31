@@ -4,7 +4,7 @@ Provides transaction-based dynamic QR payment intent endpoints:
 initiation, real-time polling, cancellation, and tenant-scoped order history.
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from sqlalchemy.orm import Session
 from src.db.session import get_db
 from src.core.security.dependencies import (
@@ -90,14 +90,16 @@ def mark_payment_success(
 @router.post("/{order_id}/dispensed", response_model=OrderDetailResponse)
 def mark_dispense_complete(
     order_id: str,
+    dispense_token: Optional[str] = Query(None, description="One-time dispense authorization token"),
     db: Session = Depends(get_db),
 ):
     """
     [Edge Hardware Callback Endpoint]
     Called by ESP32 once physical product dispense is confirmed (e.g., motor cycle complete).
-    Transitions order to DISPENSED and decrements machine slot inventory.
+    Validates single-use dispense_token, transitions order to DISPENSED,
+    and decrements machine slot inventory.
     """
-    return mark_order_dispensed(db=db, order_id_or_number=order_id)
+    return mark_order_dispensed(db=db, order_id_or_number=order_id, dispense_token=dispense_token)
 
 
 @router.get("", response_model=List[OrderDetailResponse])
@@ -126,6 +128,7 @@ def get_orders_list(
 @router.get("/pending-dispense/{device_id}")
 def check_pending_dispense(
     device_id: str,
+    x_device_token: Optional[str] = Header(None, alias="X-Device-Token"),
     db: Session = Depends(get_db),
 ):
     """
@@ -134,7 +137,49 @@ def check_pending_dispense(
     Razorpay payment has matched a product price and authorized motor dispense.
     """
     from src.services.order_service import get_pending_dispense_for_device
-    return get_pending_dispense_for_device(db=db, device_id=device_id)
+    return get_pending_dispense_for_device(db=db, device_id=device_id, device_token=x_device_token)
+
+
+@router.get("/qr-bitmap/{device_id}")
+def get_device_qr_bitmap(
+    device_id: str,
+    format: str = Query("bmp", regex="^(bmp|png)$"),
+    size: int = Query(200, ge=100, le=480),
+    db: Session = Depends(get_db),
+):
+    """
+    [Edge Hardware Bitmap Endpoint]
+    Generates and streams a clean monochrome BMP or PNG image for the machine's TFT LCD.
+    Encodes the exact direct UPI payload, never image_url.
+    Suitable for ESP32 ILI9488 TFT direct rendering without local QR math.
+    """
+    import io
+    import qrcode
+    from src.services.order_service import get_device_qr_config
+
+    cfg = get_device_qr_config(db=db, device_id=device_id)
+    upi_payload = cfg.get("qr_payload") or f"upi://pay?pa={cfg.get('razorpay_upi_vpa')}&pn=IoT%20Vending&am={cfg.get('amount_rupees'):.2f}&cu=INR&tn={device_id}"
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=max(2, size // 35),
+        border=2,
+    )
+    qr.add_data(upi_payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert("1")
+    img = img.resize((size, size))
+
+    buf = io.BytesIO()
+    if format == "png":
+        img.save(buf, format="PNG")
+        media_type = "image/png"
+    else:
+        img.save(buf, format="BMP")
+        media_type = "image/bmp"
+
+    return Response(content=buf.getvalue(), media_type=media_type)
 
 
 @router.post("/razorpay-webhook")

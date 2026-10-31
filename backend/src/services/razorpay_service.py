@@ -231,10 +231,7 @@ def process_webhook_event(
     if enforce_signature and not is_signature_valid:
         # Check if developer is using default placeholder in dev/test environment
         is_placeholder_secret = settings.RAZORPAY_WEBHOOK_SECRET == "placeholder_webhook_secret"
-        if settings.RAZORPAY_TEST_MODE and is_placeholder_secret:
-            # In test mode with placeholder secret, log a notice and allow event to process
-            print("[!] TEST MODE NOTICE: Signature mismatch with placeholder secret. Allowing event in TEST_MODE.")
-        else:
+        if not (settings.RAZORPAY_TEST_MODE and is_placeholder_secret and signature == "test_dev_bypass"):
             # Record failed event attempt
             failed_log = WebhookEvent(
                 event_id=f"invalid_sig_{event_id}_{generate_uuid()[:8]}",
@@ -319,53 +316,93 @@ def _handle_payment_captured(
 ) -> Dict[str, Any]:
     """
     Handle captured payment by matching target device, resolving slot,
-    creating/updating Order & Payment records, and setting status to DISPENSE_AUTHORIZED.
+    verifying payment status and expected amount, creating/updating Order & Payment records,
+    issuing a unique one-time dispense token with offline retention, and logging complete audit details.
     """
     payload_obj = webhook_data.get("payload", {})
     payment_entity = payload_obj.get("payment", {}).get("entity", {})
     qr_entity = payload_obj.get("qr_code", {}).get("entity", {})
 
     p_id = payment_id or payment_entity.get("id") or "pay_simulated"
+    qr_id = (
+        qr_entity.get("id")
+        or payment_entity.get("notes", {}).get("razorpay_qr_id")
+        or qr_entity.get("notes", {}).get("razorpay_qr_id")
+        or payment_entity.get("notes", {}).get("qr_id")
+    )
+
+    # 1. Verify Payment Status (Requirement 4)
+    payment_status = (payment_entity.get("status") or "captured").lower()
+    if payment_status not in ("captured", "authorized", "paid"):
+        raise BadRequestException(f"Payment status '{payment_status}' is not captured/authorized.")
+
     amount_paise = payment_entity.get("amount") or qr_entity.get("payment_amount") or 0
-    currency = payment_entity.get("currency", "INR")
+    currency = payment_entity.get("currency") or qr_entity.get("currency") or "INR"
     notes = payment_entity.get("notes") or qr_entity.get("notes") or {}
 
-    device_id = (
+    device_id_note = (
         notes.get("device_id")
         or notes.get("machine_id")
         or notes.get("deviceId")
     )
     slot_number_note = notes.get("slot_number") or notes.get("slot")
 
-    # Locate Target Device
-    device = None
-    if device_id:
-        device = db.query(Device).filter(
-            (Device.device_id == str(device_id)) | (Device.mac_address.ilike(str(device_id).strip()))
-        ).first()
+    # 2. Find corresponding RazorpayQRCode and Order via stored QR ID (Requirements 2, 3 & 5)
+    qr_record = None
+    if qr_id:
+        qr_record = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == str(qr_id)).first()
 
-    # Fallback if device_id not specified: check if order_id / qr_id provided
-    order_id_note = notes.get("order_id") or notes.get("order_number")
     matched_order = None
-    if order_id_note:
-        matched_order = db.query(Order).filter(
-            (Order.id == str(order_id_note)) | (Order.order_number == str(order_id_note))
-        ).first()
-        if matched_order and not device:
-            device = matched_order.device
+    if qr_id:
+        matched_order = db.query(Order).filter(Order.razorpay_qr_id == str(qr_id)).first()
+    if not matched_order:
+        order_id_note = notes.get("order_id") or notes.get("order_number")
+        if order_id_note:
+            matched_order = db.query(Order).filter(
+                (Order.id == str(order_id_note)) | (Order.order_number == str(order_id_note))
+            ).first()
 
-    # Fallback to single active machine in DB if device still not resolved
-    if not device:
+    # 3. Resolve Target Machine with Strict Machine Isolation (Requirements 5 & 12)
+    device = None
+    if qr_record:
+        device = qr_record.device or db.query(Device).filter(Device.id == qr_record.device_id).first()
+    elif matched_order:
+        device = matched_order.device or db.query(Device).filter(Device.id == matched_order.device_id).first()
+
+    if not device and device_id_note:
+        device = db.query(Device).filter(
+            (Device.device_id == str(device_id_note)) | (Device.mac_address.ilike(str(device_id_note).strip()))
+        ).first()
+
+    # Only in single-machine dev/test environments with no ambiguous identifier
+    if not device and not qr_id and not device_id_note:
         active_devices = db.query(Device).filter(Device.status == "ACTIVE").all()
         if len(active_devices) == 1:
             device = active_devices[0]
 
     if not device:
-        raise NotFoundException("Device", device_id or "Unspecified in webhook payment notes")
+        raise NotFoundException("Device", device_id_note or qr_id or "Unspecified in webhook payment notes")
 
-    # Price & Slot Resolution
+    # 4. Verify Amount Matches Expected Order/QR Amount (Requirement 4)
+    expected_amount = None
+    if matched_order:
+        expected_amount = matched_order.total_amount
+    elif qr_record:
+        expected_amount = qr_record.amount
+
+    if expected_amount is not None and amount_paise != expected_amount:
+        raise BadRequestException(
+            f"Payment amount mismatch: received {amount_paise} paise, expected {expected_amount} paise."
+        )
+
+    # 5. Price & Slot Resolution
     slot = None
-    if slot_number_note:
+    if qr_record and qr_record.slot_id:
+        slot = db.query(MachineSlot).filter_by(id=qr_record.slot_id).first()
+    if not slot and matched_order and matched_order.slot_id:
+        slot = matched_order.slot
+
+    if not slot and slot_number_note:
         try:
             slot_num = int(slot_number_note)
             slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_num).first()
@@ -382,17 +419,40 @@ def _handle_payment_captured(
                 slot = s
                 break
 
-    # Fallback to slot 1 if available
     if not slot and device.slots:
         slot = device.slots[0]
 
-    now = utc_now()
+    # 6. Idempotency Check on Razorpay Payment ID (Requirement 11)
+    if p_id and p_id != "pay_simulated":
+        existing_payment = db.query(Payment).filter(Payment.razorpay_payment_id == p_id).first()
+        if existing_payment and existing_payment.payment_status == "SUCCESS":
+            existing_ord = existing_payment.order
+            return {
+                "order_id": existing_ord.id if existing_ord else None,
+                "order_number": existing_ord.order_number if existing_ord else None,
+                "device_id": device.device_id,
+                "slot_number": slot.slot_number if slot else 1,
+                "amount_rupees": round(amount_paise / 100.0, 2),
+                "status": existing_ord.order_status if existing_ord else "PAID",
+                "message": "Payment already captured previously.",
+            }
 
-    # Create or update order
+    now = utc_now()
+    # Unique one-time dispense authorization with offline retention (Requirements 7 & 14)
+    dispense_token = f"auth_{generate_uuid()}"
+    hold_minutes = getattr(settings, "OFFLINE_DISPENSE_HOLD_MINUTES", 60)
+    dispense_token_expires_at = now + timedelta(minutes=hold_minutes)
+
+    # 7. Create or update Order marked as PAID (Requirement 6)
     if matched_order and matched_order.order_status in ("PENDING", "PAYMENT_PENDING"):
         order = matched_order
-        order.order_status = "DISPENSE_AUTHORIZED"
+        order.order_status = "PAID"
         order.payment_method = "RAZORPAY"
+        order.paid_at = now
+        order.dispense_token = dispense_token
+        order.dispense_token_expires_at = dispense_token_expires_at
+        if qr_id and not order.razorpay_qr_id:
+            order.razorpay_qr_id = qr_id
         order_number = order.order_number
         order_id = order.id
     else:
@@ -408,12 +468,16 @@ def _handle_payment_captured(
             unit_price=amount_paise,
             quantity=1,
             total_amount=amount_paise,
-            order_status="DISPENSE_AUTHORIZED",
+            order_status="PAID",
             payment_method="RAZORPAY",
+            razorpay_qr_id=qr_id,
+            paid_at=now,
+            dispense_token=dispense_token,
+            dispense_token_expires_at=dispense_token_expires_at,
         )
         db.add(order)
 
-    # Record or update Payment
+    # 8. Record or update Payment
     existing_payment = db.query(Payment).filter(Payment.order_id == order.id).first()
     if existing_payment:
         payment = existing_payment
@@ -442,21 +506,28 @@ def _handle_payment_captured(
         )
         db.add(payment)
 
-    # Audit Log
+    # 9. Audit Log with Full Traceability (Requirement 13)
     db.add(AuditLog(
         client_id=device.client_id,
         user_id=None,
         action="RAZORPAY_WEBHOOK_PAYMENT_CAPTURED",
         entity_type="ORDER",
         entity_id=order.id,
-        old_state={"payment_id": p_id},
+        old_state={"payment_id": p_id, "status": "PENDING"},
         new_state={
+            "payment_id": p_id,
+            "razorpay_qr_id": qr_id,
+            "order_id": order.id,
             "order_number": order_number,
-            "device_id": device.device_id,
-            "slot_number": slot.slot_number if slot else 1,
+            "machine_id": device.device_id,
+            "vendor_id": device.client_id,
             "amount_paise": amount_paise,
+            "amount_rupees": round(amount_paise / 100.0, 2),
             "currency": currency,
-            "status": "DISPENSE_AUTHORIZED",
+            "dispense_token": dispense_token,
+            "dispense_token_expires_at": str(dispense_token_expires_at),
+            "status": "PAID",
+            "timestamp": str(now),
         },
     ))
 
@@ -466,7 +537,8 @@ def _handle_payment_captured(
         "device_id": device.device_id,
         "slot_number": slot.slot_number if slot else 1,
         "amount_rupees": round(amount_paise / 100.0, 2),
-        "status": "DISPENSE_AUTHORIZED",
+        "dispense_token": dispense_token,
+        "status": "PAID",
     }
 
 
@@ -546,8 +618,10 @@ def create_razorpay_qr(
                 data = resp.json()
                 qr_id = data.get("id")
                 image_url = data.get("image_url")
-                # Razorpay returns short_url or upi link in qr payload
-                qr_payload = data.get("short_url") or data.get("image_url")
+                # Requirement 15: Do NOT encode image_url as qr_payload. Construct direct UPI deep-link.
+                vpa = getattr(settings, "RAZORPAY_UPI_VPA", "gtech282722.rzp@rxairtel") or f"rzp.vending.{device.device_id.lower()}@icici"
+                encoded_name = urllib.parse.quote(qr_name)
+                qr_payload = f"upi://pay?pa={vpa}&pn={encoded_name}&am={amount_in_rupees:.2f}&cu=INR&tn={device.device_id}&tr={qr_id}"
         except Exception as e:
             # Fall back to UPI generation
             pass
@@ -556,9 +630,9 @@ def create_razorpay_qr(
     if not qr_id or not qr_payload:
         generated_nonce = generate_uuid()[:8]
         qr_id = f"qr_test_{device.device_id.lower()}_{generated_nonce}"
-        vpa = f"rzp.vending.{device.device_id.lower()}@icici"
+        vpa = getattr(settings, "RAZORPAY_UPI_VPA", "gtech282722.rzp@rxairtel") or f"rzp.vending.{device.device_id.lower()}@icici"
         encoded_name = urllib.parse.quote(qr_name)
-        qr_payload = f"upi://pay?pa={vpa}&pn={encoded_name}&am={amount_in_rupees:.2f}&cu=INR&tn={device.device_id}"
+        qr_payload = f"upi://pay?pa={vpa}&pn={encoded_name}&am={amount_in_rupees:.2f}&cu=INR&tn={device.device_id}&tr={qr_id}"
         image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(qr_payload)}"
 
     # Save to razorpay_qr_codes table

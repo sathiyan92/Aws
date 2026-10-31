@@ -185,8 +185,8 @@ void uiDrawStandbyQRScreen();
 void uiDrawVendingScreen(int slotNumber, float amount, String productName);
 void uiDrawCompleteScreen();
 void setMotor(int slotNumber, bool turnOn);
-void dispenseProduct(int slotNumber, float amount, String orderId);
-void confirmDispenseToCloud(String orderId);
+void dispenseProduct(int slotNumber, float amount, String orderId, String dispenseToken = "", String productName = "");
+void confirmDispenseToCloud(String orderId, String dispenseToken = "");
 void pollPendingDispense();
 void testMotorHardware();
 void printHelpMenu();
@@ -293,6 +293,14 @@ void uiDrawStandbyQRScreen() {
                   "&pn=IoT%20Vending&am=" + String(pending_amount_rupee, 2) + 
                   "&cu=INR&tn=" + device_id);
 
+  // Requirement 15: Guard against URL encoding. Never encode image_url as QR payload
+  if (upiUri.startsWith("http://") || upiUri.startsWith("https://")) {
+    Serial.println("[QR Warning] URL detected in custom_qr_code; using clean UPI URI instead.");
+    upiUri = "upi://pay?pa=" + razorpay_upi_vpa + 
+             "&pn=IoT%20Vending&am=" + String(pending_amount_rupee, 2) + 
+             "&cu=INR&tn=" + device_id;
+  }
+
   // Left: Draw High-Contrast Razorpay QR Code Box
   drawQRCode(upiUri.c_str(), 18, 54, 190);
 
@@ -371,45 +379,52 @@ void uiDrawStandbyQRScreen() {
 
 /**
  * Screen 2: Vending In Progress & "PLEASE COLLECT MATERIAL"
- * "once payment is verfity vednind has to proecess , lcd will display the process please collect material"
+ * Displays PAYMENT SUCCESSFUL, amount, and product name on machine's ILI9488 TFT
  */
 void uiDrawVendingScreen(int slotNumber, float amount, String productName) {
   TFT_display.fillScreen(COLOR_BG);
 
-  // Top Banner (Emerald Green)
+  // Top Banner (Emerald Green) - Requirement 9: PAYMENT SUCCESSFUL
   TFT_display.fillRect(0, 0, 480, 50, COLOR_GREEN);
-  TFT_display.setCursor(55, 14);
+  TFT_display.setCursor(65, 14);
   TFT_display.setTextColor(COLOR_BLACK);
   TFT_display.setTextSize(3);
-  TFT_display.printf("PAYMENT RECEIVED: Rs %.0f", amount);
+  TFT_display.print("PAYMENT SUCCESSFUL");
 
   // Center Main Action Card
-  TFT_display.fillRect(20, 65, 440, 240, COLOR_CARD);
-  TFT_display.drawRect(20, 65, 440, 240, COLOR_CYAN);
+  TFT_display.fillRect(20, 60, 440, 245, COLOR_CARD);
+  TFT_display.drawRect(20, 60, 440, 245, COLOR_CYAN);
 
-  // Motor Action Title
-  TFT_display.setCursor(45, 82);
-  TFT_display.setTextColor(COLOR_CYAN);
-  TFT_display.setTextSize(3);
-  TFT_display.printf("VENDING MOTOR %d...", slotNumber);
+  // Product Name & Amount details
+  TFT_display.setCursor(35, 75);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  String displayName = (productName.length() > 0) ? productName : pending_product_name;
+  if (displayName.length() > 24) displayName = displayName.substring(0, 22) + "..";
+  TFT_display.printf("Item  : %s", displayName.c_str());
+
+  TFT_display.setCursor(35, 102);
+  TFT_display.setTextColor(COLOR_AMBER);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("Amount: Rs. %.2f", amount);
 
   // Progress Bar Outer Frame
-  TFT_display.drawRect(40, 122, 400, 30, COLOR_WHITE);
+  TFT_display.drawRect(35, 130, 410, 28, COLOR_WHITE);
 
   // Prominent "PLEASE COLLECT MATERIAL" Banner
-  TFT_display.fillRect(30, 168, 420, 62, COLOR_GREEN);
-  TFT_display.setCursor(45, 188);
+  TFT_display.fillRect(30, 168, 420, 60, COLOR_GREEN);
+  TFT_display.setCursor(45, 186);
   TFT_display.setTextColor(COLOR_BLACK);
   TFT_display.setTextSize(3);
   TFT_display.print("PLEASE COLLECT MATERIAL");
 
   // Subtext
-  TFT_display.setCursor(75, 248);
-  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setCursor(75, 242);
+  TFT_display.setTextColor(COLOR_CYAN);
   TFT_display.setTextSize(2);
-  TFT_display.print("Dispensing from Tray Below");
+  TFT_display.printf("Dispensing Motor %d from Tray", slotNumber);
 
-  TFT_display.setCursor(140, 276);
+  TFT_display.setCursor(120, 274);
   TFT_display.setTextColor(COLOR_GRAY);
   TFT_display.setTextSize(1);
   TFT_display.print("Please wait while motor cycles...");
@@ -584,25 +599,28 @@ void connectToWiFi() {
 // ==============================================================================
 // 10. REAL-TIME DISPENSE MOTOR EXECUTION ("PLEASE COLLECT MATERIAL")
 // ==============================================================================
-void dispenseProduct(int slotNumber, float amount, String orderId) {
+void dispenseProduct(int slotNumber, float amount, String orderId, String dispenseToken, String productName) {
   current_state = STATE_DISPENSING;
+  String targetProduct = (productName.length() > 0) ? productName : pending_product_name;
 
   Serial.println("\n******************************************************************");
   Serial.printf(">>> 🚀 RAZORPAY PAYMENT VERIFIED (Rs %.2f)! DISPENSING MOTOR %d...\n", amount, slotNumber);
+  Serial.printf("    Item  : %s\n", targetProduct.c_str());
+  Serial.printf("    Auth  : %s\n", dispenseToken.length() > 0 ? dispenseToken.c_str() : "(Standard)");
   Serial.println("******************************************************************");
 
-  // 1. Draw "PAYMENT VERIFIED" & "PLEASE COLLECT MATERIAL" on LCD
-  uiDrawVendingScreen(slotNumber, amount, pending_product_name);
+  // 1. Draw "PAYMENT SUCCESSFUL" & "PLEASE COLLECT MATERIAL" on LCD (Requirement 9)
+  uiDrawVendingScreen(slotNumber, amount, targetProduct);
 
-  // 2. Turn ON Motor 1 (GPIO 26)
+  // 2. Turn ON Motor (GPIO 26)
   setMotor(slotNumber, true);
 
   // 3. Smooth progress bar animation over 3 seconds
   unsigned long startTime = millis();
-  const int barX = 42;
-  const int barY = 124;
-  const int barMaxW = 396;
-  const int barH = 26;
+  const int barX = 37;
+  const int barY = 132;
+  const int barMaxW = 406;
+  const int barH = 24;
 
   while (millis() - startTime < MOTOR_DISPENSE_TIME_MS) {
     unsigned long elapsed = millis() - startTime;
@@ -619,9 +637,9 @@ void dispenseProduct(int slotNumber, float amount, String orderId) {
   // 5. Display "PLEASE COLLECT MATERIAL FROM TRAY"
   uiDrawCompleteScreen();
 
-  // 6. Notify Cloud of successful dispense (decrements stock)
+  // 6. Notify Cloud of successful dispense (one-time dispense confirmation)
   if (WiFi.status() == WL_CONNECTED && orderId.length() > 0 && !orderId.startsWith("BENCH")) {
-    confirmDispenseToCloud(orderId);
+    confirmDispenseToCloud(orderId, dispenseToken);
   }
 
   // 7. Hold screen for 4 seconds so customer collects material
@@ -632,17 +650,21 @@ void dispenseProduct(int slotNumber, float amount, String orderId) {
   uiDrawStandbyQRScreen();
 }
 
-void confirmDispenseToCloud(String orderId) {
+void confirmDispenseToCloud(String orderId, String dispenseToken) {
   WiFiClient client;
   HTTPClient http;
   String endpoint = server_base_url + "/api/v1/orders/" + orderId + "/dispensed";
+  if (dispenseToken.length() > 0) {
+    endpoint += "?dispense_token=" + dispenseToken;
+  }
 
   http.setConnectTimeout(6000);
   http.setTimeout(6000);
   http.begin(client, endpoint);
-  http.POST("");
+  http.addHeader("X-Device-Token", "dev_token_" + device_id);
+  int code = http.POST("");
   http.end();
-  Serial.println("[✓] Cloud Inventory Updated: Stock decremented by 1.");
+  Serial.printf("[✓] Cloud Inventory Updated: Stock decremented by 1 (HTTP %d).\n", code);
 }
 
 // ==============================================================================
@@ -658,6 +680,7 @@ void pollPendingDispense() {
   http.setConnectTimeout(3000);
   http.setTimeout(3000);
   http.begin(client, endpoint);
+  http.addHeader("X-Device-Token", "dev_token_" + device_id);
 
   int httpCode = http.GET();
   if (httpCode == 200) {
@@ -667,16 +690,15 @@ void pollPendingDispense() {
 
     if (!err && doc["dispense_pending"] == true) {
       String orderId = doc["order_id"].as<String>();
+      String dispenseToken = doc.containsKey("dispense_token") ? doc["dispense_token"].as<String>() : "";
       int slotNum = doc["slot_number"].as<int>();
       float amount = doc["amount_rupees"].as<float>();
-      if (doc.containsKey("product_name")) {
-        pending_product_name = doc["product_name"].as<String>();
-      }
+      String prodName = doc.containsKey("product_name") ? doc["product_name"].as<String>() : pending_product_name;
 
       http.end();
 
-      // Trigger Motor Dispense sequence!
-      dispenseProduct(slotNum, amount, orderId);
+      // Trigger Motor Dispense sequence with unique authorization!
+      dispenseProduct(slotNum, amount, orderId, dispenseToken, prodName);
       return;
     }
   } else {
