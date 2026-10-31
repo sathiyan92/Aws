@@ -800,11 +800,23 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     if payload_data.get("product_name") and device.slots and device.slots[0].product:
         device.slots[0].product.name = payload_data["product_name"]
 
+    # Synchronize DeviceModule for QR_PAYMENT
+    from src.db.models.device import DeviceModule
+    qr_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="QR_PAYMENT").first()
+    if qr_mod:
+        mod_cfg = dict(qr_mod.configuration or {})
+        if raw_qr:
+            mod_cfg["custom_qr_image_url"] = raw_qr
+        if payload_data.get("razorpay_upi_vpa"):
+            mod_cfg["upi_merchant_vpa"] = payload_data["razorpay_upi_vpa"]
+        qr_mod.configuration = mod_cfg
+
     from sqlalchemy.orm.attributes import flag_modified
     device.config.config_payload = dict(payload)
     flag_modified(device.config, "config_payload")
     device.config.is_synced = False
     device.current_config_version += 1
+    device.config.active_version = device.current_config_version
 
     db.add(AuditLog(
         client_id=device.client_id,

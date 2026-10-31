@@ -1212,16 +1212,97 @@ async function loadDeviceQRSettings(deviceId) {
             document.getElementById('pricingQrTimeout').value = cfg.qr_timeout_seconds || 180;
             document.getElementById('pricingQrDynamicToggle').checked = cfg.dynamic_pricing_enabled !== false;
             
+            const qrInput = document.getElementById('pricingQrImageUrl');
+            const quickInput = document.getElementById('slotQuickQrInput');
             if (cfg.custom_qr_image_url) {
-                document.getElementById('pricingQrImageUrl').value = cfg.custom_qr_image_url;
+                if (qrInput) qrInput.value = cfg.custom_qr_image_url;
+                if (quickInput) quickInput.value = cfg.custom_qr_image_url;
                 updateQrImagePreview(cfg.custom_qr_image_url);
+                updateSlotQuickQrPreview(cfg.custom_qr_image_url);
             } else {
-                document.getElementById('pricingQrImageUrl').value = '';
+                if (qrInput) qrInput.value = '';
+                if (quickInput) quickInput.value = '';
                 updateQrImagePreview('');
+                updateSlotQuickQrPreview('');
             }
         }
     } catch (e) {
         console.error("Failed loading QR settings:", e);
+    }
+}
+
+function updateSlotQuickQrPreview(url) {
+    const img = document.getElementById('slotQuickQrPreview');
+    const placeholder = document.getElementById('slotQuickQrPlaceholder');
+    if (!img || !placeholder) return;
+
+    if (url && url.trim().length > 0) {
+        const clean = url.trim();
+        if (clean.startsWith('upi://') || (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('data:image/'))) {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
+        } else {
+            img.src = clean;
+        }
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        img.src = '';
+        img.style.display = 'none';
+        placeholder.style.display = 'block';
+    }
+}
+
+function handleSlotQuickQr(val) {
+    const clean = val.trim();
+    if (clean.startsWith('upi://pay')) {
+        try {
+            const dummyUrl = new URL(clean.replace('upi://pay', 'http://dummy.pay'));
+            const am = dummyUrl.searchParams.get('am');
+            const pa = dummyUrl.searchParams.get('pa');
+            if (am) {
+                const s1Price = document.getElementById('slot-price-1');
+                if (s1Price) s1Price.value = parseFloat(am).toFixed(2);
+            }
+            if (pa) {
+                const vpaInput = document.getElementById('pricingQrVpa');
+                if (vpaInput) vpaInput.value = pa;
+            }
+        } catch (e) {}
+    }
+    updateSlotQuickQrPreview(clean);
+    const qrInput = document.getElementById('pricingQrImageUrl');
+    if (qrInput) {
+        qrInput.value = clean;
+        updateQrImagePreview(clean);
+    }
+}
+
+async function applyQuickQrToDevice() {
+    if (!activePricingDeviceId) return;
+    const input = document.getElementById('slotQuickQrInput');
+    const clean = input ? input.value.trim() : '';
+    if (!clean) {
+        showToast("Please paste a valid UPI link or QR image URL.", "danger");
+        return;
+    }
+
+    try {
+        const res = await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ custom_qr_payload: clean })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`✓ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to machine ${activePricingDeviceId}!`, "success");
+            await loadDeviceSlotsAndPricing(activePricingDeviceId);
+            await loadDeviceQRSettings(activePricingDeviceId);
+        } else {
+            const err = await res.json();
+            showToast(`Failed to sync QR: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (e) {
+        showToast(e.message, "danger");
     }
 }
 
@@ -1305,7 +1386,7 @@ async function handleSaveDeviceQRSettings(e) {
 
         if (res.ok) {
             showToast("✓ UPI QR & Merchant Settings saved! Machine updated instantly.", "success");
-            await loadDeviceSlotPricing(activePricingDeviceId);
+            await loadDeviceSlotsAndPricing(activePricingDeviceId);
             await loadDeviceQRSettings(activePricingDeviceId);
         } else {
             const err = await res.json();

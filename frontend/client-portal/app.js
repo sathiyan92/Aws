@@ -508,9 +508,17 @@ async function loadQRData(deviceId) {
             elements.qrMerchantName.value = data.merchant_name || 'Apex Vending Solutions';
             
             const qrUrlInput = document.getElementById('clientQrImageUrl');
-            if (qrUrlInput) {
-                qrUrlInput.value = data.custom_qr_image_url || '';
-                updateClientQrImagePreview(data.custom_qr_image_url || '');
+            const quickInput = document.getElementById('clientSlotQuickQrInput');
+            if (data.custom_qr_image_url) {
+                if (qrUrlInput) qrUrlInput.value = data.custom_qr_image_url;
+                if (quickInput) quickInput.value = data.custom_qr_image_url;
+                updateClientQrImagePreview(data.custom_qr_image_url);
+                updateClientSlotQuickQrPreview(data.custom_qr_image_url);
+            } else {
+                if (qrUrlInput) qrUrlInput.value = '';
+                if (quickInput) quickInput.value = '';
+                updateClientQrImagePreview('');
+                updateClientSlotQuickQrPreview('');
             }
         }
 
@@ -658,6 +666,81 @@ function addNewClientSlotRow() {
         ? Math.max(...clientActiveSlots.map(s => s.slot_number)) + 1 
         : 1;
     saveClientSlotPrice(nextSlotNum);
+}
+
+function updateClientSlotQuickQrPreview(url) {
+    const img = document.getElementById('clientSlotQuickQrPreview');
+    const placeholder = document.getElementById('clientSlotQuickQrPlaceholder');
+    if (!img || !placeholder) return;
+
+    if (url && url.trim().length > 0) {
+        const clean = url.trim();
+        if (clean.startsWith('upi://') || (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('data:image/'))) {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
+        } else {
+            img.src = clean;
+        }
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        img.src = '';
+        img.style.display = 'none';
+        placeholder.style.display = 'block';
+    }
+}
+
+function handleClientSlotQuickQr(val) {
+    const clean = val.trim();
+    if (clean.startsWith('upi://pay')) {
+        try {
+            const dummyUrl = new URL(clean.replace('upi://pay', 'http://dummy.pay'));
+            const am = dummyUrl.searchParams.get('am');
+            const pa = dummyUrl.searchParams.get('pa');
+            if (am) {
+                const s1Price = document.getElementById('client-slot-price-1');
+                if (s1Price) s1Price.value = parseFloat(am).toFixed(2);
+            }
+            if (pa && elements.qrVpa) {
+                elements.qrVpa.value = pa;
+            }
+        } catch (e) {}
+    }
+    updateClientSlotQuickQrPreview(clean);
+    const qrInput = document.getElementById('clientQrImageUrl');
+    if (qrInput) {
+        qrInput.value = clean;
+        updateClientQrImagePreview(clean);
+    }
+}
+
+async function applyClientQuickQrToDevice() {
+    if (!state.selectedDeviceId) return;
+    const input = document.getElementById('clientSlotQuickQrInput');
+    const clean = input ? input.value.trim() : '';
+    if (!clean) {
+        showToast("Please paste a valid UPI link or QR image URL.", "error");
+        return;
+    }
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/orders/qr-config/${state.selectedDeviceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ custom_qr_payload: clean })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`✓ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to machine ${state.selectedDeviceId}!`);
+            await loadClientSlotsData(state.selectedDeviceId);
+            await loadQRData(state.selectedDeviceId);
+        } else {
+            const err = await res.json();
+            showToast(`Failed to sync QR: ${err.detail || res.statusText}`, "error");
+        }
+    } catch (e) {
+        showToast(e.message, "error");
+    }
 }
 
 function updateClientQrImagePreview(url) {
