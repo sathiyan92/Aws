@@ -7,7 +7,7 @@ from src.db.models.client import Client
 from src.db.models.user import User
 from src.db.models.device import DeviceType, Device, DeviceModule, DeviceCredential
 from src.db.models.config import DeviceConfig, ConfigurationVersion
-from src.db.models.vending import Product, MachineSlot, Order, Payment, Transaction
+from src.db.models.vending import Product, MachineSlot, Order, Payment, Transaction, WebhookEvent, RazorpayQRCode
 from src.db.models.rfid import Employee, RFIDCard, AttendanceEvent
 from src.db.models.firmware import FirmwareVersion, OTADeployment
 from src.db.models.telemetry import DeviceHeartbeat, DeviceLog
@@ -30,6 +30,8 @@ __all__ = [
     "Order",
     "Payment",
     "Transaction",
+    "WebhookEvent",
+    "RazorpayQRCode",
     "Employee",
     "RFIDCard",
     "AttendanceEvent",

@@ -29,6 +29,7 @@ from src.api.v1.devices.gateway_routes import router as gateway_router
 from src.api.v1.configs.routes import router as config_router
 from src.api.v1.orders.routes import router as orders_router
 from src.api.v1.ota.routes import router as ota_router
+from src.api.v1.payments.routes import router as payments_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -68,6 +69,7 @@ app.include_router(gateway_router, prefix="/api/v1")
 app.include_router(config_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(ota_router, prefix="/api/v1")
+app.include_router(payments_router, prefix="/api/v1")
 
 
 @app.on_event("startup")

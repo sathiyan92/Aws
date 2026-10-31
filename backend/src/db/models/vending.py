@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Optional, Any, TYPE_CHECKING
 from sqlalchemy import String, Text, Integer, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.db.base import Base, TimestampMixin, generate_uuid
+from src.db.base import Base, TimestampMixin, generate_uuid, utc_now
 
 if TYPE_CHECKING:
     from src.db.models.client import Client
@@ -144,6 +144,8 @@ class Order(Base, TimestampMixin):
     dispense_token: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     dispense_token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispensed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    razorpay_qr_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    qr_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
     # Relationships
@@ -188,6 +190,9 @@ class Payment(Base, TimestampMixin):
     )  # UPI_DYNAMIC, RAZORPAY, STRIPE, INTERNAL_COIN
     gateway_payment_intent_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
     gateway_transaction_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    gateway_event_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    razorpay_payment_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    razorpay_order_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="INR", nullable=False)
     payment_status: Mapped[str] = mapped_column(
@@ -267,3 +272,86 @@ class Transaction(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<Transaction(num='{self.transaction_number}', type='{self.transaction_type}', amount={self.amount})>"
+
+
+class WebhookEvent(Base, TimestampMixin):
+    """
+    Audit log and idempotency guard for incoming payment gateway webhooks.
+    Guarantees at-most-once processing of Razorpay webhook notifications.
+    """
+    __tablename__ = "webhook_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    event_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    gateway: Mapped[str] = mapped_column(String(32), default="RAZORPAY", nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default="RECEIVED",
+        index=True,
+        nullable=False,
+    )  # RECEIVED, PROCESSED, DUPLICATE_IGNORED, FAILED
+    payload: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_webhook_events_gateway_status", "gateway", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<WebhookEvent(id='{self.event_id}', type='{self.event_type}', status='{self.status}')>"
+
+
+class RazorpayQRCode(Base, TimestampMixin):
+    """
+    Persistent record of Razorpay QR codes generated for devices or slots.
+    Supports both dynamic (order-specific) and static UPI QR codes.
+    """
+    __tablename__ = "razorpay_qr_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    client_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("clients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    slot_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("machine_slots.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    razorpay_qr_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    usage: Mapped[str] = mapped_column(String(32), default="single_use", nullable=False)  # single_use, multiple_use
+    fixed_amount: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)  # In paise
+    currency: Mapped[str] = mapped_column(String(8), default="INR", nullable=False)
+    qr_payload: Mapped[str] = mapped_column(Text, nullable=False)  # UPI URI string
+    image_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)  # active, closed, expired
+    notes: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    client: Mapped["Client"] = relationship("Client")
+    device: Mapped["Device"] = relationship("Device")
+    slot: Mapped[Optional["MachineSlot"]] = relationship("MachineSlot")
+
+    __table_args__ = (
+        Index("idx_razorpay_qr_device_status", "device_id", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<RazorpayQRCode(qr_id='{self.razorpay_qr_id}', device_id='{self.device_id}', amount={self.amount})>"
+

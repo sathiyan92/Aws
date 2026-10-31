@@ -143,16 +143,19 @@ async def handle_razorpay_webhook(
     db: Session = Depends(get_db),
 ):
     """
-    [Razorpay Webhook Handler for 1000+ Vending Fleet]
-    Receives 'payment.captured' events from Razorpay.
-    1. Extracts target machine device_id from payment notes.
-    2. Matches payment amount (paise) to slot product price.
-    3. Triggers Razorpay Route transfer to Vendor/Client Linked Account.
-    4. Authorizes dispense on the ESP32 node.
+    [Razorpay Webhook Handler - Legacy & Order-specific Alias]
+    Forwards to central Razorpay webhook processing with raw body HMAC verification
+    and idempotency protection.
     """
-    from src.services.order_service import process_razorpay_webhook
-    webhook_data = await request.json()
-    return process_razorpay_webhook(db=db, webhook_data=webhook_data)
+    from src.services.razorpay_service import process_webhook_event
+    raw_body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature") or request.headers.get("x-razorpay-signature")
+    return process_webhook_event(
+        db=db,
+        raw_body=raw_body,
+        signature=signature,
+        enforce_signature=True,
+    )
 
 
 @router.get("/qr-config/{device_id}")

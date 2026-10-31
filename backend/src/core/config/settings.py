@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     SUPERADMIN_EMAIL: str = "admin@manufacturer.local"
     SUPERADMIN_PASSWORD: str = "Admin@SecurePlatform2026!"
 
+    # Razorpay Payment Gateway Configuration (Test / Development Mode)
+    RAZORPAY_KEY_ID: str = "rzp_test_placeholder"
+    RAZORPAY_KEY_SECRET: str = "placeholder_secret"
+    RAZORPAY_WEBHOOK_SECRET: str = "placeholder_webhook_secret"
+    RAZORPAY_CURRENCY: str = "INR"
+    RAZORPAY_AUTO_CAPTURE: bool = True
+    RAZORPAY_TEST_MODE: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

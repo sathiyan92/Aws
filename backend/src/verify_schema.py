@@ -42,6 +42,8 @@ from src.db.models import (
     DeviceHeartbeat,
     DeviceLog,
     AuditLog,
+    WebhookEvent,
+    RazorpayQRCode,
 )
 from src.db.seed import seed_database
 
@@ -68,6 +70,8 @@ REQUIRED_ENTITIES = [
     "device_heartbeats",
     "device_logs",
     "audit_logs",
+    "webhook_events",
+    "razorpay_qr_codes",
 ]
 
 

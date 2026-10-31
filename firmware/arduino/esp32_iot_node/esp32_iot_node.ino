@@ -131,7 +131,7 @@ Preferences prefs;
 
 String wifi_ssid        = "Tamil-sathiya";
 String wifi_pass        = "shanvi10";
-String device_id        = "VM-000006";              // Unique Machine ID in 1000+ fleet
+String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
 String device_token     = "dev_token_VM-000001";
 String server_base_url  = "http://35.154.219.82:8000";
 String razorpay_upi_vpa = "rzp.vending.vm000001@icici"; // Default or dynamic Razorpay VPA
