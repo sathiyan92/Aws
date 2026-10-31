@@ -182,7 +182,17 @@ def get_device_qr_bitmap(
     return Response(content=buf.getvalue(), media_type=media_type)
 
 
+@router.get("/razorpay-webhook")
+@router.get("/razorpay-webhook/")
+@router.head("/razorpay-webhook")
+@router.head("/razorpay-webhook/")
+def handle_razorpay_webhook_get():
+    """Health check ping for Razorpay Webhook validation."""
+    return {"status": "OK", "gateway": "RAZORPAY", "service": "orders-webhook-receiver"}
+
+
 @router.post("/razorpay-webhook")
+@router.post("/razorpay-webhook/")
 async def handle_razorpay_webhook(
     request: Request,
     db: Session = Depends(get_db),

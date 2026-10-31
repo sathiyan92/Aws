@@ -204,10 +204,18 @@ def process_webhook_event(
     """
     # 1. Parse JSON payload from raw body
     try:
-        body_text = raw_body.decode("utf-8")
-        webhook_data = json.loads(body_text) if body_text else {}
+        body_text = raw_body.decode("utf-8") if raw_body else ""
+        webhook_data = json.loads(body_text) if body_text.strip() else {}
     except Exception as e:
         raise BadRequestException(f"Invalid JSON payload: {str(e)}")
+
+    # Setup / validation ping check from Razorpay Dashboard (Razorpay pings URL during webhook setup)
+    if not body_text.strip() or not webhook_data or webhook_data.get("event") in ("ping", "webhook.test"):
+        return {
+            "status": "OK",
+            "message": "Razorpay webhook receiver is active and verified.",
+            "gateway": "RAZORPAY",
+        }
 
     event_type = webhook_data.get("event", "unknown")
     event_id = webhook_data.get("id") or webhook_data.get("event_id")

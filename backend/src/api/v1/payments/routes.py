@@ -34,7 +34,25 @@ from src.services.razorpay_service import (
 router = APIRouter(prefix="/payments", tags=["Razorpay Payments & Webhooks"])
 
 
+@router.get("/razorpay/webhook", status_code=status.HTTP_200_OK)
+@router.get("/razorpay/webhook/", status_code=status.HTTP_200_OK)
+@router.head("/razorpay/webhook", status_code=status.HTTP_200_OK)
+@router.head("/razorpay/webhook/", status_code=status.HTTP_200_OK)
+def razorpay_webhook_ping():
+    """
+    [Razorpay Dashboard Verification Endpoint]
+    Returns HTTP 200 JSON confirmation when Razorpay checks URL validity during webhook setup.
+    """
+    return {
+        "status": "OK",
+        "gateway": "RAZORPAY",
+        "service": "iot-vending-webhook",
+        "message": "Razorpay webhook receiver is active and ready.",
+    }
+
+
 @router.post("/razorpay/webhook", status_code=status.HTTP_200_OK)
+@router.post("/razorpay/webhook/", status_code=status.HTTP_200_OK)
 async def razorpay_webhook_endpoint(
     request: Request,
     db: Session = Depends(get_db),
