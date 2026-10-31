@@ -730,10 +730,69 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     if "settings" not in payload:
         payload["settings"] = {}
 
+    raw_qr = (
+        payload_data.get("custom_qr_payload")
+        or payload_data.get("qr_payload")
+        or payload_data.get("upi_url")
+        or payload_data.get("qr_string")
+    )
+
+    # Intelligent UPI URI parsing (e.g. upi://pay?am=2.00&cu=INR&pa=...&tr=...)
+    if raw_qr:
+        raw_qr = str(raw_qr).strip()
+        payload["settings"]["custom_qr_payload"] = raw_qr
+
+        if raw_qr.startswith("upi://pay"):
+            try:
+                parsed = urllib.parse.urlparse(raw_qr)
+                qs = urllib.parse.parse_qs(parsed.query)
+
+                # Extract UPI VPA (pa)
+                if "pa" in qs and qs["pa"][0]:
+                    vpa_val = qs["pa"][0]
+                    payload["settings"]["razorpay_upi_vpa"] = vpa_val
+                    payload_data["razorpay_upi_vpa"] = vpa_val
+
+                # Extract Amount (am)
+                if "am" in qs and qs["am"][0]:
+                    try:
+                        amt_val = float(qs["am"][0])
+                        payload_data["amount_rupees"] = amt_val
+                    except ValueError:
+                        pass
+
+                # Extract Transaction Reference / QR ID (tr)
+                tr_val = qs.get("tr", [None])[0]
+                if tr_val:
+                    from src.db.models.vending import RazorpayQRCode
+                    amt_paise = int(payload_data.get("amount_rupees", 2.0) * 100)
+                    existing_qr = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == tr_val).first()
+                    if not existing_qr:
+                        qr_rec = RazorpayQRCode(
+                            client_id=device.client_id,
+                            device_id=device.id,
+                            slot_id=device.slots[0].id if device.slots else None,
+                            razorpay_qr_id=tr_val,
+                            name=f"Standee QR {tr_val}",
+                            usage="multiple_use",
+                            fixed_amount=True,
+                            amount=amt_paise,
+                            currency="INR",
+                            qr_payload=raw_qr,
+                            status="active",
+                            notes={"device_id": device.device_id, "tr": tr_val},
+                        )
+                        db.add(qr_rec)
+                    else:
+                        existing_qr.device_id = device.id
+                        existing_qr.amount = amt_paise
+                        existing_qr.qr_payload = raw_qr
+                        existing_qr.status = "active"
+            except Exception:
+                pass
+
     if payload_data.get("razorpay_upi_vpa"):
         payload["settings"]["razorpay_upi_vpa"] = payload_data["razorpay_upi_vpa"]
-    if payload_data.get("custom_qr_payload"):
-        payload["settings"]["custom_qr_payload"] = payload_data["custom_qr_payload"]
     if payload_data.get("amount_rupees") is not None:
         amount_paise = int(payload_data["amount_rupees"] * 100)
         if device.slots:

@@ -329,7 +329,18 @@ def _handle_payment_captured(
         or payment_entity.get("notes", {}).get("razorpay_qr_id")
         or qr_entity.get("notes", {}).get("razorpay_qr_id")
         or payment_entity.get("notes", {}).get("qr_id")
+        or payment_entity.get("notes", {}).get("tr")
+        or qr_entity.get("notes", {}).get("tr")
     )
+
+    # Check description or acquirer data for tr/qr reference
+    if not qr_id and payment_entity.get("description"):
+        desc = str(payment_entity.get("description")).strip()
+        matched_qr = db.query(RazorpayQRCode).filter(
+            (RazorpayQRCode.razorpay_qr_id == desc) | (RazorpayQRCode.name == desc)
+        ).first()
+        if matched_qr:
+            qr_id = matched_qr.razorpay_qr_id
 
     # 1. Verify Payment Status (Requirement 4)
     payment_status = (payment_entity.get("status") or "captured").lower()
@@ -373,6 +384,13 @@ def _handle_payment_captured(
         device = db.query(Device).filter(
             (Device.device_id == str(device_id_note)) | (Device.mac_address.ilike(str(device_id_note).strip()))
         ).first()
+
+    # If device still not resolved, check if an active slot price matches the exact incoming payment amount (e.g. 200 paise = Rs 2.00)
+    if not device and not device_id_note and not qr_id and amount_paise > 0:
+        slot_matches = db.query(MachineSlot).filter(MachineSlot.override_price == amount_paise, MachineSlot.is_active == True).all()
+        if len(slot_matches) == 1:
+            device = slot_matches[0].device
+            slot = slot_matches[0]
 
     # Only in single-machine dev/test environments with no ambiguous identifier
     if not device and not qr_id and not device_id_note:
