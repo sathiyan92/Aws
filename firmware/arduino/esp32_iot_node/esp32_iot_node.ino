@@ -723,7 +723,7 @@ void checkForRemoteQRConfigUpdates() {
       String newName     = doc["product_name"].as<String>();
       String newQrString = doc.containsKey("qr_payload") ? doc["qr_payload"].as<String>() : "";
 
-      if (newVersion > current_config_version || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
+      if (newVersion > current_config_version || (newQrString.length() > 0 && newQrString != custom_qr_code) || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
         Serial.println("\n==================================================================");
         Serial.println(">>> 📶 REMOTE QR / PRICE UPDATE RECEIVED FROM VENDOR / CLOUD! <<<");
         Serial.printf("  New VPA    : %s\n", newVpa.c_str());

@@ -675,7 +675,9 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     if payload_data.get("product_name") and device.slots and device.slots[0].product:
         device.slots[0].product.name = payload_data["product_name"]
 
-    device.config.config_payload = payload
+    from sqlalchemy.orm.attributes import flag_modified
+    device.config.config_payload = dict(payload)
+    flag_modified(device.config, "config_payload")
     device.config.is_synced = False
     device.current_config_version += 1
 
