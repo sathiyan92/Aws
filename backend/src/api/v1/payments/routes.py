@@ -2,18 +2,21 @@
 Razorpay Payments API Router.
 Provides:
 - Webhook receiver (POST /api/v1/payments/razorpay/webhook)
+- Razorpay Order creation (POST /api/v1/payments/razorpay/order/create)
 - Dynamic and Static QR creation (POST /api/v1/payments/razorpay/qr/create)
 - Public client configuration (GET /api/v1/payments/razorpay/config)
+- Payment signature verification (POST /api/v1/payments/razorpay/verify-payment)
 - Webhook audit log inspection (GET /api/v1/payments/webhook-events)
 """
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, Header, Request, status, HTTPException
+from fastapi import APIRouter, Depends, Header, Request, Query, status, HTTPException
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
 from src.core.config.settings import settings
 from src.core.exceptions.errors import NotFoundException
-from src.db.models.vending import RazorpayQRCode, WebhookEvent
+from src.db.models.vending import RazorpayQRCode, WebhookEvent, Order, Payment
+from src.db.base import utc_now
 from src.api.v1.payments.schemas import (
     RazorpayQRCreateRequest,
     RazorpayQRResponse,
@@ -25,6 +28,7 @@ from src.services.razorpay_service import (
     process_webhook_event,
     create_razorpay_qr,
     verify_payment_signature,
+    create_razorpay_order,
 )
 
 router = APIRouter(prefix="/payments", tags=["Razorpay Payments & Webhooks"])
@@ -68,6 +72,24 @@ def get_razorpay_public_config():
         key_id=settings.RAZORPAY_KEY_ID,
         test_mode=settings.RAZORPAY_TEST_MODE,
         currency=settings.RAZORPAY_CURRENCY,
+    )
+
+
+@router.post("/razorpay/order/create")
+def create_order_endpoint(
+    device_id: str = Query(..., description="Machine device ID e.g. VM-000001"),
+    slot_number: int = Query(1, description="Slot number"),
+    amount_rupees: Optional[float] = Query(None, description="Custom amount in rupees"),
+    db: Session = Depends(get_db),
+):
+    """
+    Create an official Razorpay Order for web/mobile checkout.
+    """
+    return create_razorpay_order(
+        db=db,
+        device_id=device_id,
+        slot_number=slot_number,
+        amount_rupees=amount_rupees,
     )
 
 
@@ -123,9 +145,11 @@ def get_qr_endpoint(
 @router.post("/razorpay/verify-payment", response_model=RazorpayVerifyPaymentResponse)
 def verify_payment_endpoint(
     payload: RazorpayVerifyPaymentRequest,
+    db: Session = Depends(get_db),
 ):
     """
     Verify payment signature for client-side Razorpay Checkout transactions.
+    When verified, immediately transitions order to DISPENSE_AUTHORIZED so the ESP32 dispenses!
     """
     is_valid = verify_payment_signature(
         razorpay_order_id=payload.razorpay_order_id,
@@ -137,9 +161,24 @@ def verify_payment_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid Razorpay payment signature.",
         )
+
+    # Locate and authorize order for dispense
+    order = db.query(Order).join(Payment).filter(
+        (Payment.razorpay_order_id == payload.razorpay_order_id) |
+        (Payment.gateway_payment_intent_id == payload.razorpay_order_id)
+    ).first()
+
+    if order:
+        order.order_status = "DISPENSE_AUTHORIZED"
+        if order.payment:
+            order.payment.payment_status = "SUCCESS"
+            order.payment.razorpay_payment_id = payload.razorpay_payment_id
+            order.payment.paid_at = utc_now()
+        db.commit()
+
     return RazorpayVerifyPaymentResponse(
         valid=True,
-        message="Payment signature verified successfully.",
+        message="Payment verified! Item is dispensing.",
     )
 
 

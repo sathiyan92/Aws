@@ -4,7 +4,7 @@ Configures middleware, exception handlers, and API v1 routing.
 """
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from src.core.config.settings import settings
 from src.core.exceptions.errors import PlatformException, NotFoundException
@@ -106,6 +106,144 @@ def health_check():
 
         "environment": settings.ENVIRONMENT,
     }
+
+
+@app.get("/pay/{device_id}", response_class=HTMLResponse, tags=["Mobile Vending Checkout"])
+def mobile_pay_page(device_id: str, db: Session = Depends(get_db)):
+    """
+    Mobile payment checkout page for customer QR scan.
+    Integrates official Razorpay Checkout SDK.
+    """
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
+
+    dev_name = device.device_id if device else device_id
+    slot = device.slots[0] if (device and device.slots) else None
+    product_name = slot.product.name if (slot and slot.product) else "Vending Cold Drink"
+    price_paise = slot.override_price if (slot and slot.override_price is not None) else (slot.product.price if (slot and slot.product) else 1000)
+    price_rupees = f"{price_paise / 100:.2f}"
+    slot_num = slot.slot_number if slot else 1
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pay at {dev_name} - GTech Vending</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+        body {{ background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #f8fafc; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }}
+        .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 32px 24px; width: 100%; max-width: 420px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); text-align: center; }}
+        .badge {{ display: inline-block; background: #0284c7; color: #fff; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }}
+        h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #ffffff; }}
+        .machine-id {{ font-size: 14px; color: #94a3b8; margin-bottom: 24px; }}
+        .product-box {{ background: #0f172a; border: 1px solid #334155; border-radius: 14px; padding: 20px; margin-bottom: 24px; }}
+        .product-name {{ font-size: 18px; font-weight: 600; color: #38bdf8; margin-bottom: 8px; }}
+        .product-price {{ font-size: 32px; font-weight: 800; color: #22c55e; }}
+        .product-price span {{ font-size: 18px; font-weight: 500; color: #94a3b8; }}
+        .btn-pay {{ background: #2563eb; color: #ffffff; border: none; border-radius: 12px; width: 100%; padding: 16px; font-size: 18px; font-weight: 700; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4); }}
+        .btn-pay:hover {{ background: #1d4ed8; }}
+        .btn-pay:active {{ transform: scale(0.98); }}
+        .security-note {{ font-size: 12px; color: #64748b; margin-top: 20px; display: flex; align-items: center; justify-content: center; gap: 6px; }}
+        .spinner {{ display: none; width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; }}
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        .success-box {{ display: none; background: #064e3b; border: 1px solid #059669; border-radius: 14px; padding: 24px 16px; margin-top: 20px; }}
+        .success-box h2 {{ font-size: 20px; color: #34d399; margin-bottom: 8px; }}
+        .success-box p {{ font-size: 14px; color: #a7f3d0; }}
+    </style>
+</head>
+<body>
+    <div class="card" id="main-card">
+        <span class="badge">⚡ Instant Zero-Touch Vending</span>
+        <h1>GTech Vending Machine</h1>
+        <div class="machine-id">Machine ID: <strong>{dev_name}</strong></div>
+
+        <div class="product-box">
+            <div class="product-name">{product_name}</div>
+            <div class="product-price">₹{price_rupees} <span>INR</span></div>
+        </div>
+
+        <button class="btn-pay" id="pay-btn" onclick="startPayment()">
+            <span id="btn-text">Pay ₹{price_rupees} with Razorpay</span>
+            <div class="spinner" id="btn-spinner"></div>
+        </button>
+
+        <div class="success-box" id="success-box">
+            <h2>🎉 Payment Successful!</h2>
+            <p>Your item is dispensing right now at machine <strong>{dev_name}</strong>.</p>
+            <p style="margin-top: 10px; font-weight: 600; color: #ffffff;">Please collect it from the tray below.</p>
+        </div>
+
+        <div class="security-note">
+            🔒 Secured by <strong>Razorpay</strong> 256-bit Encryption
+        </div>
+    </div>
+
+    <script>
+        const deviceId = "{dev_name}";
+        const slotNumber = {slot_num};
+
+        async function startPayment() {{
+            const btn = document.getElementById('pay-btn');
+            const btnText = document.getElementById('btn-text');
+            const spinner = document.getElementById('btn-spinner');
+
+            btn.disabled = true;
+            btnText.style.display = 'none';
+            spinner.style.display = 'block';
+
+            try {{
+                const orderResp = await fetch(`/api/v1/payments/razorpay/order/create?device_id=${{deviceId}}&slot_number=${{slotNumber}}`, {{
+                    method: 'POST'
+                }});
+                const orderData = await orderResp.json();
+
+                const options = {{
+                    key: orderData.key_id,
+                    amount: orderData.amount_paise,
+                    currency: orderData.currency || "INR",
+                    name: "GTech Vending",
+                    description: orderData.product_name,
+                    order_id: orderData.razorpay_order_id,
+                    handler: async function (response) {{
+                        const verifyResp = await fetch('/api/v1/payments/razorpay/verify-payment', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature
+                            }})
+                        }});
+                        
+                        btn.style.display = 'none';
+                        document.getElementById('success-box').style.display = 'block';
+                    }},
+                    modal: {{
+                        ondismiss: function() {{
+                            btn.disabled = false;
+                            btnText.style.display = 'inline';
+                            spinner.style.display = 'none';
+                        }}
+                    }},
+                    theme: {{ color: "#2563eb" }}
+                }};
+
+                const rzp = new Razorpay(options);
+                rzp.open();
+            }} catch (err) {{
+                alert('Payment error: ' + err.message);
+                btn.disabled = false;
+                btnText.style.display = 'inline';
+                spinner.style.display = 'none';
+            }}
+        }}
+    </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 # ------------------------------------------------------------------------------

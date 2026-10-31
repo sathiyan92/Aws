@@ -79,6 +79,117 @@ def verify_payment_signature(
     return hmac.compare_digest(expected_sig, razorpay_signature)
 
 
+def create_razorpay_order(
+    db: Session,
+    device_id: str,
+    slot_number: int = 1,
+    amount_rupees: Optional[float] = None,
+    customer_phone: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create an official Razorpay Order via POST /v1/orders.
+    Also creates a corresponding PENDING Order in local database.
+    """
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_number).first()
+    if not slot and device.slots:
+        slot = device.slots[0]
+
+    if amount_rupees is not None:
+        amount_paise = int(amount_rupees * 100)
+    elif slot:
+        amount_paise = slot.override_price if slot.override_price is not None else (slot.product.price if slot.product else 1000)
+    else:
+        amount_paise = 1000
+
+    now = utc_now()
+    receipt_no = f"rcpt_{device.device_id}_{int(now.timestamp())}"
+    product_name = slot.product.name if (slot and slot.product) else "Vending Item"
+
+    has_live_keys = (
+        bool(settings.RAZORPAY_KEY_ID)
+        and settings.RAZORPAY_KEY_ID != "rzp_test_placeholder"
+        and bool(settings.RAZORPAY_KEY_SECRET)
+        and settings.RAZORPAY_KEY_SECRET != "placeholder_secret"
+    )
+
+    razorpay_order_id = None
+    if has_live_keys:
+        try:
+            resp = requests.post(
+                f"{RAZORPAY_API_BASE}/orders",
+                auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET),
+                json={
+                    "amount": amount_paise,
+                    "currency": settings.RAZORPAY_CURRENCY,
+                    "receipt": receipt_no[:40],
+                    "notes": {
+                        "device_id": device.device_id,
+                        "slot_number": str(slot.slot_number if slot else 1),
+                        "product_name": product_name,
+                    },
+                },
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                razorpay_order_id = data.get("id")
+        except Exception:
+            pass
+
+    if not razorpay_order_id:
+        razorpay_order_id = f"order_mock_{generate_uuid()[:14]}"
+
+    order_uuid = generate_uuid()
+    order_number = f"ORD-{now.strftime('%Y%m%d')}-{generate_uuid()[:6].upper()}"
+    local_order = Order(
+        id=order_uuid,
+        order_number=order_number,
+        device_id=device.id,
+        client_id=device.client_id,
+        slot_id=slot.id if slot else None,
+        product_id=slot.product_id if slot else None,
+        unit_price=amount_paise,
+        quantity=1,
+        total_amount=amount_paise,
+        order_status="PENDING",
+        payment_method="RAZORPAY",
+    )
+    db.add(local_order)
+
+    payment = Payment(
+        order_id=local_order.id,
+        client_id=device.client_id,
+        gateway_provider="RAZORPAY",
+        gateway_payment_intent_id=razorpay_order_id,
+        razorpay_order_id=razorpay_order_id,
+        amount=amount_paise,
+        currency=settings.RAZORPAY_CURRENCY,
+        payment_status="INITIATED",
+        paid_at=None,
+    )
+    db.add(payment)
+    db.commit()
+
+    return {
+        "order_id": local_order.id,
+        "order_number": order_number,
+        "razorpay_order_id": razorpay_order_id,
+        "amount_paise": amount_paise,
+        "amount_rupees": round(amount_paise / 100.0, 2),
+        "currency": settings.RAZORPAY_CURRENCY,
+        "key_id": settings.RAZORPAY_KEY_ID,
+        "device_id": device.device_id,
+        "slot_number": slot.slot_number if slot else 1,
+        "product_name": product_name,
+    }
+
+
 def process_webhook_event(
     db: Session,
     raw_body: bytes,
