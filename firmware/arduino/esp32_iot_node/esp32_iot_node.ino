@@ -209,6 +209,7 @@ void setMotor(int slotNumber, bool turnOn) {
 // 6. QR CODE DRAWING ENGINE (ON ILI9488 TFT LCD)
 // ==============================================================================
 void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
+  Serial.printf("[LCD Screen] Generating QR code (%d chars): %s\n", (int)strlen(text), text);
   QRCode qrcode;
   uint8_t qrcodeBytes[qrcode_getBufferSize(10)];
 
@@ -745,13 +746,14 @@ void checkForRemoteQRConfigUpdates() {
       String newName     = doc["product_name"].as<String>();
       String newQrString = doc.containsKey("qr_payload") ? doc["qr_payload"].as<String>() : "";
 
-      if (newVersion > current_config_version || (newQrString.length() > 0 && newQrString != custom_qr_code) || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
+      if (newVersion != current_config_version || (newQrString.length() > 0 && newQrString != custom_qr_code) || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
         Serial.println("\n==================================================================");
         Serial.println(">>> 📶 REMOTE QR / PRICE UPDATE RECEIVED FROM VENDOR / CLOUD! <<<");
         Serial.printf("  New VPA    : %s\n", newVpa.c_str());
         Serial.printf("  New Price  : Rs %.2f\n", newAmount);
         Serial.printf("  New Product: %s\n", newName.c_str());
         Serial.printf("  New Version: %d (Old: %d)\n", newVersion, current_config_version);
+        Serial.printf("  New QR Pay : %s\n", newQrString.c_str());
         Serial.println("  Updating Flash NVS & Refreshing ILI9488 LCD Screen...");
         Serial.println("==================================================================\n");
 
@@ -1133,6 +1135,7 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED) {
     authenticateWithCloud();
     sendHeartbeat();
+    checkForRemoteQRConfigUpdates();
   }
 
   // 6. Render Standby QR Screen

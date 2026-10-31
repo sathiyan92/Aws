@@ -685,9 +685,64 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
     device.last_heartbeat_at = utc_now()
     db.commit()
 
+    # 1. Inspect DeviceModule QR_PAYMENT config
+    from src.db.models.device import DeviceModule
+    from src.db.models.vending import RazorpayQRCode
+
+    qr_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="QR_PAYMENT").first()
+    mod_cfg = dict(qr_mod.configuration or {}) if qr_mod else {}
+
     settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
-    vpa = settings.get("razorpay_upi_vpa", f"rzp.vending.{device.device_id.lower()}@icici")
-    custom_qr = settings.get("custom_qr_payload")
+
+    # Priority: UPI deep-links take highest precedence over web/image URLs!
+    candidates = [
+        mod_cfg.get("custom_qr_image_url"),
+        settings.get("custom_qr_payload"),
+        mod_cfg.get("custom_qr_payload"),
+    ]
+    rzp_rec = db.query(RazorpayQRCode).filter_by(device_id=device.id, status="active").order_by(RazorpayQRCode.updated_at.desc()).first()
+    if rzp_rec and rzp_rec.qr_payload:
+        candidates.append(rzp_rec.qr_payload)
+
+    custom_qr = None
+    # Prefer candidates that start with valid UPI protocol (upi://)
+    for c in candidates:
+        if c and isinstance(c, str) and c.strip().startswith("upi://"):
+            custom_qr = c.strip()
+            break
+    # Fallback to any candidate
+    if not custom_qr:
+        for c in candidates:
+            if c and isinstance(c, str) and len(c.strip()) > 0:
+                custom_qr = c.strip()
+                break
+
+    vpa = (
+        settings.get("razorpay_upi_vpa")
+        or mod_cfg.get("upi_merchant_vpa")
+        or f"rzp.vending.{device.device_id.lower()}@icici"
+    )
+    if custom_qr and custom_qr.startswith("upi://pay"):
+        try:
+            parsed = urllib.parse.urlparse(custom_qr)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "pa" in qs and qs["pa"][0]:
+                vpa = qs["pa"][0]
+        except Exception:
+            pass
+
+    # Ensure device.config is synchronized with resolved UPI QR & VPA
+    if custom_qr and device.config and device.config.config_payload:
+        cfg_payload = dict(device.config.config_payload)
+        if "settings" not in cfg_payload:
+            cfg_payload["settings"] = {}
+        if cfg_payload["settings"].get("custom_qr_payload") != custom_qr:
+            from sqlalchemy.orm.attributes import flag_modified
+            cfg_payload["settings"]["custom_qr_payload"] = custom_qr
+            cfg_payload["settings"]["razorpay_upi_vpa"] = vpa
+            device.config.config_payload = cfg_payload
+            flag_modified(device.config, "config_payload")
+            db.commit()
 
     slot = device.slots[0] if device.slots else None
     price_paise = slot.override_price if (slot and slot.override_price is not None) else (slot.product.price if (slot and slot.product) else 1000)
