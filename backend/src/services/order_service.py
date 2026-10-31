@@ -705,18 +705,23 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         candidates.append(rzp_rec.qr_payload)
 
     custom_qr = None
-    # Prefer candidates that start with valid UPI protocol (upi://)
+    # Strictly search for valid UPI protocol (upi://) or decode from base64 QR image
     for c in candidates:
-        if c and isinstance(c, str) and c.strip().startswith("upi://"):
-            custom_qr = c.strip()
-            break
-    # Fallback to any candidate
-    if not custom_qr:
-        for c in candidates:
-            if c and isinstance(c, str) and len(c.strip()) > 0:
-                custom_qr = c.strip()
+        if c and isinstance(c, str):
+            c_str = c.strip()
+            if c_str.startswith("upi://"):
+                custom_qr = c_str
                 break
+            elif c_str.startswith("data:image/") or "base64," in c_str:
+                from src.services.vending_service import decode_qr_image_data
+                decoded = decode_qr_image_data(c_str)
+                if decoded and decoded.get("qr_payload"):
+                    custom_qr = decoded["qr_payload"]
+                    if decoded.get("vpa") and not mod_cfg.get("upi_merchant_vpa"):
+                        mod_cfg["upi_merchant_vpa"] = decoded["vpa"]
+                    break
 
+    merchant_name = mod_cfg.get("merchant_name") or "Smart Vending"
     vpa = (
         settings.get("razorpay_upi_vpa")
         or mod_cfg.get("upi_merchant_vpa")
@@ -728,12 +733,18 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
             qs = urllib.parse.parse_qs(parsed.query)
             if "pa" in qs and qs["pa"][0]:
                 vpa = qs["pa"][0]
+            if "pn" in qs and qs["pn"][0]:
+                merchant_name = qs["pn"][0]
+            elif "tn" in qs and qs["tn"][0]:
+                clean_tn = qs["tn"][0].replace("Payment To ", "").replace("Payment to ", "").strip()
+                if clean_tn:
+                    merchant_name = clean_tn
         except Exception:
             pass
 
     # Ensure device.config is synchronized with resolved UPI QR & VPA
-    if custom_qr and device.config and device.config.config_payload:
-        cfg_payload = dict(device.config.config_payload)
+    if custom_qr and device.config:
+        cfg_payload = dict(device.config.config_payload) if device.config.config_payload else {}
         if "settings" not in cfg_payload:
             cfg_payload["settings"] = {}
         if cfg_payload["settings"].get("custom_qr_payload") != custom_qr:
@@ -749,17 +760,10 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
     amount_rupees = round(price_paise / 100.0, 2)
     product_name = slot.product.name if (slot and slot.product) else "Cold Drink"
 
-    if custom_qr and not custom_qr.startswith("data:image/") and not custom_qr.startswith("http://") and not custom_qr.startswith("https://"):
+    if custom_qr and custom_qr.startswith("upi://"):
         qr_payload = custom_qr
-    elif custom_qr and (custom_qr.startswith("data:image/") or "base64," in custom_qr):
-        from src.services.vending_service import decode_qr_image_data
-        decoded = decode_qr_image_data(custom_qr)
-        if decoded and decoded.get("qr_payload"):
-            qr_payload = decoded["qr_payload"]
-        else:
-            qr_payload = f"upi://pay?pa={vpa}&pn=IoT%20Vending&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"
     else:
-        qr_payload = f"upi://pay?pa={vpa}&pn=IoT%20Vending&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"
+        qr_payload = f"upi://pay?pa={vpa}&pn={merchant_name}&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"
 
     return {
         "device_id": device.device_id,

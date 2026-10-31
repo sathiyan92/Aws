@@ -205,7 +205,9 @@ def update_qr_settings(
             cfg["custom_qr_image_url"] = payload.custom_qr_image_url
             update_data["custom_qr_payload"] = payload.custom_qr_image_url
 
-    qr_mod.configuration = cfg
+    from sqlalchemy.orm.attributes import flag_modified
+    qr_mod.configuration = dict(cfg)
+    flag_modified(qr_mod, "configuration")
 
     # Synchronize with edge device configuration so ESP32 immediately updates LCD!
     from src.services.order_service import update_device_qr_config
