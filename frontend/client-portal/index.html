@@ -193,11 +193,11 @@
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label for="qrVpa">UPI VPA / Merchant ID</label>
-                                    <input type="text" id="qrVpa" class="input-field" placeholder="apexvending@icici" required>
+                                    <input type="text" id="qrVpa" class="input-field" placeholder="apexvending@icici">
                                 </div>
                                 <div class="form-group">
                                     <label for="qrMerchantName">Merchant Display Name</label>
-                                    <input type="text" id="qrMerchantName" class="input-field" placeholder="Apex Vending Express" required>
+                                    <input type="text" id="qrMerchantName" class="input-field" placeholder="Apex Vending Express">
                                 </div>
                                 <div class="form-group">
                                     <label for="qrCurrency">Operating Currency</label>
@@ -238,7 +238,7 @@
 
                             <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
                                 <button type="button" class="btn btn-secondary" id="resetQrBtn">Reload Settings</button>
-                                <button type="submit" class="btn btn-primary" id="saveQrBtn">Save QR Settings</button>
+                                <button type="button" class="btn btn-primary" id="saveQrBtn" onclick="handleSaveQRSettings(event)">Save QR Settings</button>
                             </div>
                         </form>
                     </div>

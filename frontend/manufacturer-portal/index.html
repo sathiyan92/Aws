@@ -920,19 +920,19 @@
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
                             <div class="form-group">
                                 <label>Merchant UPI VPA / QR ID</label>
-                                <input type="text" class="input-field mono-text" id="pricingQrVpa" placeholder="e.g. merchant@icici or pay.vm000001@upi" required>
+                                <input type="text" class="input-field mono-text" id="pricingQrVpa" placeholder="e.g. merchant@icici or pay.vm000001@upi">
                                 <small style="color:var(--text-muted); font-size:0.7rem;">Customer UPI payments will route to this VPA address.</small>
                             </div>
                             <div class="form-group">
                                 <label>Merchant Display Name</label>
-                                <input type="text" class="input-field" id="pricingQrMerchantName" placeholder="e.g. Smart Snack Station" required>
+                                <input type="text" class="input-field" id="pricingQrMerchantName" placeholder="e.g. Smart Snack Station">
                             </div>
                         </div>
 
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
                             <div class="form-group">
                                 <label>QR Display Countdown (Seconds)</label>
-                                <input type="number" class="input-field" id="pricingQrTimeout" value="180" min="30" max="600" required>
+                                <input type="number" class="input-field" id="pricingQrTimeout" value="180" min="30" max="600">
                             </div>
                             <div class="form-group">
                                 <label>Dynamic Pricing Mode</label>
@@ -970,7 +970,7 @@
                         </div>
 
                         <div style="margin-top:1rem; display:flex; justify-content:flex-end;">
-                            <button type="submit" class="btn btn-primary" id="btnSaveQrSettings">💾 Save QR Settings</button>
+                            <button type="button" class="btn btn-primary" id="btnSaveQrSettings" onclick="handleSaveDeviceQRSettings(event)">💾 Save QR Settings</button>
                         </div>
                     </form>
                 </div>

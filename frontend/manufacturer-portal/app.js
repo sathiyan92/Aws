@@ -1358,21 +1358,48 @@ function handleQRImageUpload(event) {
     const reader = new FileReader();
     reader.onload = function(e) {
         const base64Data = e.target.result;
-        document.getElementById('pricingQrImageUrl').value = base64Data;
+        const qrInput = document.getElementById('pricingQrImageUrl');
+        const quickInput = document.getElementById('slotQuickQrInput');
+        if (qrInput) qrInput.value = base64Data;
+        if (quickInput) quickInput.value = base64Data;
         updateQrImagePreview(base64Data);
+        updateSlotQuickQrPreview(base64Data);
         showToast("QR Code image loaded! Click 'Save QR Settings' to store.", "info");
     };
     reader.readAsDataURL(file);
 }
 
 async function handleSaveDeviceQRSettings(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!activePricingDeviceId) return;
 
     const rawQrInput = document.getElementById('pricingQrImageUrl').value.trim();
+    let vpaVal = document.getElementById('pricingQrVpa').value.trim();
+    let nameVal = document.getElementById('pricingQrMerchantName').value.trim();
+
+    // Auto-extract VPA and name if empty and input is a UPI link
+    if (rawQrInput.startsWith('upi://pay')) {
+        try {
+            const dummy = new URL(rawQrInput.replace('upi://pay', 'http://dummy.pay'));
+            const pa = dummy.searchParams.get('pa');
+            const tn = dummy.searchParams.get('tn');
+            if (!vpaVal && pa) {
+                vpaVal = pa;
+                document.getElementById('pricingQrVpa').value = vpaVal;
+            }
+            if (!nameVal && tn) {
+                nameVal = decodeURIComponent(tn).replace(/^Payment\s+To\s+/i, '');
+                if (nameVal) document.getElementById('pricingQrMerchantName').value = nameVal;
+            }
+        } catch (err) {}
+    }
+
+    if (!vpaVal) vpaVal = `pay.${activePricingDeviceId.toLowerCase()}@icici`;
+    if (!nameVal) nameVal = "Smart Vending";
+
     const payload = {
-        upi_merchant_vpa: document.getElementById('pricingQrVpa').value.trim(),
-        merchant_name: document.getElementById('pricingQrMerchantName').value.trim(),
+        upi_merchant_vpa: vpaVal,
+        merchant_name: nameVal,
         qr_timeout_seconds: parseInt(document.getElementById('pricingQrTimeout').value) || 180,
         dynamic_pricing_enabled: document.getElementById('pricingQrDynamicToggle').checked,
         custom_qr_image_url: rawQrInput || null

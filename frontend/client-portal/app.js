@@ -885,17 +885,40 @@ async function simulateClientTestPaymentPaid() {
 }
 
 async function handleSaveQRSettings(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!state.selectedDeviceId) return;
 
     try {
         const qrUrlInput = document.getElementById('clientQrImageUrl');
+        const rawQr = qrUrlInput ? qrUrlInput.value.trim() : '';
+        let vpaVal = elements.qrVpa ? elements.qrVpa.value.trim() : '';
+        let nameVal = elements.qrMerchantName ? elements.qrMerchantName.value.trim() : '';
+
+        if (rawQr.startsWith('upi://pay')) {
+            try {
+                const dummy = new URL(rawQr.replace('upi://pay', 'http://dummy.pay'));
+                const pa = dummy.searchParams.get('pa');
+                const tn = dummy.searchParams.get('tn');
+                if (!vpaVal && pa) {
+                    vpaVal = pa;
+                    if (elements.qrVpa) elements.qrVpa.value = vpaVal;
+                }
+                if (!nameVal && tn) {
+                    nameVal = decodeURIComponent(tn).replace(/^Payment\s+To\s+/i, '');
+                    if (elements.qrMerchantName) elements.qrMerchantName.value = nameVal;
+                }
+            } catch (err) {}
+        }
+
+        if (!vpaVal) vpaVal = `pay.${state.selectedDeviceId.toLowerCase()}@icici`;
+        if (!nameVal) nameVal = "Smart Vending";
+
         const payload = {
-            upi_merchant_vpa: elements.qrVpa.value.trim(),
-            merchant_name: elements.qrMerchantName.value.trim(),
-            qr_timeout_seconds: parseInt(elements.qrTimeout.value),
+            upi_merchant_vpa: vpaVal,
+            merchant_name: nameVal,
+            qr_timeout_seconds: parseInt(elements.qrTimeout.value) || 120,
             dynamic_pricing_enabled: true,
-            custom_qr_image_url: qrUrlInput ? qrUrlInput.value.trim() || null : null
+            custom_qr_image_url: rawQr || null
         };
 
         const res = await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/qr/settings`, {
