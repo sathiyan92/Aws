@@ -1061,13 +1061,22 @@ bool authenticateWithCloud() {
   http.begin(client, endpoint);
   http.addHeader("Content-Type", "application/json");
 
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<768> doc;
   doc["device_id"]        = device_id;
   doc["chip_id"]          = chipId;
   doc["mac_address"]      = realMac;
   doc["device_token"]     = device_token;
   doc["firmware_version"] = firmware_version;
   doc["boot_count"]       = 1;
+#if FORCE_STATIC_PROGRAM_CONFIG
+  doc["custom_qr_code"]   = String(STATIC_QR_CODE);
+  doc["product_price"]    = STATIC_PRICE_RUPEES;
+  doc["product_name"]     = String(STATIC_PRODUCT_NAME);
+#else
+  doc["custom_qr_code"]   = custom_qr_code;
+  doc["product_price"]    = pending_amount_rupee;
+  doc["product_name"]     = pending_product_name;
+#endif
 
   String reqBody;
   serializeJson(doc, reqBody);

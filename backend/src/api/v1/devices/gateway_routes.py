@@ -56,6 +56,90 @@ from src.services.coin_service import process_offline_transaction_batch
 router = APIRouter(prefix="/device-gateway", tags=["Device Authentication & Telemetry Gateway"])
 
 
+def _sync_device_qr_mapping(db: Session, device: Device, raw_qr: str, price_rupees: Optional[float], product_name: Optional[str]) -> None:
+    """
+    Automatically links a machine's active QR code (by UPI 'tr' reference or QR ID)
+    to its specific device_id in the 1000+ machine fleet.
+    Enforces strict machine isolation so each machine only dispenses for its own payments.
+    """
+    import urllib.parse
+    from src.db.models.vending import RazorpayQRCode, MachineSlot, Product
+    from src.db.base import generate_uuid
+
+    tr_val = None
+    if "tr=" in raw_qr or raw_qr.startswith("upi://"):
+        try:
+            parsed = urllib.parse.urlparse(raw_qr)
+            qs = urllib.parse.parse_qs(parsed.query)
+            tr_val = qs.get("tr", [None])[0]
+        except Exception:
+            pass
+
+    qr_id_to_bind = tr_val or raw_qr[:128]
+    amount_paise = int(price_rupees * 100) if (price_rupees is not None and price_rupees > 0) else 1000
+
+    # Ensure slot exists and has matching price
+    slot = device.slots[0] if device.slots else None
+    if not slot:
+        prod_code = f"PROD-{device.device_id}-1"
+        prod = db.query(Product).filter_by(client_id=device.client_id, product_code=prod_code).first()
+        if not prod:
+            prod = Product(
+                id=generate_uuid(),
+                client_id=device.client_id,
+                name=product_name or "Vending Item",
+                product_code=prod_code,
+                price=amount_paise,
+                is_active=True,
+            )
+            db.add(prod)
+            db.flush()
+        slot = MachineSlot(
+            id=generate_uuid(),
+            device_id=device.id,
+            slot_number=1,
+            product_id=prod.id,
+            capacity=20,
+            current_stock=10,
+            is_active=True,
+            override_price=amount_paise,
+        )
+        db.add(slot)
+        db.flush()
+    else:
+        if price_rupees is not None and price_rupees > 0:
+            slot.override_price = amount_paise
+        if product_name and slot.product:
+            slot.product.name = product_name
+        db.flush()
+
+    # Rebind or create RazorpayQRCode record for this exact device
+    existing_qr = db.query(RazorpayQRCode).filter_by(razorpay_qr_id=qr_id_to_bind).first()
+    if not existing_qr:
+        qr_rec = RazorpayQRCode(
+            client_id=device.client_id,
+            device_id=device.id,
+            slot_id=slot.id if slot else None,
+            razorpay_qr_id=qr_id_to_bind,
+            name=f"QR for {device.device_id}",
+            usage="multiple_use",
+            fixed_amount=True,
+            amount=amount_paise,
+            currency="INR",
+            qr_payload=raw_qr,
+            status="active",
+            notes={"device_id": device.device_id, "tr": tr_val},
+        )
+        db.add(qr_rec)
+    else:
+        existing_qr.device_id = device.id
+        existing_qr.amount = amount_paise
+        existing_qr.qr_payload = raw_qr
+        existing_qr.status = "active"
+        if slot:
+            existing_qr.slot_id = slot.id
+
+
 @router.post("/authenticate", response_model=DeviceAuthResponse)
 def authenticate_device(
     payload: DeviceAuthRequest,
@@ -200,6 +284,19 @@ def authenticate_device(
     if payload.firmware_version:
         device.current_firmware_version = payload.firmware_version
     cred.last_used_at = now
+
+    # 6b. Auto-register device's unique QR code and pricing for 1000+ machine fleet isolation
+    if payload.custom_qr_code:
+        try:
+            _sync_device_qr_mapping(
+                db=db,
+                device=device,
+                raw_qr=payload.custom_qr_code,
+                price_rupees=payload.product_price,
+                product_name=payload.product_name,
+            )
+        except Exception as qr_err:
+            logger.warning(f"[Gateway] Notice syncing QR mapping for {device.device_id}: {qr_err}")
 
     # 7. Audit Connection Event
     client_ip = request.client.host if request.client else "127.0.0.1"

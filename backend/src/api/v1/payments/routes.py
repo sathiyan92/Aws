@@ -160,6 +160,69 @@ def get_qr_endpoint(
     )
 
 
+@router.get("/razorpay/qr/mappings/all")
+def list_all_qr_mappings(
+    db: Session = Depends(get_db),
+):
+    """
+    [Fleet Diagnostic Endpoint]
+    Lists all active QR code bindings across 1000+ machines to verify strict machine isolation.
+    """
+    qrs = db.query(RazorpayQRCode).all()
+    return [
+        {
+            "razorpay_qr_id": q.razorpay_qr_id,
+            "device_id": q.device.device_id if q.device else "UNASSIGNED",
+            "amount_rupees": round(q.amount / 100.0, 2),
+            "product_name": q.slot.product.name if (q.slot and q.slot.product) else "Item",
+            "slot_number": q.slot.slot_number if q.slot else 1,
+            "status": q.status,
+            "qr_payload": q.qr_payload[:60] + "..." if q.qr_payload and len(q.qr_payload) > 60 else q.qr_payload,
+        }
+        for q in qrs
+    ]
+
+
+@router.post("/razorpay/qr/bind-machine")
+def bind_qr_to_machine(
+    device_id: str = Query(..., description="Target Machine ID e.g. VM-000002"),
+    qr_id_or_tr: str = Query(..., description="Razorpay QR ID (qr_...) or UPI Transaction Ref (tr)"),
+    amount_rupees: float = Query(..., description="Product price in Rupees for this machine slot"),
+    product_name: str = Query("Vending Item", description="Product display name"),
+    db: Session = Depends(get_db),
+):
+    """
+    [Fleet Management Endpoint]
+    Explicitly binds a unique QR ID or Standee 'tr' reference to a specific machine and slot price.
+    Guarantees strict isolation across 1000+ machines.
+    """
+    from src.db.models.device import Device
+    from src.api.v1.devices.gateway_routes import _sync_device_qr_mapping
+
+    device = db.query(Device).filter(
+        (Device.device_id == device_id.strip()) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    raw_qr = f"upi://pay?am={amount_rupees:.2f}&cu=INR&tr={qr_id_or_tr.strip()}"
+    _sync_device_qr_mapping(
+        db=db,
+        device=device,
+        raw_qr=raw_qr,
+        price_rupees=amount_rupees,
+        product_name=product_name,
+    )
+    return {
+        "status": "BOUND",
+        "device_id": device.device_id,
+        "qr_id": qr_id_or_tr.strip(),
+        "amount_rupees": amount_rupees,
+        "product_name": product_name,
+        "message": f"QR '{qr_id_or_tr.strip()}' is now exclusively mapped to {device.device_id} at Rs {amount_rupees:.2f}.",
+    }
+
+
 @router.post("/razorpay/verify-payment", response_model=RazorpayVerifyPaymentResponse)
 def verify_payment_endpoint(
     payload: RazorpayVerifyPaymentRequest,

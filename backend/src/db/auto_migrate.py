@@ -73,3 +73,4 @@ def run_auto_migrations(engine) -> None:
         logger.info("[AutoMigrate] Database schema verified and synchronized.")
     except Exception as e:
         logger.error(f"[AutoMigrate] Auto-migration error: {e}", exc_info=True)
+

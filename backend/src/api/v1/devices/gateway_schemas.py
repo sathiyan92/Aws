@@ -15,6 +15,9 @@ class DeviceAuthRequest(BaseModel):
     device_token: str = Field(..., description="Secret device provisioning bearer token burned in NVS")
     firmware_version: Optional[str] = Field("v1.0.0", description="Current running firmware version")
     boot_count: Optional[int] = Field(1, description="Boot cycle counter from NVS")
+    custom_qr_code: Optional[str] = Field(None, description="Active QR code payload rendered on machine screen")
+    product_price: Optional[float] = Field(None, description="Configured item price in Rupees")
+    product_name: Optional[str] = Field(None, description="Configured item name")
 
 
 class MQTTTopicMap(BaseModel):

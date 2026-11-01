@@ -15,7 +15,10 @@ import urllib.parse
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Tuple
 import requests
+import logging
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from src.core.config.settings import settings
 from src.db.base import utc_now, generate_uuid
@@ -423,18 +426,22 @@ def _handle_payment_captured(
             device = slot_matches[0].device
             slot = slot_matches[0]
 
-    # Single-machine dev/test environment or default fleet node VM-000001
+    # Strict 1000+ Machine Isolation Policy:
+    # Never blind-default to VM-000001 if a QR is unmapped or belongs to another machine!
     if not device:
-        active_devices = db.query(Device).filter(Device.status == "ACTIVE").all()
-        if len(active_devices) == 1:
-            device = active_devices[0]
-        else:
-            device = db.query(Device).filter(Device.device_id == "VM-000001").first()
+        logger.error(
+            f"[Razorpay Webhook] Strict Isolation Enforced: Payment {p_id} for QR '{qr_id}' "
+            f"(Amount: {amount_paise} paise) does not match any registered machine in the 1000+ fleet. "
+            f"Dispense halted to prevent cross-machine dispensing."
+        )
+        return {
+            "status": "UNMATCHED_DEVICE",
+            "message": f"Payment received for QR '{qr_id}', but QR is not mapped to any specific machine.",
+            "qr_id": qr_id,
+            "amount_paise": amount_paise,
+        }
 
-    if not device:
-        raise NotFoundException("Device", device_id_note or qr_id or "Unspecified in webhook payment notes")
-
-    # If QR code was unique/standee but not yet in database, register it now for this device
+    # If QR code was unique/standee and securely resolved to this device, register it for future queries
     if qr_id and not qr_record:
         qr_record = RazorpayQRCode(
             client_id=device.client_id,
