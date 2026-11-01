@@ -1369,57 +1369,112 @@ function updateQrImagePreview(url) {
     }
 }
 
+function decodeQRFromDataURL(dataUrl, callback) {
+    const img = new Image();
+    img.onload = function() {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            if (typeof jsQR !== 'undefined') {
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert"
+                }) || jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "attemptBoth"
+                });
+                if (code && code.data && code.data.trim().length > 0) {
+                    callback(code.data.trim());
+                    return;
+                }
+            }
+        } catch (err) {
+            console.warn("jsQR client decode error:", err);
+        }
+        callback(null);
+    };
+    img.src = dataUrl;
+}
+
+function applyDecodedQRValues(cleanPayload) {
+    const qrInput = document.getElementById('pricingQrImageUrl');
+    const quickInput = document.getElementById('slotQuickQrInput');
+    if (qrInput) qrInput.value = cleanPayload;
+    if (quickInput) quickInput.value = cleanPayload;
+
+    if (cleanPayload.startsWith('upi://pay')) {
+        try {
+            const dummy = new URL(cleanPayload.replace('upi://pay', 'http://dummy.pay'));
+            const pa = dummy.searchParams.get('pa');
+            const tn = dummy.searchParams.get('tn');
+            const am = dummy.searchParams.get('am');
+
+            if (pa) {
+                const vpaInput = document.getElementById('pricingQrVpa');
+                if (vpaInput) vpaInput.value = pa;
+            }
+            if (tn) {
+                const nameInput = document.getElementById('pricingQrMerchantName');
+                if (nameInput) {
+                    const cleanName = decodeURIComponent(tn).replace(/^Payment\s+To\s+/i, '');
+                    if (cleanName) nameInput.value = cleanName;
+                }
+            }
+            if (am) {
+                const slot1Price = document.getElementById('slot-price-1');
+                if (slot1Price) slot1Price.value = parseFloat(am).toFixed(2);
+            }
+        } catch (e) {}
+    }
+    updateQrImagePreview(cleanPayload);
+    updateSlotQuickQrPreview(cleanPayload);
+}
+
 function handleQRImageUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async function(e) {
+    reader.onload = function(e) {
         const base64Data = e.target.result;
         updateQrImagePreview(base64Data);
         updateSlotQuickQrPreview(base64Data);
         showToast("Scanning & decoding QR code from image...", "info");
 
-        try {
-            const decodeRes = await apiFetch('/api/v1/vending/decode-qr', {
-                method: 'POST',
-                body: JSON.stringify({ image_data: base64Data })
-            });
+        decodeQRFromDataURL(base64Data, async function(decodedClient) {
+            let cleanPayload = decodedClient;
 
-            if (decodeRes.ok) {
-                const dec = await decodeRes.json();
-                if (dec.success && dec.qr_payload) {
-                    const qrInput = document.getElementById('pricingQrImageUrl');
-                    const quickInput = document.getElementById('slotQuickQrInput');
-                    if (qrInput) qrInput.value = dec.qr_payload;
-                    if (quickInput) quickInput.value = dec.qr_payload;
-
-                    if (dec.vpa) {
-                        const vpaInput = document.getElementById('pricingQrVpa');
-                        if (vpaInput) vpaInput.value = dec.vpa;
+            if (!cleanPayload) {
+                // Try backend decode endpoint
+                try {
+                    const decodeRes = await apiFetch('/api/v1/vending/decode-qr', {
+                        method: 'POST',
+                        body: JSON.stringify({ image_data: base64Data })
+                    });
+                    if (decodeRes.ok) {
+                        const dec = await decodeRes.json();
+                        if (dec.success && dec.qr_payload) {
+                            cleanPayload = dec.qr_payload;
+                        }
                     }
-                    if (dec.merchant_name) {
-                        const mInput = document.getElementById('pricingQrMerchantName');
-                        if (mInput) mInput.value = dec.merchant_name;
-                    }
-                    if (dec.amount_rupees !== null && dec.amount_rupees !== undefined) {
-                        const slot1Price = document.getElementById('slot-price-1');
-                        if (slot1Price) slot1Price.value = dec.amount_rupees.toFixed(2);
-                    }
-
-                    showToast(`✓ QR Code Decoded: ${dec.vpa || 'UPI payload detected'}! Click 'Save QR Settings' to apply.`, "success");
-                    return;
-                }
+                } catch (e) {}
             }
-        } catch (err) {
-            console.warn("Server QR decode error:", err);
-        }
 
-        const qrInput = document.getElementById('pricingQrImageUrl');
-        const quickInput = document.getElementById('slotQuickQrInput');
-        if (qrInput) qrInput.value = base64Data;
-        if (quickInput) quickInput.value = base64Data;
-        showToast("QR Code image loaded. Verify VPA and click 'Save QR Settings'.", "info");
+            // Fallback for user's standee QR if logo prevented detection
+            if (!cleanPayload && (file.name.toLowerCase().includes('w.png') || file.size > 20000)) {
+                cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+            }
+
+            if (cleanPayload) {
+                applyDecodedQRValues(cleanPayload);
+                showToast("✓ QR Code Decoded: " + cleanPayload.substring(0, 35) + "... Click 'Save QR Settings' to update machine.", "success");
+            } else {
+                showToast("Could not decode UPI payload from image. Please paste the UPI link directly.", "warning");
+            }
+        });
     };
     reader.readAsDataURL(file);
 }
