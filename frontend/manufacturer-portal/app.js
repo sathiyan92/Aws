@@ -1167,14 +1167,20 @@ async function saveSingleSlotPrice(slotNumber) {
             body: JSON.stringify(payload)
         });
 
-        // Fail-safe alternative: Sync product_name & price to edge qr-config directly
+        // Sync product_name, price & current QR code to edge qr-config directly
         if (slotNumber === 1) {
             try {
+                const quickInput = document.getElementById('slotQuickQrInput');
+                const qrUrlInput = document.getElementById('pricingQrImageUrl');
+                let currentQr = (quickInput && quickInput.value.trim()) || (qrUrlInput && qrUrlInput.value.trim()) || '';
+                if (currentQr.startsWith('data:') || currentQr.length > 300) currentQr = '';
+
                 await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
                     method: 'PUT',
                     body: JSON.stringify({
                         product_name: productName,
-                        amount_rupees: priceRupees
+                        amount_rupees: priceRupees,
+                        custom_qr_payload: currentQr || undefined
                     })
                 });
             } catch (err) {
@@ -1232,11 +1238,14 @@ async function loadDeviceQRSettings(deviceId) {
             
             const qrInput = document.getElementById('pricingQrImageUrl');
             const quickInput = document.getElementById('slotQuickQrInput');
-            if (cfg.custom_qr_image_url) {
-                if (qrInput) qrInput.value = cfg.custom_qr_image_url;
-                if (quickInput) quickInput.value = cfg.custom_qr_image_url;
-                updateQrImagePreview(cfg.custom_qr_image_url);
-                updateSlotQuickQrPreview(cfg.custom_qr_image_url);
+            let val = cfg.custom_qr_image_url || '';
+            if (val.startsWith('data:') || val.length > 300) val = '';
+
+            if (val) {
+                if (qrInput) qrInput.value = val;
+                if (quickInput) quickInput.value = val;
+                updateQrImagePreview(val);
+                updateSlotQuickQrPreview(val);
             } else {
                 if (qrInput) qrInput.value = '';
                 if (quickInput) quickInput.value = '';
@@ -1305,15 +1314,24 @@ async function applyQuickQrToDevice() {
         return;
     }
 
+    const s1Name = document.getElementById('slot-name-1');
+    const s1Price = document.getElementById('slot-price-1');
+    const prodName = s1Name ? s1Name.value.trim() : undefined;
+    const priceVal = s1Price ? parseFloat(s1Price.value) : undefined;
+
     try {
         const res = await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
             method: 'PUT',
-            body: JSON.stringify({ custom_qr_payload: clean })
+            body: JSON.stringify({
+                custom_qr_payload: clean,
+                product_name: prodName,
+                amount_rupees: priceVal
+            })
         });
 
         if (res.ok) {
             const data = await res.json();
-            showToast(`✓ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to machine ${activePricingDeviceId}!`, "success");
+            showToast(`⚡ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to machine ${activePricingDeviceId}!`, "success");
             await loadDeviceSlotsAndPricing(activePricingDeviceId);
             await loadDeviceQRSettings(activePricingDeviceId);
         } else {
@@ -1475,9 +1493,15 @@ function handleQRImageUpload(event) {
                 showToast("✓ QR Decoded: " + cleanPayload.substring(0, 35) + "... Syncing to machine...", "info");
                 // Immediately push to machine edge config
                 try {
+                    const s1Name = document.getElementById('slot-name-1');
+                    const s1Price = document.getElementById('slot-price-1');
                     await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
                         method: 'PUT',
-                        body: JSON.stringify({ custom_qr_payload: cleanPayload })
+                        body: JSON.stringify({
+                            custom_qr_payload: cleanPayload,
+                            product_name: s1Name ? s1Name.value.trim() : undefined,
+                            amount_rupees: s1Price ? parseFloat(s1Price.value) : undefined
+                        })
                     });
                     showToast("⚡ QR Code synced directly to ESP32 machine!", "success");
                     await loadDeviceSlotsAndPricing(activePricingDeviceId);
@@ -1551,13 +1575,17 @@ async function handleSaveDeviceQRSettings(e) {
             body: JSON.stringify(payload)
         });
 
-        // Fail-safe alternative: Also directly push to edge qr-config
+        // Also directly push to edge qr-config
         try {
+            const s1Name = document.getElementById('slot-name-1');
+            const s1Price = document.getElementById('slot-price-1');
             await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
                 method: 'PUT',
                 body: JSON.stringify({
                     custom_qr_payload: rawQrInput || undefined,
-                    razorpay_upi_vpa: vpaVal
+                    razorpay_upi_vpa: vpaVal,
+                    product_name: s1Name ? s1Name.value.trim() : undefined,
+                    amount_rupees: s1Price ? parseFloat(s1Price.value) : undefined
                 })
             });
         } catch (edgeErr) {

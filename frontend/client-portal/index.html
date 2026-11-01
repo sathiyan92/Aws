@@ -259,8 +259,10 @@
                                     <p style="font-size: 0.78rem; color: var(--text-secondary); margin: 0 0 0.6rem 0;">
                                         Paste your Razorpay Standee UPI link (e.g. <code>upi://pay?am=2.00&pa=...&tr=...</code>) or image URL here. It instantly updates Slot 1 Price, VPA, and refreshes the ESP32 TFT screen!
                                     </p>
-                                    <div style="display: flex; gap: 0.5rem;">
-                                        <input type="text" id="clientSlotQuickQrInput" class="input-field" placeholder="upi://pay?am=2.00&cu=INR&pa=... or QR URL" style="font-size: 0.85rem; flex: 1;" oninput="handleClientSlotQuickQr(this.value)">
+                                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                        <input type="text" id="clientSlotQuickQrInput" class="input-field" placeholder="upi://pay?am=2.00&cu=INR&pa=... or QR URL" style="font-size: 0.85rem; flex: 1; min-width: 240px;" oninput="handleClientSlotQuickQr(this.value)">
+                                        <input type="file" id="clientSlotQuickQrFileInput" accept="image/*" style="display:none;" onchange="handleClientQRImageUpload(event)">
+                                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('clientSlotQuickQrFileInput').click()" style="white-space: nowrap; padding: 0.45rem 0.8rem; font-size: 0.85rem;">📷 Upload QR</button>
                                         <button type="button" class="btn btn-primary" onclick="applyClientQuickQrToDevice()" style="white-space: nowrap; padding: 0.45rem 1rem; font-size: 0.85rem;">⚡ Sync to Machine</button>
                                     </div>
                                 </div>
@@ -721,6 +723,11 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="jsQR.min.js"></script>
-    <script src="app.js?v=2.8"></script>
+    <script>
+        if (typeof jsQR === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
+        }
+    </script>
+    <script src="app.js?v=2.9"></script>
 </body>
 </html>

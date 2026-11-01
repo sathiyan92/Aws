@@ -145,7 +145,14 @@ def get_qr_settings(
     cfg = qr_mod.configuration or {}
 
     dev_settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
-    custom_qr = dev_settings.get("custom_qr_payload") or cfg.get("custom_qr_image_url")
+    custom_qr = dev_settings.get("custom_qr_payload") or cfg.get("custom_qr_payload") or cfg.get("custom_qr_image_url")
+    if custom_qr and (custom_qr.startswith("data:") or len(custom_qr) > 300):
+        from src.services.vending_service import decode_qr_image_data
+        decoded = decode_qr_image_data(custom_qr)
+        if decoded and decoded.get("qr_payload"):
+            custom_qr = decoded["qr_payload"]
+        else:
+            custom_qr = None
     upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
     return QRSettingsResponse(
@@ -185,12 +192,13 @@ def update_qr_settings(
         cfg["dynamic_pricing_enabled"] = payload.dynamic_pricing_enabled
     if payload.custom_qr_image_url is not None:
         raw_val = payload.custom_qr_image_url.strip() if payload.custom_qr_image_url else ""
-        if raw_val.startswith("data:image/") or ("base64," in raw_val):
+        if raw_val.startswith("data:image/") or ("base64," in raw_val) or len(raw_val) > 300:
             from src.services.vending_service import decode_qr_image_data
             decoded = decode_qr_image_data(raw_val)
             if decoded and decoded.get("qr_payload"):
                 clean_payload = decoded["qr_payload"]
                 cfg["custom_qr_image_url"] = clean_payload
+                cfg["custom_qr_payload"] = clean_payload
                 update_data["custom_qr_payload"] = clean_payload
                 if decoded.get("vpa"):
                     if not payload.upi_merchant_vpa or "pay." in payload.upi_merchant_vpa or "@icici" in payload.upi_merchant_vpa:
@@ -202,10 +210,11 @@ def update_qr_settings(
                 if decoded.get("amount_rupees") is not None:
                     update_data["amount_rupees"] = decoded["amount_rupees"]
             else:
-                cfg["custom_qr_image_url"] = raw_val
+                raise BadRequestException("Could not decode valid QR code from uploaded image. Please ensure the QR code is clearly visible, or enter the payment link / UPI URI directly.")
         else:
-            cfg["custom_qr_image_url"] = payload.custom_qr_image_url
-            update_data["custom_qr_payload"] = payload.custom_qr_image_url
+            cfg["custom_qr_image_url"] = raw_val
+            cfg["custom_qr_payload"] = raw_val
+            update_data["custom_qr_payload"] = raw_val
 
     from sqlalchemy.orm.attributes import flag_modified
     qr_mod.configuration = dict(cfg)
@@ -220,7 +229,14 @@ def update_qr_settings(
         db.commit()
 
     dev_settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
-    custom_qr = dev_settings.get("custom_qr_payload") or cfg.get("custom_qr_image_url")
+    custom_qr = dev_settings.get("custom_qr_payload") or cfg.get("custom_qr_payload") or cfg.get("custom_qr_image_url")
+    if custom_qr and (custom_qr.startswith("data:") or len(custom_qr) > 300):
+        from src.services.vending_service import decode_qr_image_data
+        decoded = decode_qr_image_data(custom_qr)
+        if decoded and decoded.get("qr_payload"):
+            custom_qr = decoded["qr_payload"]
+        else:
+            custom_qr = None
     upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
     return QRSettingsResponse(

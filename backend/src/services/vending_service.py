@@ -491,7 +491,8 @@ def restock_slot(
 def decode_qr_image_data(img_data_or_bytes: Any) -> Optional[Dict[str, Any]]:
     """
     Decodes a QR code from a base64 string, data URI, or raw image bytes.
-    Robustly handles logos and varying contrast via multi-threshold preprocessing.
+    Robustly handles smartphone camera photos, EXIF orientation, downscaling,
+    logos, dark/inverted themes, and varying contrast via multi-threshold preprocessing.
     Extracts UPI payment parameters (VPA, merchant name, amount, transaction reference).
     """
     import base64
@@ -516,18 +517,51 @@ def decode_qr_image_data(img_data_or_bytes: Any) -> Optional[Dict[str, Any]]:
             return None
 
         img = Image.open(io.BytesIO(raw_bytes))
+        img = ImageOps.exif_transpose(img)
 
-        # 1. Direct decode
-        res = decode(img)
+        # Multi-scale list to handle massive phone photos (e.g. 4000x3000)
+        scales = [1.0]
+        max_dim = max(img.size)
+        if max_dim > 1000:
+            scales.append(1000.0 / max_dim)
+        if max_dim > 600:
+            scales.append(600.0 / max_dim)
 
-        # 2. Multi-threshold fallback with expansion
-        if not res:
-            for thresh in [80, 100, 128, 150, 180]:
-                g = img.convert("L").point(lambda p: 255 if p > thresh else 0)
-                g = ImageOps.expand(g, border=20, fill="white")
-                res = decode(g)
+        res = None
+        for s in scales:
+            scaled = img if s == 1.0 else img.resize((int(img.width * s), int(img.height * s)), Image.Resampling.LANCZOS)
+            
+            # Try rotations: 0, 90, 180, 270 degrees
+            for angle in [0, 90, 180, 270]:
+                curr = scaled.rotate(angle, expand=True) if angle != 0 else scaled
+
+                # 1. Direct decode
+                res = decode(curr)
                 if res:
                     break
+
+                # 2. Grayscale & multi-threshold
+                gray = curr.convert("L")
+                res = decode(gray)
+                if res:
+                    break
+
+                for thresh in [70, 95, 120, 145, 170, 195]:
+                    bw = gray.point(lambda p: 255 if p > thresh else 0)
+                    bw = ImageOps.expand(bw, border=15, fill="white")
+                    res = decode(bw)
+                    if res:
+                        break
+                if res:
+                    break
+
+                # 3. Inverted (white on dark QR)
+                inv = ImageOps.invert(gray)
+                res = decode(inv)
+                if res:
+                    break
+            if res:
+                break
 
         if not res:
             return None

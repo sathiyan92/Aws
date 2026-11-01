@@ -694,34 +694,36 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
 
     settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
 
-    # Priority: Direct edge device config settings take highest precedence
-    candidates = [
-        settings.get("custom_qr_payload"),
-        mod_cfg.get("custom_qr_image_url"),
-        mod_cfg.get("custom_qr_payload"),
-    ]
-    rzp_rec = db.query(RazorpayQRCode).filter_by(device_id=device.id, status="active").order_by(RazorpayQRCode.updated_at.desc()).first()
-    if rzp_rec and rzp_rec.qr_payload:
-        candidates.append(rzp_rec.qr_payload)
-
     custom_qr = None
-    # Search for valid UPI URI (upi://) or Web Payment Link (http://, https://) or decode from base64 QR image
-    for c in candidates:
-        if c and isinstance(c, str):
-            c_str = c.strip()
-            if c_str.startswith("upi://") or c_str.startswith("http://") or c_str.startswith("https://"):
-                # Ensure it's not a direct static image URL
-                if not any(c_str.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
-                    custom_qr = c_str
-                    break
-            elif c_str.startswith("data:image/") or "base64," in c_str:
-                from src.services.vending_service import decode_qr_image_data
-                decoded = decode_qr_image_data(c_str)
-                if decoded and decoded.get("qr_payload"):
-                    custom_qr = decoded["qr_payload"]
-                    if decoded.get("vpa") and not mod_cfg.get("upi_merchant_vpa"):
-                        mod_cfg["upi_merchant_vpa"] = decoded["vpa"]
-                    break
+    if "custom_qr_payload" in settings:
+        stored = settings.get("custom_qr_payload")
+        if stored and isinstance(stored, str) and stored.strip():
+            custom_qr = stored.strip()
+    else:
+        # Fallback candidates only if device.config settings is uninitialized
+        candidates = [
+            mod_cfg.get("custom_qr_payload"),
+            mod_cfg.get("custom_qr_image_url"),
+        ]
+        rzp_rec = db.query(RazorpayQRCode).filter_by(device_id=device.id, status="active").order_by(RazorpayQRCode.updated_at.desc()).first()
+        if rzp_rec and rzp_rec.qr_payload:
+            candidates.append(rzp_rec.qr_payload)
+
+        for c in candidates:
+            if c and isinstance(c, str):
+                c_str = c.strip()
+                if c_str.startswith("upi://") or c_str.startswith("http://") or c_str.startswith("https://"):
+                    if not any(c_str.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+                        custom_qr = c_str
+                        break
+                elif c_str.startswith("data:image/") or "base64," in c_str:
+                    from src.services.vending_service import decode_qr_image_data
+                    decoded = decode_qr_image_data(c_str)
+                    if decoded and decoded.get("qr_payload"):
+                        custom_qr = decoded["qr_payload"]
+                        if decoded.get("vpa") and not mod_cfg.get("upi_merchant_vpa"):
+                            mod_cfg["upi_merchant_vpa"] = decoded["vpa"]
+                        break
 
     merchant_name = mod_cfg.get("merchant_name") or "Smart Vending"
     vpa = (
@@ -743,19 +745,6 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
                     merchant_name = clean_tn
         except Exception:
             pass
-
-    # Ensure device.config is synchronized with resolved UPI QR & VPA
-    if custom_qr and device.config:
-        cfg_payload = dict(device.config.config_payload) if device.config.config_payload else {}
-        if "settings" not in cfg_payload:
-            cfg_payload["settings"] = {}
-        if cfg_payload["settings"].get("custom_qr_payload") != custom_qr:
-            from sqlalchemy.orm.attributes import flag_modified
-            cfg_payload["settings"]["custom_qr_payload"] = custom_qr
-            cfg_payload["settings"]["razorpay_upi_vpa"] = vpa
-            device.config.config_payload = cfg_payload
-            flag_modified(device.config, "config_payload")
-            db.commit()
 
     target_slot = None
     for s in (device.slots or []):
@@ -805,6 +794,7 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     if "settings" not in payload:
         payload["settings"] = {}
 
+    has_qr_field = any(k in payload_data for k in ["custom_qr_payload", "qr_payload", "upi_url", "qr_string"])
     raw_qr = (
         payload_data.get("custom_qr_payload")
         or payload_data.get("qr_payload")
@@ -815,7 +805,7 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     # Intelligent UPI URI parsing (e.g. upi://pay?am=2.00&cu=INR&pa=...&tr=...)
     if raw_qr:
         raw_qr = str(raw_qr).strip()
-        if raw_qr.startswith("data:image/") or "base64," in raw_qr:
+        if raw_qr.startswith("data:image/") or "base64," in raw_qr or len(raw_qr) > 300:
             from src.services.vending_service import decode_qr_image_data
             decoded = decode_qr_image_data(raw_qr)
             if decoded and decoded.get("qr_payload"):
@@ -824,6 +814,8 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
                     payload_data["razorpay_upi_vpa"] = decoded["vpa"]
                 if decoded.get("amount_rupees") is not None and "amount_rupees" not in payload_data:
                     payload_data["amount_rupees"] = decoded["amount_rupees"]
+            else:
+                raise BadRequestException("Could not decode a valid QR code from the uploaded image. Please ensure the QR code is clear, or paste the UPI link / payment URL directly.")
         payload["settings"]["custom_qr_payload"] = raw_qr
 
         if raw_qr.startswith("upi://pay"):
@@ -874,6 +866,9 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
                         existing_qr.status = "active"
             except Exception:
                 pass
+    elif has_qr_field:
+        # User explicitly cleared custom QR code -> revert to dynamic UPI
+        payload["settings"]["custom_qr_payload"] = ""
 
     if payload_data.get("razorpay_upi_vpa"):
         payload["settings"]["razorpay_upi_vpa"] = payload_data["razorpay_upi_vpa"]
@@ -884,6 +879,36 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
             break
     if not target_slot and device.slots:
         target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
+
+    # Auto-create Slot 1 if machine has no slots yet
+    if not target_slot:
+        from src.db.models.vending import MachineSlot, Product
+        from src.db.base import generate_uuid
+        prod_code = f"PROD-{device.device_id}-1"
+        prod = db.query(Product).filter_by(client_id=device.client_id, product_code=prod_code).first()
+        if not prod:
+            prod = Product(
+                id=generate_uuid(),
+                client_id=device.client_id,
+                name=payload_data.get("product_name", "Cold Drink").strip(),
+                product_code=prod_code,
+                price=int(payload_data.get("amount_rupees", 10.0) * 100),
+                is_active=True,
+            )
+            db.add(prod)
+            db.flush()
+        target_slot = MachineSlot(
+            id=generate_uuid(),
+            device_id=device.id,
+            slot_number=1,
+            product_id=prod.id,
+            capacity=20,
+            current_stock=10,
+            is_active=True,
+            override_price=int(payload_data.get("amount_rupees", 10.0) * 100) if payload_data.get("amount_rupees") is not None else None,
+        )
+        db.add(target_slot)
+        db.flush()
 
     if payload_data.get("amount_rupees") is not None and target_slot:
         amount_paise = int(payload_data["amount_rupees"] * 100)
@@ -913,7 +938,7 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
                 prod.name = prod_name
             target_slot.product_id = prod.id
 
-    # Synchronize DeviceModule for QR_PAYMENT
+    # Synchronize DeviceModule for QR_PAYMENT in lockstep
     from src.db.models.device import DeviceModule
     from sqlalchemy.orm.attributes import flag_modified
     qr_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="QR_PAYMENT").first()
@@ -922,6 +947,9 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
         if raw_qr:
             mod_cfg["custom_qr_image_url"] = raw_qr
             mod_cfg["custom_qr_payload"] = raw_qr
+        elif has_qr_field:
+            mod_cfg["custom_qr_image_url"] = ""
+            mod_cfg["custom_qr_payload"] = ""
         if payload_data.get("razorpay_upi_vpa"):
             mod_cfg["upi_merchant_vpa"] = payload_data["razorpay_upi_vpa"]
         qr_mod.configuration = dict(mod_cfg)
