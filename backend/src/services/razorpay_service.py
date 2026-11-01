@@ -471,25 +471,6 @@ def _handle_payment_captured(
             "amount_paise": amount_paise,
         }
 
-    # If QR code was unique/standee and securely resolved to this device, register it for future queries
-    if qr_id and not qr_record:
-        qr_record = RazorpayQRCode(
-            client_id=device.client_id,
-            device_id=device.id,
-            slot_id=device.slots[0].id if device.slots else None,
-            razorpay_qr_id=str(qr_id),
-            name=f"Standee QR {qr_id}",
-            usage="multiple_use",
-            fixed_amount=True,
-            amount=amount_paise,
-            currency=currency,
-            qr_payload="",
-            status="active",
-            notes={"device_id": device.device_id, "auto_linked": True},
-        )
-        db.add(qr_record)
-        db.flush()
-
     # 4. Verify Amount Matches Expected Order/QR Amount (Requirement 4)
     expected_amount = None
     if matched_order:

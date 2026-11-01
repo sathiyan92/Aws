@@ -263,14 +263,62 @@ def verify_payment_endpoint(
     )
 
 
+@router.delete("/razorpay/qr/{qr_id}")
+def delete_qr_endpoint(
+    qr_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Fleet Management Endpoint]
+    Deletes a stored Razorpay QR Code or Standee TR ID mapping so it no longer triggers dispensing.
+    """
+    qr = db.query(RazorpayQRCode).filter(
+        (RazorpayQRCode.razorpay_qr_id == qr_id) | (RazorpayQRCode.id == qr_id)
+    ).first()
+    if not qr:
+        raise NotFoundException("RazorpayQRCode", qr_id)
+
+    db.delete(qr)
+    db.commit()
+    return {"status": "DELETED", "deleted_qr_id": qr_id, "message": f"QR mapping '{qr_id}' successfully removed."}
+
+
+@router.post("/razorpay/qr/clean-mappings")
+def clean_fleet_qr_mappings(
+    keep_vm1_default: bool = Query(True, description="Keep official TuXKipEEX2KteFqrv2 mapping for VM-000001"),
+    db: Session = Depends(get_db),
+):
+    """
+    [Fleet Maintenance Endpoint]
+    Purges any rogue auto-linked QR codes, keeping only official machine bindings.
+    """
+    all_qrs = db.query(RazorpayQRCode).all()
+    deleted = []
+    for q in all_qrs:
+        is_vm1_official = q.razorpay_qr_id in ("TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2")
+        is_auto_linked = isinstance(q.notes, dict) and q.notes.get("auto_linked")
+        is_unknown_alias = q.razorpay_qr_id in ("qr_TuZRXzwHRZaG7y", "qr_TuXKipEEX2KteF")
+        if (is_auto_linked or is_unknown_alias) and not (keep_vm1_default and is_vm1_official):
+            deleted.append(q.razorpay_qr_id)
+            db.delete(q)
+    db.commit()
+    return {
+        "status": "PURGED",
+        "purged_count": len(deleted),
+        "purged_qr_ids": deleted,
+        "message": f"Purged {len(deleted)} rogue QR mappings.",
+    }
+
+
 @router.get("/webhook-events", tags=["Razorpay Audit & Monitoring"])
 def list_webhook_events(
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
     """
-    [Admin / Diagnostic Endpoint]
-    Retrieve recent incoming webhook events and their processing status.
+    [Audit & Diagnostic Endpoint]
+    Retrieve recent incoming webhook events, showing exact amounts, detected QR IDs,
+    target machine routing, and physical vending results.
     """
     events = (
         db.query(WebhookEvent)
@@ -278,16 +326,45 @@ def list_webhook_events(
         .limit(min(limit, 100))
         .all()
     )
-    return [
-        {
-            "id": evt.id,
+    result = []
+    for evt in events:
+        p_obj = evt.payload or {}
+        payment_ent = p_obj.get("payload", {}).get("payment", {}).get("entity", {})
+        qr_ent = p_obj.get("payload", {}).get("qr_code", {}).get("entity", {})
+
+        p_id = payment_ent.get("id") or (evt.event_id.split("_")[-1] if evt.event_id else None)
+        amt_paise = payment_ent.get("amount") or qr_ent.get("payment_amount") or 0
+        amt_rupees = round(amt_paise / 100.0, 2)
+
+        notes = payment_ent.get("notes") or qr_ent.get("notes") or {}
+        if not isinstance(notes, dict):
+            notes = {}
+
+        qr_id = (
+            qr_ent.get("id")
+            or notes.get("razorpay_qr_id")
+            or notes.get("qr_id")
+            or notes.get("tr")
+            or payment_ent.get("description")
+        )
+
+        # Lookup created order/payment to see target machine
+        matched_payment = db.query(Payment).filter(Payment.razorpay_payment_id == p_id).first() if p_id else None
+        target_machine = None
+        dispense_status = "UNMATCHED_IGNORED"
+        if matched_payment and matched_payment.order:
+            target_machine = matched_payment.order.device.device_id if matched_payment.order.device else None
+            dispense_status = "DISPENSED" if matched_payment.order.order_status in ("PAID", "DISPENSE_AUTHORIZED", "COMPLETED", "DISPENSED") else matched_payment.order.order_status
+
+        result.append({
             "event_id": evt.event_id,
             "event_type": evt.event_type,
-            "gateway": evt.gateway,
-            "status": evt.status,
+            "payment_id": p_id,
+            "amount_rupees": amt_rupees,
+            "detected_qr_id": qr_id,
+            "target_machine": target_machine or ("VM-000001" if evt.status == "PROCESSED" and matched_payment else "UNMATCHED"),
+            "vending_status": dispense_status if evt.status == "PROCESSED" else f"FAILED: {evt.error_message}",
+            "gateway_status": evt.status,
             "received_at": evt.received_at.isoformat() if evt.received_at else None,
-            "processed_at": evt.processed_at.isoformat() if evt.processed_at else None,
-            "error_message": evt.error_message,
-        }
-        for evt in events
-    ]
+        })
+    return result
