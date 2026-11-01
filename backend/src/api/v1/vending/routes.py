@@ -192,11 +192,13 @@ def update_qr_settings(
                 clean_payload = decoded["qr_payload"]
                 cfg["custom_qr_image_url"] = clean_payload
                 update_data["custom_qr_payload"] = clean_payload
-                if decoded.get("vpa") and not payload.upi_merchant_vpa:
-                    cfg["upi_merchant_vpa"] = decoded["vpa"]
-                    update_data["razorpay_upi_vpa"] = decoded["vpa"]
-                if decoded.get("merchant_name") and not payload.merchant_name:
-                    cfg["merchant_name"] = decoded["merchant_name"]
+                if decoded.get("vpa"):
+                    if not payload.upi_merchant_vpa or "pay." in payload.upi_merchant_vpa or "@icici" in payload.upi_merchant_vpa:
+                        cfg["upi_merchant_vpa"] = decoded["vpa"]
+                        update_data["razorpay_upi_vpa"] = decoded["vpa"]
+                if decoded.get("merchant_name"):
+                    if not payload.merchant_name or payload.merchant_name in ("Smart Vending", "IoT Vending"):
+                        cfg["merchant_name"] = decoded["merchant_name"]
                 if decoded.get("amount_rupees") is not None:
                     update_data["amount_rupees"] = decoded["amount_rupees"]
             else:

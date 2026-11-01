@@ -72,11 +72,13 @@ def build_device_composite_payload(device: Device) -> Dict[str, Any]:
             slots_data = []
             for slot in sorted(device.slots, key=lambda s: s.slot_number):
                 prod_code = slot.product.product_code if slot.product else None
+                prod_name = slot.product.name if slot.product else f"Slot {slot.slot_number}"
                 prod_price = slot.override_price if slot.override_price is not None else (slot.product.price if slot.product else 0)
                 slots_data.append({
                     "slot": slot.slot_number,
                     "code": slot.slot_code,
                     "product": prod_code,
+                    "name": prod_name,
                     "price": prod_price,
                     "pin": slot.motor_pin,
                     "capacity": slot.capacity,

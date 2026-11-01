@@ -755,7 +755,14 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
             flag_modified(device.config, "config_payload")
             db.commit()
 
-    slot = device.slots[0] if device.slots else None
+    target_slot = None
+    for s in (device.slots or []):
+        if s.slot_number == 1:
+            target_slot = s
+            break
+    if not target_slot and device.slots:
+        target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
+    slot = target_slot
     price_paise = slot.override_price if (slot and slot.override_price is not None) else (slot.product.price if (slot and slot.product) else 1000)
     amount_rupees = round(price_paise / 100.0, 2)
     product_name = slot.product.name if (slot and slot.product) else "Cold Drink"
@@ -868,14 +875,22 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
 
     if payload_data.get("razorpay_upi_vpa"):
         payload["settings"]["razorpay_upi_vpa"] = payload_data["razorpay_upi_vpa"]
-    if payload_data.get("amount_rupees") is not None:
+    target_slot = None
+    for s in (device.slots or []):
+        if s.slot_number == 1:
+            target_slot = s
+            break
+    if not target_slot and device.slots:
+        target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
+
+    if payload_data.get("amount_rupees") is not None and target_slot:
         amount_paise = int(payload_data["amount_rupees"] * 100)
-        if device.slots:
-            device.slots[0].override_price = amount_paise
-    if payload_data.get("product_name") and device.slots:
+        target_slot.override_price = amount_paise
+
+    if payload_data.get("product_name") and target_slot:
         prod_name = payload_data["product_name"].strip()
-        if device.slots[0].product:
-            device.slots[0].product.name = prod_name
+        if target_slot.product:
+            target_slot.product.name = prod_name
         else:
             from src.db.models.vending import Product
             prod_code = f"PROD-{device.device_id}-1"
@@ -894,7 +909,7 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
                 db.flush()
             else:
                 prod.name = prod_name
-            device.slots[0].product_id = prod.id
+            target_slot.product_id = prod.id
 
     # Synchronize DeviceModule for QR_PAYMENT
     from src.db.models.device import DeviceModule

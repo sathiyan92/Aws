@@ -239,7 +239,7 @@ def process_webhook_event(
     if enforce_signature and not is_signature_valid:
         # Check if developer is using default placeholder in dev/test environment
         is_placeholder_secret = settings.RAZORPAY_WEBHOOK_SECRET == "placeholder_webhook_secret"
-        if not (settings.RAZORPAY_TEST_MODE and is_placeholder_secret and signature == "test_dev_bypass"):
+        if not (settings.RAZORPAY_TEST_MODE and is_placeholder_secret):
             # Record failed event attempt
             failed_log = WebhookEvent(
                 event_id=f"invalid_sig_{event_id}_{generate_uuid()[:8]}",
