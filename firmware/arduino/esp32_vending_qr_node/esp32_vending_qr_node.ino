@@ -129,13 +129,13 @@ DIYables_ILI9488_SPI TFT_display(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, 
 // ==============================================================================
 Preferences prefs;
 
-String wifi_ssid        = "iPhone";
-String wifi_pass        = "8015885416";
+String wifi_ssid        = "Tamil-sathiya";
+String wifi_pass        = "shanvi10";
 String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
 String device_token     = "dev_token_VM-000001";
 String server_base_url  = "http://35.154.219.82:8000";
-String razorpay_upi_vpa = "rzp.vending.vm000001@icici"; // Default or dynamic Razorpay VPA
-String firmware_version = "v2.1.0-razorpay-ota";
+String razorpay_upi_vpa = "gtech282722.rzp@rxairtel"; // Default GTECH Standee Razorpay VPA
+String firmware_version = "v2.2.0-razorpay-ota";
 
 // Cloud Session & Online State
 String session_jwt      = "";
@@ -154,9 +154,9 @@ MachineState current_state = STATE_STANDBY_QR;
 String pending_order_id     = "";
 String pending_order_number = "";
 int    pending_slot_number  = 1;
-float  pending_amount_rupee = 10.00;
-String pending_product_name = "Cold Drink";
-String custom_qr_code       = "";
+float  pending_amount_rupee = 2.00;
+String pending_product_name = "G-TECH Test Item";
+String custom_qr_code       = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
 
 // Polling intervals
 unsigned long last_poll_time = 0;
@@ -526,50 +526,159 @@ void clearPersistentConfig() {
 }
 
 // ==============================================================================
-// 9. WI-FI & CAPTIVE SETUP PORTAL
+// 9. WI-FI & CAPTIVE SETUP PORTAL (WITH TFT ON-SCREEN GUI & NETWORK SCAN)
 // ==============================================================================
+void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress) {
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Header Bar
+  TFT_display.fillRect(0, 0, 480, 45, COLOR_HEADER);
+  TFT_display.drawFastHLine(0, 45, 480, COLOR_ORANGE);
+
+  TFT_display.setCursor(15, 14);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(2);
+  TFT_display.print("⚡ WI-FI CONFIGURATION MODE");
+
+  // Error Card
+  TFT_display.fillRect(20, 58, 440, 42, COLOR_CARD);
+  TFT_display.drawRect(20, 58, 440, 42, COLOR_RED);
+  TFT_display.setCursor(30, 70);
+  TFT_display.setTextColor(COLOR_RED);
+  TFT_display.setTextSize(2);
+  TFT_display.print("Wi-Fi Offline! Setup Hotspot Active");
+
+  // Instructions Box
+  TFT_display.fillRect(20, 112, 440, 195, COLOR_CARD);
+  TFT_display.drawRect(20, 112, 440, 195, COLOR_CARD_BORDER);
+
+  TFT_display.setCursor(35, 125);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("1. Connect Phone to Hotspot:");
+
+  TFT_display.setCursor(55, 150);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("   SSID: %s", apName.c_str());
+
+  TFT_display.setCursor(35, 185);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("2. Open Browser & Go to:");
+
+  TFT_display.setCursor(55, 210);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("   http://%s", ipAddress.c_str());
+
+  TFT_display.setCursor(35, 250);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(1);
+  TFT_display.print("   Select your Wi-Fi from dropdown, type password & tap Save.");
+
+  TFT_display.setCursor(35, 275);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("   (Auto-resumes standby mode in 90s if unconfigured)");
+}
+
 void startCaptivePortal() {
   in_ap_setup_mode = true;
   WiFi.disconnect();
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   String ap_name = "ESP32-Vending-Setup";
   WiFi.softAP(ap_name.c_str());
 
-  Serial.println("\n[!] No Wi-Fi credentials in Flash NVS. Started AP: " + ap_name);
-  Serial.println("    Connect via phone/PC to: http://192.168.4.1\n");
+  IPAddress apIP = WiFi.softAPIP();
+  String ipStr = apIP.toString();
 
-  dnsServer.start(53, "*", WiFi.softAPIP());
-  webServer.on("/", []() {
+  Serial.println("\n==================================================================");
+  Serial.printf("[!] Starting Wi-Fi Captive Setup Hotspot: %s\n", ap_name.c_str());
+  Serial.printf("    Connect via Phone/PC and open: http://%s\n", ipStr.c_str());
+  Serial.println("==================================================================\n");
+
+  uiDrawWiFiSetupScreen(ap_name, ipStr);
+
+  dnsServer.start(53, "*", apIP);
+  webServer.on("/", [ap_name, ipStr]() {
     String realMac = getDeviceMacAddress();
-    String html = "<html><body style='font-family:sans-serif;background:#0b1120;color:#fff;padding:25px;text-align:center;'>";
-    html += "<h2>⚡ ESP32 Vending Setup</h2>";
-    html += "<p style='color:#38bdf8;font-family:monospace;font-size:14px;background:#1e293b;padding:8px 12px;border-radius:6px;display:inline-block;border:1px solid #334155;'>Hardware MAC: " + realMac + "</p>";
-    html += "<p style='color:#94a3b8;'>Enter Wi-Fi network & Device ID:</p>";
-    html += "<form action='/save' method='POST' style='max-width:320px;margin:0 auto;'>";
-    html += "<input name='ssid' placeholder='Wi-Fi Name' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
-    html += "<input name='pass' type='password' placeholder='Wi-Fi Password' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
-    html += "<input name='dev_id' placeholder='Device ID (e.g. VM-000001)' value='" + device_id + "' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
-    html += "<input name='srv_url' placeholder='Server URL' value='" + server_base_url + "' required style='width:100%;padding:10px;margin:6px 0;background:#1e293b;border:1px solid #334155;color:#fff;'><br>";
-    html += "<button type='submit' style='width:100%;padding:12px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;margin-top:10px;'>💾 Save & Connect</button></form></body></html>";
+    int n = WiFi.scanNetworks();
+    String options = "<option value=''>-- Select Available Wi-Fi --</option>";
+    for (int i = 0; i < n; ++i) {
+      String ssidName = WiFi.SSID(i);
+      int rssi = WiFi.RSSI(i);
+      options += "<option value='" + ssidName + "'>" + ssidName + " (" + String(rssi) + " dBm)</option>";
+    }
+
+    String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>Wi-Fi Setup</title>";
+    html += "<style>body{font-family:sans-serif;background:#0b1120;color:#fff;padding:20px;text-align:center;}";
+    html += ".card{max-width:360px;margin:0 auto;background:#1e293b;padding:20px;border-radius:12px;border:1px solid #334155;}";
+    html += "input,select{width:100%;box-sizing:border-box;padding:12px;margin:8px 0;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#fff;font-size:15px;}";
+    html += "button{width:100%;padding:14px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:12px;}";
+    html += "</style></head><body><div class='card'>";
+    html += "<h2>⚡ Smart Vending Setup</h2>";
+    html += "<p style='color:#38bdf8;font-size:13px;'>MAC: " + realMac + "</p>";
+    html += "<form action='/save' method='POST'>";
+    html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Nearby Wi-Fi Networks:</label>";
+    html += "<select onchange='if(this.value)document.getElementById(\"ssidInput\").value=this.value;'>" + options + "</select>";
+    html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Wi-Fi Name (SSID):</label>";
+    html += "<input id='ssidInput' name='ssid' placeholder='Wi-Fi Name' value='" + wifi_ssid + "' required>";
+    html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Wi-Fi Password:</label>";
+    html += "<input name='pass' type='password' placeholder='Enter Wi-Fi password' required>";
+    html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Device ID:</label>";
+    html += "<input name='dev_id' placeholder='Machine Device ID' value='" + device_id + "' required>";
+    html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Server URL:</label>";
+    html += "<input name='srv_url' placeholder='Server Base URL' value='" + server_base_url + "' required>";
+    html += "<button type='submit'>💾 Save & Connect Machine</button></form></div></body></html>";
     webServer.send(200, "text/html", html);
   });
+
   webServer.on("/save", HTTP_POST, []() {
-    savePersistentConfig(webServer.arg("ssid"), webServer.arg("pass"), webServer.arg("dev_id"), webServer.arg("srv_url"));
-    webServer.send(200, "text/html", "<html><body style='background:#0b1120;color:#38bdf8;text-align:center;padding:50px;'><h2>✓ Saved! Rebooting...</h2></body></html>");
+    String newSsid = webServer.arg("ssid");
+    String newPass = webServer.arg("pass");
+    String newDev  = webServer.arg("dev_id");
+    String newSrv  = webServer.arg("srv_url");
+
+    savePersistentConfig(newSsid, newPass, newDev, newSrv);
+
+    TFT_display.fillScreen(COLOR_BG);
+    TFT_display.setCursor(30, 140);
+    TFT_display.setTextColor(COLOR_GREEN);
+    TFT_display.setTextSize(2);
+    TFT_display.print("✓ Wi-Fi Saved! Connecting to:");
+    TFT_display.setCursor(30, 180);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.print(newSsid.c_str());
+
+    webServer.send(200, "text/html", "<!DOCTYPE html><html><body style='background:#0b1120;color:#38bdf8;text-align:center;padding:50px;font-family:sans-serif;'><h2>✓ Credentials Saved!</h2><p>ESP32 is now rebooting and connecting to " + newSsid + "...</p></body></html>");
     delay(2000);
     ESP.restart();
   });
+
   webServer.onNotFound([]() {
     webServer.sendHeader("Location", "/", true);
     webServer.send(302, "text/plain", "");
   });
   webServer.begin();
 
+  unsigned long apStart = millis();
   while (in_ap_setup_mode) {
     dnsServer.processNextRequest();
     webServer.handleClient();
+
+    // 90 second timeout fallback to bench standby if unconfigured
+    if (millis() - apStart > 90000 && wifi_ssid.length() > 0) {
+      Serial.println("\n[!] Wi-Fi setup timeout (90s). Continuing to Standby Screen...");
+      in_ap_setup_mode = false;
+      break;
+    }
     delay(5);
   }
+
+  webServer.stop();
+  dnsServer.stop();
+  WiFi.softAPdisconnect(true);
 }
 
 void connectToWiFi() {
@@ -593,7 +702,8 @@ void connectToWiFi() {
     Serial.println("\n[✓] Wi-Fi Connected!");
     Serial.printf("    Assigned IP : %s\n", WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("\n[!] Wi-Fi connection timed out. Operating in Standby / Bench Mode.");
+    Serial.println("\n[!] Wi-Fi connection timed out. Launching on-screen setup hotspot...");
+    startCaptivePortal();
   }
 }
 
@@ -1149,34 +1259,40 @@ void setup() {
 // 18. ARDUINO MAIN LOOP
 // ==============================================================================
 void loop() {
-  // 1. Factory Reset Check: Hold BOOT (GPIO 0) for 5 seconds to wipe Wi-Fi
+  // 1. Setup / Wi-Fi Hotspot Button Check: Hold BOOT (GPIO 0) for 3 seconds to launch Wi-Fi Setup Hotspot
   if (digitalRead(PIN_SETUP_BTN) == LOW) {
     unsigned long pressStart = millis();
     while (digitalRead(PIN_SETUP_BTN) == LOW) {
-      if (millis() - pressStart > 5000) {
-        Serial.println("\n[!] FACTORY RESET DETECTED! Clearing Wi-Fi from Flash NVS...");
-        clearPersistentConfig();
-        delay(1000);
-        ESP.restart();
+      if (millis() - pressStart > 3000) {
+        Serial.println("\n[!] BOOT BUTTON HELD! Starting Wi-Fi Configuration Hotspot on Screen...");
+        startCaptivePortal();
+        uiDrawStandbyQRScreen();
+        break;
       }
       delay(50);
     }
   }
 
-  // 2. Wi-Fi Connection Guard & Auto-Reconnect
+  // 2. Wi-Fi Background Auto-Reconnect (Non-blocking every 25 seconds)
+  static unsigned long last_wifi_reconnect_time = 0;
   if (WiFi.status() != WL_CONNECTED) {
-    connectToWiFi();
-    if (WiFi.status() == WL_CONNECTED) {
-      authenticateWithCloud();
+    if (millis() - last_wifi_reconnect_time > 25000) {
+      last_wifi_reconnect_time = millis();
+      Serial.println("[Wi-Fi] Attempting background reconnection to " + wifi_ssid + "...");
+      WiFi.reconnect();
     }
   }
 
-  // 3. Serial Commands (Desk Bench Testing)
+  // 3. Serial Commands (Desk Bench Testing & Setup)
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == 'p' || c == 'P') {
-      Serial.println("\n[💳 TEST] SIMULATING RAZORPAY PAYMENT RECEIVED (Rs 10.00)!");
-      dispenseProduct(1, 10.00, "BENCH-TEST-" + String(millis()));
+    if (c == 'w' || c == 'W') {
+      Serial.println("\n[⚡ WI-FI] Manual Wi-Fi configuration hotspot triggered from Serial!");
+      startCaptivePortal();
+      uiDrawStandbyQRScreen();
+    } else if (c == 'p' || c == 'P') {
+      Serial.println("\n[💳 TEST] SIMULATING RAZORPAY PAYMENT RECEIVED (Rs 2.00)!");
+      dispenseProduct(1, 2.00, "BENCH-TEST-" + String(millis()));
     } else if (c == 't' || c == 'T') {
       testMotorHardware();
     } else if (c == 'o' || c == 'O') {

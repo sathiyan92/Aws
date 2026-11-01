@@ -632,6 +632,22 @@ async function saveClientSlotPrice(slotNumber) {
             body: JSON.stringify(payload)
         });
 
+        // Fail-safe alternative: Sync product_name & price to edge qr-config directly
+        if (slotNumber === 1) {
+            try {
+                await fetchWithAuth(`/api/v1/orders/qr-config/${state.selectedDeviceId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        product_name: productName,
+                        amount_rupees: priceRupees
+                    })
+                });
+            } catch (qrErr) {
+                console.warn("Direct qr-config sync fallback:", qrErr);
+            }
+        }
+
         if (res.ok) {
             showToast(`✓ Slot ${slotNumber} updated ("${productName || 'Item'}", ₹${priceRupees.toFixed(2)})! Machine updating...`);
             await loadClientSlotsData(state.selectedDeviceId);
@@ -917,6 +933,19 @@ async function simulateClientTestPaymentPaid() {
     }
 }
 
+function applyClientStandeePreset() {
+    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const qrUrlInput = document.getElementById('clientQrImageUrl');
+    if (qrUrlInput) qrUrlInput.value = standeePayload;
+    if (elements.qrVpa) elements.qrVpa.value = "gtech282722.rzp@rxairtel";
+    if (elements.qrMerchantName) elements.qrMerchantName.value = "GTECH";
+    const slot1Price = document.getElementById('cslot-price-1');
+    if (slot1Price) slot1Price.value = "2.00";
+
+    updateClientQrPreview(standeePayload);
+    showToast("📌 GTECH Standee QR preset loaded! Click 'Save QR Settings' to activate.");
+}
+
 async function handleSaveQRSettings(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!state.selectedDeviceId) return;
@@ -959,6 +988,20 @@ async function handleSaveQRSettings(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
+
+        // Fail-safe alternative: Sync edge qr-config directly
+        try {
+            await fetchWithAuth(`/api/v1/orders/qr-config/${state.selectedDeviceId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    custom_qr_payload: rawQr || undefined,
+                    razorpay_upi_vpa: vpaVal
+                })
+            });
+        } catch (edgeErr) {
+            console.warn("Direct edge qr-config push fallback:", edgeErr);
+        }
 
         if (!res.ok) {
             const err = await res.json();

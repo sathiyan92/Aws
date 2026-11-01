@@ -1167,6 +1167,21 @@ async function saveSingleSlotPrice(slotNumber) {
             body: JSON.stringify(payload)
         });
 
+        // Fail-safe alternative: Sync product_name & price to edge qr-config directly
+        if (slotNumber === 1) {
+            try {
+                await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        product_name: productName,
+                        amount_rupees: priceRupees
+                    })
+                });
+            } catch (err) {
+                console.warn("Direct qr-config sync fallback:", err);
+            }
+        }
+
         if (res.ok) {
             showToast(`✓ Slot ${slotNumber} updated ("${productName || 'Item'}", ₹${priceRupees.toFixed(2)})! Machine updating...`, "success");
             await loadDeviceSlotsAndPricing(activePricingDeviceId);
@@ -1409,6 +1424,22 @@ function handleQRImageUpload(event) {
     reader.readAsDataURL(file);
 }
 
+function applyStandeePreset() {
+    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const qrInput = document.getElementById('pricingQrImageUrl');
+    const vpaInput = document.getElementById('pricingQrVpa');
+    const nameInput = document.getElementById('pricingQrMerchantName');
+    const slot1Price = document.getElementById('slot-price-1');
+
+    if (qrInput) qrInput.value = standeePayload;
+    if (vpaInput) vpaInput.value = "gtech282722.rzp@rxairtel";
+    if (nameInput) nameInput.value = "GTECH";
+    if (slot1Price) slot1Price.value = "2.00";
+
+    updateQrImagePreview(standeePayload);
+    showToast("📌 GTECH Standee QR preset loaded! Click 'Save QR Settings' to send to machine.", "info");
+}
+
 async function handleSaveDeviceQRSettings(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!activePricingDeviceId) return;
@@ -1450,6 +1481,19 @@ async function handleSaveDeviceQRSettings(e) {
             method: 'PUT',
             body: JSON.stringify(payload)
         });
+
+        // Fail-safe alternative: Also directly push to edge qr-config
+        try {
+            await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    custom_qr_payload: rawQrInput || undefined,
+                    razorpay_upi_vpa: vpaVal
+                })
+            });
+        } catch (edgeErr) {
+            console.warn("Direct edge qr-config push fallback:", edgeErr);
+        }
 
         if (res.ok) {
             showToast("✓ UPI QR & Merchant Settings saved! Machine updated instantly.", "success");
