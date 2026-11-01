@@ -455,37 +455,18 @@ def _handle_payment_captured(
                     device = mod.device
                     break
 
-    # If device still not resolved, check if an active slot price matches the exact incoming payment amount
-    slot = None
-    if not device and amount_paise > 0:
-        slot_matches = db.query(MachineSlot).filter(MachineSlot.override_price == amount_paise, MachineSlot.is_active == True).all()
-        if len(slot_matches) == 1:
-            device = slot_matches[0].device
-            slot = slot_matches[0]
-
-    # Single-machine active fleet or initial bench-test node:
-    # If exactly 1 machine is active in the fleet (e.g. VM-000001 during setup), route to it.
-    # When fleet scales to 2+ machines, strict isolation prevents blind routing!
+    # Strict Machine Isolation Policy (Enforces zero cross-machine dispensing across 1000+ fleet):
+    # A payment MUST strictly match this machine's registered Razorpay QR ID, Standee 'tr' reference,
+    # or explicit device_id note. Never guess or blind-default to VM-000001!
     if not device:
-        active_devices = db.query(Device).filter(Device.status == "ACTIVE").all()
-        if len(active_devices) == 1:
-            device = active_devices[0]
-            logger.info(f"[Razorpay Webhook] Single active fleet machine '{device.device_id}' detected. Routing payment {p_id} ({amount_paise} paise).")
-        elif db.query(Device).count() == 1:
-            device = db.query(Device).first()
-            logger.info(f"[Razorpay Webhook] Only 1 machine '{device.device_id}' in platform. Routing payment {p_id} ({amount_paise} paise).")
-
-    # Strict 1000+ Machine Isolation Policy:
-    # If 2+ machines exist and payment cannot be matched to any machine, halt dispense to prevent cross-machine dispensing!
-    if not device:
-        logger.error(
+        logger.warning(
             f"[Razorpay Webhook] Strict Isolation Enforced: Payment {p_id} for QR '{qr_id}' "
-            f"(Amount: {amount_paise} paise) does not match any registered machine in the 1000+ fleet. "
+            f"(Amount: {amount_paise} paise) does not match any registered machine in the fleet. "
             f"Dispense halted to prevent cross-machine dispensing."
         )
         return {
             "status": "UNMATCHED_DEVICE",
-            "message": f"Payment received for QR '{qr_id}', but QR is not mapped to any specific machine in the multi-machine fleet.",
+            "message": f"Payment received for QR '{qr_id}', but QR is not mapped to any specific machine in the fleet. Dispense halted to prevent cross-dispensing.",
             "qr_id": qr_id,
             "amount_paise": amount_paise,
         }
@@ -526,31 +507,31 @@ def _handle_payment_captured(
             )
 
     # 5. Price & Slot Resolution
+    slot = None
+    if qr_record and qr_record.slot_id:
+        slot = db.query(MachineSlot).filter_by(id=qr_record.slot_id).first()
+    if not slot and matched_order and matched_order.slot_id:
+        slot = matched_order.slot
+
+    if not slot and slot_number_note:
+        try:
+            slot_num = int(slot_number_note)
+            slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_num).first()
+        except (ValueError, TypeError):
+            pass
+
     if not slot:
-        if qr_record and qr_record.slot_id:
-            slot = db.query(MachineSlot).filter_by(id=qr_record.slot_id).first()
-        if not slot and matched_order and matched_order.slot_id:
-            slot = matched_order.slot
+        # Match incoming amount to configured slot price
+        for s in device.slots:
+            if not s.is_active:
+                continue
+            slot_price = s.override_price if s.override_price is not None else (s.product.price if s.product else None)
+            if slot_price == amount_paise:
+                slot = s
+                break
 
-        if not slot and slot_number_note:
-            try:
-                slot_num = int(slot_number_note)
-                slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_num).first()
-            except (ValueError, TypeError):
-                pass
-
-        if not slot:
-            # Match incoming amount to configured slot price
-            for s in device.slots:
-                if not s.is_active:
-                    continue
-                slot_price = s.override_price if s.override_price is not None else (s.product.price if s.product else None)
-                if slot_price == amount_paise:
-                    slot = s
-                    break
-
-        if not slot and device.slots:
-            slot = device.slots[0]
+    if not slot and device.slots:
+        slot = device.slots[0]
 
         # If device has no slot at all, auto-create Slot 1
         if not slot:
