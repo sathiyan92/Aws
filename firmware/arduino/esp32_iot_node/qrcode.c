@@ -794,6 +794,12 @@ int8_t qrcode_initBytes(QRCode *qrcode, uint8_t *modules, uint8_t version, uint8
     uint16_t dataCapacity = moduleCount / 8 - NUM_ERROR_CORRECTION_CODEWORDS[eccFormatBits];
 #endif
     
+    // Fast capacity check: ensure length does not exceed raw data capacity of this QR version
+    uint16_t headerBits = 4 + ((version >= 10) ? 16 : 8);
+    if (((uint32_t)length * 8 + headerBits) > ((uint32_t)dataCapacity * 8)) {
+        return -1; // Payload too long for this version
+    }
+
     struct BitBucket codewords;
     uint8_t codewordBytes[bb_getBufferSizeBytes(moduleCount)];
     bb_initBuffer(&codewords, codewordBytes, (int32_t)sizeof(codewordBytes));
@@ -802,6 +808,7 @@ int8_t qrcode_initBytes(QRCode *qrcode, uint8_t *modules, uint8_t version, uint8
     int8_t mode = encodeDataCodewords(&codewords, data, length, version);
     
     if (mode < 0) { return -1; }
+    if (codewords.bitOffsetOrWidth > ((uint32_t)dataCapacity * 8)) { return -1; }
     qrcode->mode = mode;
     
     // Add terminator and pad up to a byte if applicable

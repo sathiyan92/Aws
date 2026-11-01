@@ -705,13 +705,15 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         candidates.append(rzp_rec.qr_payload)
 
     custom_qr = None
-    # Strictly search for valid UPI protocol (upi://) or decode from base64 QR image
+    # Search for valid UPI URI (upi://) or Web Payment Link (http://, https://) or decode from base64 QR image
     for c in candidates:
         if c and isinstance(c, str):
             c_str = c.strip()
-            if c_str.startswith("upi://"):
-                custom_qr = c_str
-                break
+            if c_str.startswith("upi://") or c_str.startswith("http://") or c_str.startswith("https://"):
+                # Ensure it's not a direct static image URL
+                if not any(c_str.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+                    custom_qr = c_str
+                    break
             elif c_str.startswith("data:image/") or "base64," in c_str:
                 from src.services.vending_service import decode_qr_image_data
                 decoded = decode_qr_image_data(c_str)
@@ -767,7 +769,7 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
     amount_rupees = round(price_paise / 100.0, 2)
     product_name = slot.product.name if (slot and slot.product) else "Cold Drink"
 
-    if custom_qr and custom_qr.startswith("upi://"):
+    if custom_qr:
         qr_payload = custom_qr
     else:
         qr_payload = f"upi://pay?pa={vpa}&pn={merchant_name}&am={amount_rupees:.2f}&cu=INR&tn={device.device_id}"

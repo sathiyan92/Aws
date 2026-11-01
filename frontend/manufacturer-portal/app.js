@@ -1256,10 +1256,11 @@ function updateSlotQuickQrPreview(url) {
 
     if (url && url.trim().length > 0) {
         const clean = url.trim();
-        if (clean.startsWith('upi://') || (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('data:image/'))) {
-            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
-        } else {
+        const isImage = clean.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(clean);
+        if (isImage) {
             img.src = clean;
+        } else {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
         }
         img.style.display = 'block';
         placeholder.style.display = 'none';
@@ -1354,11 +1355,12 @@ function updateQrImagePreview(url) {
             }
         }
 
-        // Render live scannable QR Code image for UPI URIs or text payloads
-        if (clean.startsWith('upi://') || (!clean.startsWith('http://') && !clean.startsWith('https://') && !clean.startsWith('data:image/'))) {
-            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
-        } else {
+        // Render live scannable QR Code image for UPI URIs, payment links, or raw image files
+        const isImage = clean.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(clean);
+        if (isImage) {
             img.src = clean;
+        } else {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(clean)}`;
         }
         img.style.display = 'block';
         placeholder.style.display = 'none';
