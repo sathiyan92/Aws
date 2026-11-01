@@ -285,7 +285,7 @@ def delete_qr_endpoint(
 
 @router.post("/razorpay/qr/clean-mappings")
 def clean_fleet_qr_mappings(
-    keep_vm1_default: bool = Query(True, description="Keep official TuXKipEEX2KteFqrv2 mapping for VM-000001"),
+    keep_vm1_default: bool = Query(True, description="Keep official qr_TuXKipEEX2KteF mapping for VM-000001"),
     db: Session = Depends(get_db),
 ):
     """
@@ -295,9 +295,9 @@ def clean_fleet_qr_mappings(
     all_qrs = db.query(RazorpayQRCode).all()
     deleted = []
     for q in all_qrs:
-        is_vm1_official = q.razorpay_qr_id in ("TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2")
+        is_vm1_official = q.razorpay_qr_id in ("qr_TuXKipEEX2KteF", "TuXKipEEX2KteF")
         is_auto_linked = isinstance(q.notes, dict) and q.notes.get("auto_linked")
-        is_unknown_alias = q.razorpay_qr_id in ("qr_TuZRXzwHRZaG7y", "qr_TuXKipEEX2KteF")
+        is_unknown_alias = q.razorpay_qr_id in ("qr_TuZRXzwHRZaG7y", "TuZRXzwHRZaG7y", "TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2")
         if (is_auto_linked or is_unknown_alias) and not (keep_vm1_default and is_vm1_official):
             deleted.append(q.razorpay_qr_id)
             db.delete(q)

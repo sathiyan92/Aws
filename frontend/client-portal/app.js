@@ -884,7 +884,7 @@ function handleClientQRImageUpload(event) {
             }
 
             if (!cleanPayload && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
-                cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+                cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
             }
 
             if (cleanPayload) {
@@ -1024,7 +1024,7 @@ async function simulateClientTestPaymentPaid() {
 }
 
 function applyClientStandeePreset() {
-    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
     const qrUrlInput = document.getElementById('clientQrImageUrl');
     if (qrUrlInput) qrUrlInput.value = standeePayload;
     if (elements.qrVpa) elements.qrVpa.value = "gtech282722.rzp@rxairtel";

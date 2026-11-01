@@ -1485,7 +1485,7 @@ function handleQRImageUpload(event) {
 
             // Fallback for user's standee QR only if the file is explicitly w.png
             if (!cleanPayload && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
-                cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+                cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
             }
 
             if (cleanPayload) {
@@ -1518,7 +1518,7 @@ function handleQRImageUpload(event) {
 }
 
 function applyStandeePreset() {
-    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
     const qrInput = document.getElementById('pricingQrImageUrl');
     const vpaInput = document.getElementById('pricingQrVpa');
     const nameInput = document.getElementById('pricingQrMerchantName');
