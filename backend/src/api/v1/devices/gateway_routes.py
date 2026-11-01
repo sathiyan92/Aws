@@ -113,31 +113,39 @@ def _sync_device_qr_mapping(db: Session, device: Device, raw_qr: str, price_rupe
             slot.product.name = product_name
         db.flush()
 
-    # Rebind or create RazorpayQRCode record for this exact device
-    existing_qr = db.query(RazorpayQRCode).filter_by(razorpay_qr_id=qr_id_to_bind).first()
-    if not existing_qr:
-        qr_rec = RazorpayQRCode(
-            client_id=device.client_id,
-            device_id=device.id,
-            slot_id=slot.id if slot else None,
-            razorpay_qr_id=qr_id_to_bind,
-            name=f"QR for {device.device_id}",
-            usage="multiple_use",
-            fixed_amount=True,
-            amount=amount_paise,
-            currency="INR",
-            qr_payload=raw_qr,
-            status="active",
-            notes={"device_id": device.device_id, "tr": tr_val},
-        )
-        db.add(qr_rec)
-    else:
-        existing_qr.device_id = device.id
-        existing_qr.amount = amount_paise
-        existing_qr.qr_payload = raw_qr
-        existing_qr.status = "active"
-        if slot:
-            existing_qr.slot_id = slot.id
+    # Rebind or create RazorpayQRCode records for this exact device (both raw TR and qr_ prefixed)
+    keys_to_bind = [qr_id_to_bind]
+    if tr_val:
+        if not tr_val.startswith("qr_"):
+            keys_to_bind.append(f"qr_{tr_val}")
+        else:
+            keys_to_bind.append(tr_val[3:])
+
+    for k in set(keys_to_bind):
+        existing_qr = db.query(RazorpayQRCode).filter_by(razorpay_qr_id=k).first()
+        if not existing_qr:
+            qr_rec = RazorpayQRCode(
+                client_id=device.client_id,
+                device_id=device.id,
+                slot_id=slot.id if slot else None,
+                razorpay_qr_id=k,
+                name=f"QR for {device.device_id}",
+                usage="multiple_use",
+                fixed_amount=True,
+                amount=amount_paise,
+                currency="INR",
+                qr_payload=raw_qr,
+                status="active",
+                notes={"device_id": device.device_id, "tr": tr_val},
+            )
+            db.add(qr_rec)
+        else:
+            existing_qr.device_id = device.id
+            existing_qr.amount = amount_paise
+            existing_qr.qr_payload = raw_qr
+            existing_qr.status = "active"
+            if slot:
+                existing_qr.slot_id = slot.id
 
 
 @router.post("/authenticate", response_model=DeviceAuthResponse)
