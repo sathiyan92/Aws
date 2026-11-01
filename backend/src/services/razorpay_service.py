@@ -386,7 +386,7 @@ def _handle_payment_captured(
     )
     slot_number_note = notes.get("slot_number") or notes.get("slot")
 
-    # 2. Find corresponding RazorpayQRCode and Order via stored QR ID (Requirements 2, 3 & 5)
+    # 2. Find corresponding RazorpayQRCode and PENDING Order via stored QR ID (Requirements 2, 3 & 5)
     qr_record = None
     if qr_id:
         qr_record = db.query(RazorpayQRCode).filter(
@@ -395,14 +395,19 @@ def _handle_payment_captured(
             | (RazorpayQRCode.razorpay_qr_id == f"qr_{qr_id}")
         ).first()
 
+    # Never match old/completed orders! Only match currently pending orders.
     matched_order = None
     if qr_id:
-        matched_order = db.query(Order).filter(Order.razorpay_qr_id == str(qr_id)).first()
+        matched_order = db.query(Order).filter(
+            Order.razorpay_qr_id == str(qr_id),
+            Order.order_status.in_(["PENDING", "PAYMENT_PENDING"])
+        ).first()
     if not matched_order:
         order_id_note = notes.get("order_id") or notes.get("order_number")
         if order_id_note:
             matched_order = db.query(Order).filter(
-                (Order.id == str(order_id_note)) | (Order.order_number == str(order_id_note))
+                (Order.id == str(order_id_note)) | (Order.order_number == str(order_id_note)),
+                Order.order_status.in_(["PENDING", "PAYMENT_PENDING"])
             ).first()
 
     # Deep scan: If qr_record still not found, check if ANY registered QR code's ID or UPI 'tr' reference appears in raw JSON
@@ -431,8 +436,7 @@ def _handle_payment_captured(
         device = qr_record.device or db.query(Device).filter(Device.id == qr_record.device_id).first()
     elif matched_order:
         device = matched_order.device or db.query(Device).filter(Device.id == matched_order.device_id).first()
-
-    if not device and device_id_note:
+    elif device_id_note:
         device = db.query(Device).filter(
             (Device.device_id == str(device_id_note).strip()) | (Device.mac_address.ilike(str(device_id_note).strip()))
         ).first()

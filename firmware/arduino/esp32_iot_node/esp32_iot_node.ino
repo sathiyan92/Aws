@@ -146,6 +146,7 @@ Preferences prefs;
 #define FORCE_STATIC_PROGRAM_CONFIG   true  // Set true to use values below, false for web portal control
 
 const char* STATIC_QR_CODE      = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+const char* STATIC_TR_ID        = "TuXKipEEX2KteFqrv2"; // Machine's unique Standee TR / QR ID
 const char* STATIC_PRODUCT_NAME = "G-TECH Test";
 const float STATIC_PRICE_RUPEES = 2.00;
 
@@ -944,6 +945,33 @@ void pollPendingDispense() {
       int slotNum = doc["slot_number"].as<int>();
       float amount = doc["amount_rupees"].as<float>();
       String prodName = doc.containsKey("product_name") ? doc["product_name"].as<String>() : pending_product_name;
+      String orderQrId = doc.containsKey("qr_id") ? doc["qr_id"].as<String>() : "";
+
+      // ----------------------------------------------------------------------
+      // HARDWARE LEVEL SECURITY: Strict QR Code / TR ID Matching
+      // The machine will ONLY vend if the payment was made for THIS machine's QR code!
+      // ----------------------------------------------------------------------
+      if (orderQrId.length() > 0) {
+        String myTr = String(STATIC_TR_ID);
+        String myQr = String(STATIC_QR_CODE);
+        bool isMatch = false;
+        if (myTr.length() > 0 && (orderQrId == myTr || orderQrId == ("qr_" + myTr) || orderQrId.indexOf(myTr) >= 0 || myTr.indexOf(orderQrId) >= 0)) {
+          isMatch = true;
+        } else if (myQr.indexOf(orderQrId) >= 0) {
+          isMatch = true;
+        }
+
+        if (!isMatch) {
+          Serial.println("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+          Serial.printf("[SECURITY BLOCKED] Cross-machine payment attempt detected!\n");
+          Serial.printf("  Incoming Payment QR ID: '%s'\n", orderQrId.c_str());
+          Serial.printf("  This Machine's TR ID  : '%s'\n", myTr.c_str());
+          Serial.println("  Dispense REJECTED to protect 1000+ machine fleet isolation!");
+          Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+          http.end();
+          return;
+        }
+      }
 
       http.end();
 

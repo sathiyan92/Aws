@@ -215,6 +215,7 @@ def _ensure_fleet_defaults(engine) -> None:
         for eq in all_existing:
             if eq.razorpay_qr_id in ("qr_TuZRXzwHRZaG7y", "qr_TuXKipEEX2KteF"):
                 db.delete(eq)
+        db.query(Order).filter(Order.razorpay_qr_id.in_(["qr_TuZRXzwHRZaG7y", "qr_TuXKipEEX2KteF"])).delete(synchronize_session=False)
 
         db.commit()
         logger.info("[AutoMigrate] Fleet defaults and QR bindings verified for VM-000001.")

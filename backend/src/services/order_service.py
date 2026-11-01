@@ -585,6 +585,7 @@ def _query_pending_dispense_internal(
         "order_id": valid_order.id,
         "order_number": valid_order.order_number,
         "dispense_token": valid_order.dispense_token,
+        "qr_id": valid_order.razorpay_qr_id or "",
         "slot_number": slot_num,
         "amount_rupees": amount_rupees,
         "product_name": prod_name,
