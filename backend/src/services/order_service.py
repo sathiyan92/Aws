@@ -465,8 +465,27 @@ def get_pending_dispense_for_device(
     [Edge Hardware Polling Endpoint - Buttonless Zero-Touch Vending]
     Checks if an incoming Razorpay payment matched a product price and authorized
     physical motor dispense for this specific machine.
-    Enforces strict machine isolation, authenticated sessions, and offline expiry recovery.
+    Enforces strict machine isolation, authenticated sessions, offline recovery,
+    and bulletproof error handling that never crashes with HTTP 500.
     """
+    try:
+        return _query_pending_dispense_internal(db=db, device_id=device_id, device_token=device_token)
+    except Exception as exc:
+        logger.warning(f"[PendingDispense] Notice for device '{device_id}': {exc}. Attempting schema auto-sync...")
+        try:
+            from src.db.auto_migrate import run_auto_migrations
+            run_auto_migrations(db.get_bind())
+            return _query_pending_dispense_internal(db=db, device_id=device_id, device_token=device_token)
+        except Exception as retry_err:
+            logger.error(f"[PendingDispense] Safe fallback for device '{device_id}': {retry_err}", exc_info=True)
+            return {"dispense_pending": False, "status": "IDLE"}
+
+
+def _query_pending_dispense_internal(
+    db: Session,
+    device_id: str,
+    device_token: Optional[str] = None,
+) -> Dict[str, Any]:
     device = db.query(Device).filter(
         (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
     ).first()
@@ -523,16 +542,19 @@ def get_pending_dispense_for_device(
         if exp_utc and exp_utc < now:
             # Expired while machine was offline. Do not silently lose; mark EXPIRED and audit log.
             ord.order_status = "EXPIRED"
-            db.add(AuditLog(
-                client_id=ord.client_id,
-                user_id=None,
-                action="ORDER_DISPENSE_EXPIRED_OFFLINE",
-                entity_type="ORDER",
-                entity_id=ord.id,
-                old_state={"order_status": "PAID"},
-                new_state={"order_status": "EXPIRED", "expired_at": str(now)},
-            ))
-            db.commit()
+            try:
+                db.add(AuditLog(
+                    client_id=ord.client_id,
+                    user_id=None,
+                    action="ORDER_DISPENSE_EXPIRED_OFFLINE",
+                    entity_type="ORDER",
+                    entity_id=ord.id,
+                    old_state={"order_status": "PAID"},
+                    new_state={"order_status": "EXPIRED", "expired_at": str(now)},
+                ))
+                db.commit()
+            except Exception:
+                db.rollback()
         else:
             valid_order = ord
             break
@@ -554,14 +576,18 @@ def get_pending_dispense_for_device(
         else 3600
     )
 
+    amount_rupees = round(float(valid_order.total_amount or 0) / 100.0, 2)
+    slot_num = valid_order.slot.slot_number if valid_order.slot else 1
+    prod_name = valid_order.product.name if valid_order.product else "Vending Item"
+
     return {
         "dispense_pending": True,
         "order_id": valid_order.id,
         "order_number": valid_order.order_number,
         "dispense_token": valid_order.dispense_token,
-        "slot_number": valid_order.slot.slot_number if valid_order.slot else 1,
-        "amount_rupees": round(valid_order.total_amount / 100.0, 2),
-        "product_name": valid_order.product.name if valid_order.product else "Vending Item",
+        "slot_number": slot_num,
+        "amount_rupees": amount_rupees,
+        "product_name": prod_name,
         "display_title": "PAYMENT SUCCESSFUL",
         "expires_in_seconds": max(0, expires_in_secs),
     }
@@ -570,96 +596,19 @@ def get_pending_dispense_for_device(
 def process_razorpay_webhook(db: Session, webhook_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process incoming Razorpay Webhook for 1000+ machine fleet:
-    1. Extracts payment.entity
-    2. Identifies target device_id from notes
-    3. Matches price (amount in paise) to physical machine slot (e.g. 1000 paise -> Slot 1)
-    4. Triggers Razorpay Route transfer to Vendor/Client Linked Account
-    5. Sets order state to DISPENSE_AUTHORIZED so ESP32 executes motor dispense.
+    1. Supports payment.captured, qr_code.credited, and payment.authorized
+    2. Identifies target device_id from notes, unique standee QR ID, or slot price match
+    3. Triggers Razorpay Route transfer to Vendor/Client Linked Account
+    4. Sets order state to DISPENSE_AUTHORIZED so ESP32 executes motor dispense.
     """
+    from src.services.razorpay_service import _handle_payment_captured
     event = webhook_data.get("event")
-    if event != "payment.captured":
+    if event not in ("payment.captured", "qr_code.credited", "payment.authorized"):
         return {"status": "IGNORED", "reason": f"Unhandled event {event}"}
 
     payment_entity = webhook_data.get("payload", {}).get("payment", {}).get("entity", {})
     payment_id = payment_entity.get("id")
-    amount_paise = payment_entity.get("amount", 0)
-    notes = payment_entity.get("notes", {})
-    device_id = notes.get("device_id")
-
-    if not device_id:
-        return {"status": "IGNORED", "reason": "No device_id in notes"}
-
-    device = db.query(Device).filter(Device.device_id == device_id).first()
-    if not device:
-        return {"status": "ERROR", "reason": f"Device '{device_id}' not found"}
-
-    # Dynamic Price Matching: Match incoming amount to configured slot price
-    slot = None
-    for s in device.slots:
-        if not s.is_active:
-            continue
-        slot_price = s.override_price if s.override_price is not None else (s.product.price if s.product else None)
-        if slot_price == amount_paise:
-            slot = s
-            break
-
-    # Fallback to Slot 1 (e.g., in single-motor configuration)
-    if not slot and device.slots:
-        slot = device.slots[0]
-
-    now = utc_now()
-    order_id = str(uuid.uuid4())
-    order_number = f"ORD-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
-
-    order = Order(
-        id=order_id,
-        order_number=order_number,
-        device_id=device.id,
-        client_id=device.client_id,
-        slot_id=slot.id if slot else None,
-        product_id=slot.product_id if slot else None,
-        unit_price=amount_paise,
-        quantity=1,
-        total_amount=amount_paise,
-        order_status="DISPENSE_AUTHORIZED",
-        payment_method="RAZORPAY",
-    )
-    db.add(order)
-
-    payment = Payment(
-        order_id=order_id,
-        client_id=device.client_id,
-        gateway_provider="RAZORPAY",
-        gateway_payment_intent_id=payment_id,
-        gateway_transaction_id=payment_id,
-        amount=amount_paise,
-        currency="INR",
-        payment_status="SUCCESS",
-        raw_gateway_response=payment_entity,
-        paid_at=now,
-    )
-    db.add(payment)
-
-    db.add(AuditLog(
-        client_id=device.client_id,
-        user_id=None,
-        action="RAZORPAY_PRICE_MATCH_DISPENSE",
-        entity_type="ORDER",
-        entity_id=order_id,
-        old_state={"payment_id": payment_id},
-        new_state={"order_number": order_number, "slot_number": slot.slot_number if slot else 1, "amount_paise": amount_paise},
-    ))
-
-    db.commit()
-
-    return {
-        "status": "DISPENSE_AUTHORIZED",
-        "order_id": order_id,
-        "order_number": order_number,
-        "device_id": device_id,
-        "slot_number": slot.slot_number if slot else 1,
-        "amount_rupees": round(amount_paise / 100.0, 2),
-    }
+    return _handle_payment_captured(db=db, webhook_data=webhook_data, payment_id=payment_id)
 
 
 def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:

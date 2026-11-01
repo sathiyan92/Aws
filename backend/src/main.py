@@ -74,12 +74,16 @@ app.include_router(payments_router, prefix="/api/v1")
 
 @app.on_event("startup")
 def startup_init_database():
-    """Ensure database tables exist and seed initial devices if database is empty."""
+    """Ensure database tables exist, auto-migrate missing columns, and seed initial devices if database is empty."""
     from src.db.base import Base
     from src.db.session import engine, SessionLocal
     from src.db.seed import seed_database
     from src.db.models.device import Device
-    Base.metadata.create_all(bind=engine)
+    from src.db.auto_migrate import run_auto_migrations
+
+    # 1. Non-destructively auto-migrate schema
+    run_auto_migrations(engine)
+
     session = SessionLocal()
     try:
         if not session.query(Device).first():

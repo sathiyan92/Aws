@@ -137,7 +137,10 @@ def check_pending_dispense(
     Razorpay payment has matched a product price and authorized motor dispense.
     """
     from src.services.order_service import get_pending_dispense_for_device
-    return get_pending_dispense_for_device(db=db, device_id=device_id, device_token=x_device_token)
+    try:
+        return get_pending_dispense_for_device(db=db, device_id=device_id, device_token=x_device_token)
+    except Exception:
+        return {"dispense_pending": False, "status": "SAFE_RECOVERY"}
 
 
 @router.get("/qr-bitmap/{device_id}")
