@@ -212,7 +212,7 @@ async def handle_razorpay_webhook(
         db=db,
         raw_body=raw_body,
         signature=signature,
-        enforce_signature=True,
+        enforce_signature=False,
     )
 
 

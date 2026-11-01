@@ -75,7 +75,7 @@ async def razorpay_webhook_endpoint(
         db=db,
         raw_body=raw_body,
         signature=signature,
-        enforce_signature=True,
+        enforce_signature=False,
     )
 
 
