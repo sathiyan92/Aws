@@ -865,7 +865,7 @@ function handleClientQRImageUpload(event) {
                 } catch (err) {}
             }
 
-            if (!cleanPayload && (file.name.toLowerCase().includes('w.png') || file.size > 20000)) {
+            if (!cleanPayload && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
                 cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
             }
 

@@ -694,10 +694,10 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
 
     settings = device.config.config_payload.get("settings", {}) if (device.config and device.config.config_payload) else {}
 
-    # Priority: UPI deep-links take highest precedence over web/image URLs!
+    # Priority: Direct edge device config settings take highest precedence
     candidates = [
-        mod_cfg.get("custom_qr_image_url"),
         settings.get("custom_qr_payload"),
+        mod_cfg.get("custom_qr_image_url"),
         mod_cfg.get("custom_qr_payload"),
     ]
     rzp_rec = db.query(RazorpayQRCode).filter_by(device_id=device.id, status="active").order_by(RazorpayQRCode.updated_at.desc()).first()
@@ -915,16 +915,18 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
 
     # Synchronize DeviceModule for QR_PAYMENT
     from src.db.models.device import DeviceModule
+    from sqlalchemy.orm.attributes import flag_modified
     qr_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="QR_PAYMENT").first()
     if qr_mod:
         mod_cfg = dict(qr_mod.configuration or {})
         if raw_qr:
             mod_cfg["custom_qr_image_url"] = raw_qr
+            mod_cfg["custom_qr_payload"] = raw_qr
         if payload_data.get("razorpay_upi_vpa"):
             mod_cfg["upi_merchant_vpa"] = payload_data["razorpay_upi_vpa"]
-        qr_mod.configuration = mod_cfg
+        qr_mod.configuration = dict(mod_cfg)
+        flag_modified(qr_mod, "configuration")
 
-    from sqlalchemy.orm.attributes import flag_modified
     device.config.config_payload = dict(payload)
     flag_modified(device.config, "config_payload")
     device.config.is_synced = False

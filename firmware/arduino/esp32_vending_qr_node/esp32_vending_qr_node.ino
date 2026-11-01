@@ -166,7 +166,7 @@ const unsigned long POLL_INTERVAL_MS = 1800; // Check cloud for Razorpay payment
 
 // Remote Config Polling (Checks if Vendor/Manufacturer changed QR or Price)
 unsigned long last_config_check_time = 0;
-const unsigned long CONFIG_CHECK_INTERVAL_MS = 25000; // Check remote QR config every 25s
+const unsigned long CONFIG_CHECK_INTERVAL_MS = 5000;  // Fast 5-second cloud sync for instant screen refresh
 int current_config_version = 1;
 
 // Over-The-Air (OTA) Polling

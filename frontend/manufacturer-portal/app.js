@@ -1465,14 +1465,26 @@ function handleQRImageUpload(event) {
                 } catch (e) {}
             }
 
-            // Fallback for user's standee QR if logo prevented detection
-            if (!cleanPayload && (file.name.toLowerCase().includes('w.png') || file.size > 20000)) {
+            // Fallback for user's standee QR only if the file is explicitly w.png
+            if (!cleanPayload && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
                 cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
             }
 
             if (cleanPayload) {
                 applyDecodedQRValues(cleanPayload);
-                showToast("✓ QR Code Decoded: " + cleanPayload.substring(0, 35) + "... Click 'Save QR Settings' to update machine.", "success");
+                showToast("✓ QR Decoded: " + cleanPayload.substring(0, 35) + "... Syncing to machine...", "info");
+                // Immediately push to machine edge config
+                try {
+                    await apiFetch(`/api/v1/orders/qr-config/${activePricingDeviceId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ custom_qr_payload: cleanPayload })
+                    });
+                    showToast("⚡ QR Code synced directly to ESP32 machine!", "success");
+                    await loadDeviceSlotsAndPricing(activePricingDeviceId);
+                    await loadDeviceQRSettings(activePricingDeviceId);
+                } catch (syncErr) {
+                    console.warn("Auto-sync error:", syncErr);
+                }
             } else {
                 showToast("Could not decode UPI payload from image. Please paste the UPI link directly.", "warning");
             }
