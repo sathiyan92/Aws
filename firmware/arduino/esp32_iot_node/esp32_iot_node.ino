@@ -117,6 +117,8 @@ const unsigned long MOTOR_DISPENSE_TIME_MS = 3000; // Motor runs for 3 seconds p
 #define COLOR_BLUE        DIYables_TFT_SPI::colorRGB(14, 165, 233)   // Sky Blue (#0EA5E9)
 #define COLOR_GREEN       DIYables_TFT_SPI::colorRGB(16, 185, 129)   // Emerald Green (#10B981)
 #define COLOR_AMBER       DIYables_TFT_SPI::colorRGB(245, 158, 11)   // Warning Gold (#F59E0B)
+#define COLOR_YELLOW      DIYables_TFT_SPI::colorRGB(250, 204, 21)   // Bright Yellow (#FACC15)
+#define COLOR_ORANGE      DIYables_TFT_SPI::colorRGB(249, 115, 22)   // Vibrant Orange (#F97316)
 #define COLOR_RED         DIYables_TFT_SPI::colorRGB(239, 68, 68)    // Coral Red (#EF4444)
 #define COLOR_GRAY        DIYables_TFT_SPI::colorRGB(148, 163, 184)  // Slate Muted (#94A3B8)
 #define COLOR_DARK_GRAY   DIYables_TFT_SPI::colorRGB(30, 41, 59)
