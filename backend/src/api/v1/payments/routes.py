@@ -368,3 +368,52 @@ def list_webhook_events(
             "received_at": evt.received_at.isoformat() if evt.received_at else None,
         })
     return result
+
+
+@router.post("/razorpay/webhook/reprocess-failed", tags=["Razorpay Audit & Monitoring"])
+def reprocess_failed_webhooks(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    """
+    [Diagnostic & Recovery Endpoint]
+    Re-processes recent FAILED webhook events using updated fleet QR bindings.
+    Allows immediately recovering missed dispenses without having to re-pay!
+    """
+    from src.services.razorpay_service import _handle_payment_captured
+
+    failed_events = (
+        db.query(WebhookEvent)
+        .filter(WebhookEvent.status == "FAILED")
+        .order_by(WebhookEvent.received_at.desc())
+        .limit(limit)
+        .all()
+    )
+    results = []
+    for evt in failed_events:
+        payload = evt.payload or {}
+        p_ent = payload.get("payload", {}).get("payment", {}).get("entity", {})
+        p_id = p_ent.get("id") or (evt.event_id.split("_")[-1] if evt.event_id else None)
+        try:
+            dispense_res = _handle_payment_captured(db=db, webhook_data=payload, payment_id=p_id)
+            evt.status = "PROCESSED"
+            evt.error_message = None
+            evt.processed_at = utc_now()
+            db.commit()
+            results.append({
+                "event_id": evt.event_id,
+                "status": "REPROCESSED_SUCCESS",
+                "dispense": dispense_res,
+            })
+        except Exception as e:
+            db.rollback()
+            results.append({
+                "event_id": evt.event_id,
+                "status": "RETRY_FAILED",
+                "error": str(e),
+            })
+    return {
+        "reprocessed_count": len(results),
+        "details": results,
+    }
+
