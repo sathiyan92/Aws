@@ -131,6 +131,27 @@ DIYables_ILI9488_SPI TFT_display(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, 
 // ==============================================================================
 Preferences prefs;
 
+// ==============================================================================
+// ⭐ STATIC PROGRAM QR & PRODUCT CONFIGURATION (ALTER HERE IN ARDUINO IDE)
+// ==============================================================================
+// When FORCE_STATIC_PROGRAM_CONFIG is true:
+// - Altering the 3 lines below and clicking "Upload" in Arduino IDE will IMMEDIATELY
+//   display your new QR code, Product Name, and Price on the physical LCD screen!
+// - It permanently updates Flash NVS memory so your changes never get wiped.
+// - Cloud polling will NOT overwrite or revert your QR code on screen.
+//
+// Set FORCE_STATIC_PROGRAM_CONFIG to false if you want the QR code to be controlled
+// dynamically via the Web Dashboard / Cloud.
+// ==============================================================================
+#define FORCE_STATIC_PROGRAM_CONFIG   true  // Set true to use values below, false for web portal control
+
+const char* STATIC_QR_CODE      = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+const char* STATIC_PRODUCT_NAME = "G-TECH Test Item";
+const float STATIC_PRICE_RUPEES = 2.00;
+
+// Set to true if you want to bypass QR string encoding and draw the raw 2D pixel bitmap:
+#define USE_CUSTOM_STATIC_BITMAP      false
+
 String wifi_ssid        = "Tamil-sathiya";
 String wifi_pass        = "shanvi10";
 String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
@@ -295,6 +316,12 @@ void drawStandeeBitmapQR(int startX, int startY, int maxBoxSize) {
  * Gracefully falls back to Standee Bitmap if string cannot fit.
  */
 void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
+#if USE_CUSTOM_STATIC_BITMAP
+  Serial.println("[LCD Screen] Rendering Raw Static QR Bitmap matrix (Bypassing dynamic encoder)...");
+  drawStandeeBitmapQR(startX, startY, maxBoxSize);
+  return;
+#endif
+
   if (text == NULL || strlen(text) == 0) {
     drawStandeeBitmapQR(startX, startY, maxBoxSize);
     return;
@@ -376,10 +403,16 @@ void uiDrawStandbyQRScreen() {
   TFT_display.print("● READY");
 
   // Construct Dynamic or Static Razorpay UPI Payload or Custom Payment URL
+#if FORCE_STATIC_PROGRAM_CONFIG
+  String upiUri = String(STATIC_QR_CODE);
+  pending_product_name = String(STATIC_PRODUCT_NAME);
+  pending_amount_rupee = STATIC_PRICE_RUPEES;
+#else
   String upiUri = (custom_qr_code.length() > 0) ? custom_qr_code : 
                   ("upi://pay?pa=" + razorpay_upi_vpa + 
                   "&pn=IoT%20Vending&am=" + String(pending_amount_rupee, 2) + 
                   "&cu=INR&tn=" + device_id);
+#endif
 
   // Guard against raw image data URIs or oversized blobs (do not attempt to encode 50KB images)
   if (upiUri.startsWith("data:") || upiUri.length() > 250) {
@@ -569,12 +602,31 @@ void loadPersistentConfig() {
   if (saved_pass.length() > 0) wifi_pass = saved_pass;
   if (saved_url.length() > 0 && server_base_url == "http://35.154.219.82:8000") server_base_url = saved_url;
   if (saved_vpa.length() > 0 && razorpay_upi_vpa == "rzp.vending.vm000001@icici") razorpay_upi_vpa = saved_vpa;
-  if (saved_qr.length() > 0) custom_qr_code = saved_qr;
 
+#if FORCE_STATIC_PROGRAM_CONFIG
+  // Enforce Static Program QR, Name, and Price from Arduino IDE code!
+  custom_qr_code       = String(STATIC_QR_CODE);
+  pending_product_name = String(STATIC_PRODUCT_NAME);
+  pending_amount_rupee = STATIC_PRICE_RUPEES;
+
+  // Persist to Flash NVS so it never reverts
+  prefs.putString("cust_qr", custom_qr_code);
+  prefs.putString("p_name", pending_product_name);
+  prefs.putFloat("price", pending_amount_rupee);
+
+  Serial.println("\n******************************************************************");
+  Serial.println(">>> ⭐ STATIC PROGRAM CONFIG ENFORCED FROM ARDUINO CODE! <<<");
+  Serial.printf("    Static QR String : %s\n", custom_qr_code.c_str());
+  Serial.printf("    Product Name     : %s\n", pending_product_name.c_str());
+  Serial.printf("    Price            : Rs %.2f\n", pending_amount_rupee);
+  Serial.println("******************************************************************\n");
+#else
+  if (saved_qr.length() > 0) custom_qr_code = saved_qr;
   device_id = prefs.getString("dev_id", device_id);
   pending_amount_rupee = prefs.getFloat("price", pending_amount_rupee);
   pending_product_name = prefs.getString("p_name", pending_product_name);
   current_config_version = prefs.getInt("cfg_ver", current_config_version);
+#endif
   prefs.end();
 
   Serial.println("\n==================================================================");
@@ -942,6 +994,13 @@ void checkForRemoteQRConfigUpdates() {
       float newAmount    = doc["amount_rupees"].as<float>();
       String newName     = doc["product_name"].as<String>();
       String newQrString = doc.containsKey("qr_payload") ? doc["qr_payload"].as<String>() : "";
+
+#if FORCE_STATIC_PROGRAM_CONFIG
+      // In Static Program Mode, protect local code overrides from cloud revert
+      newQrString = String(STATIC_QR_CODE);
+      newName     = String(STATIC_PRODUCT_NAME);
+      newAmount   = STATIC_PRICE_RUPEES;
+#endif
 
       if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
         Serial.println("\n==================================================================");
@@ -1385,6 +1444,14 @@ void loop() {
     } else if (c == 'o' || c == 'O') {
       Serial.println("\n[⚡ OTA] Manually triggering OTA check from Serial...");
       checkForPendingOTA();
+    } else if (c == 'c' || c == 'C') {
+      Serial.println("\n[🧹 NVS] Clearing all persistent settings from Flash NVS...");
+      prefs.begin("vending_cfg", false);
+      prefs.clear();
+      prefs.end();
+      Serial.println("[✓] NVS wiped clean! Rebooting ESP32...");
+      delay(500);
+      ESP.restart();
     } else if (c == 'h' || c == 'H' || c == '?') {
       printHelpMenu();
     }
