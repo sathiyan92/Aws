@@ -145,9 +145,9 @@ Preferences prefs;
 // ==============================================================================
 #define FORCE_STATIC_PROGRAM_CONFIG   true  // Set true to use values below, false for web portal control
 
-const char* STATIC_QR_CODE      = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+const char* STATIC_QR_CODE      = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
 const char* STATIC_PRODUCT_NAME = "G-TECH Test";
-const float STATIC_PRICE_RUPEES = 1.00;
+const float STATIC_PRICE_RUPEES = 2.00;
 
 // Set to true if you want to bypass QR string encoding and draw the raw 2D pixel bitmap:
 #define USE_CUSTOM_STATIC_BITMAP      false

@@ -146,7 +146,7 @@ def check_pending_dispense(
 @router.get("/qr-bitmap/{device_id}")
 def get_device_qr_bitmap(
     device_id: str,
-    format: str = Query("bmp", regex="^(bmp|png)$"),
+    format: str = Query("bmp", pattern="^(bmp|png)$"),
     size: int = Query(200, ge=100, le=480),
     db: Session = Depends(get_db),
 ):

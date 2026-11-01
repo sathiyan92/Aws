@@ -340,13 +340,26 @@ def _handle_payment_captured(
     qr_entity = payload_obj.get("qr_code", {}).get("entity", {})
 
     p_id = payment_id or payment_entity.get("id") or "pay_simulated"
+
+    # Safely extract notes (handles dict, list, or None from Razorpay)
+    p_notes = payment_entity.get("notes")
+    if not isinstance(p_notes, dict):
+        p_notes = {}
+    q_notes = qr_entity.get("notes")
+    if not isinstance(q_notes, dict):
+        q_notes = {}
+    notes = {**q_notes, **p_notes}
+
+    # Raw JSON string for deep substring matching across fleet QR mappings
+    raw_payload_str = json.dumps(webhook_data)
+
     qr_id = (
         qr_entity.get("id")
-        or payment_entity.get("notes", {}).get("razorpay_qr_id")
-        or qr_entity.get("notes", {}).get("razorpay_qr_id")
-        or payment_entity.get("notes", {}).get("qr_id")
-        or payment_entity.get("notes", {}).get("tr")
-        or qr_entity.get("notes", {}).get("tr")
+        or notes.get("razorpay_qr_id")
+        or notes.get("qr_id")
+        or notes.get("tr")
+        or notes.get("qr_code_id")
+        or payment_entity.get("qr_code_id")
     )
 
     # Check description or acquirer data for tr/qr reference
@@ -365,7 +378,6 @@ def _handle_payment_captured(
 
     amount_paise = payment_entity.get("amount") or qr_entity.get("payment_amount") or 0
     currency = payment_entity.get("currency") or qr_entity.get("currency") or "INR"
-    notes = payment_entity.get("notes") or qr_entity.get("notes") or {}
 
     device_id_note = (
         notes.get("device_id")
@@ -377,7 +389,11 @@ def _handle_payment_captured(
     # 2. Find corresponding RazorpayQRCode and Order via stored QR ID (Requirements 2, 3 & 5)
     qr_record = None
     if qr_id:
-        qr_record = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == str(qr_id)).first()
+        qr_record = db.query(RazorpayQRCode).filter(
+            (RazorpayQRCode.razorpay_qr_id == str(qr_id))
+            | (RazorpayQRCode.razorpay_qr_id == str(qr_id).removeprefix("qr_"))
+            | (RazorpayQRCode.razorpay_qr_id == f"qr_{qr_id}")
+        ).first()
 
     matched_order = None
     if qr_id:
@@ -389,6 +405,26 @@ def _handle_payment_captured(
                 (Order.id == str(order_id_note)) | (Order.order_number == str(order_id_note))
             ).first()
 
+    # Deep scan: If qr_record still not found, check if ANY registered QR code's ID or UPI 'tr' reference appears in raw JSON
+    if not qr_record and not matched_order:
+        all_qrs = db.query(RazorpayQRCode).all()
+        for q in all_qrs:
+            if q.razorpay_qr_id and q.razorpay_qr_id in raw_payload_str:
+                qr_record = q
+                qr_id = q.razorpay_qr_id
+                break
+            if q.qr_payload and "tr=" in q.qr_payload:
+                try:
+                    parsed = urllib.parse.urlparse(q.qr_payload)
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    tr_cand = qs.get("tr", [None])[0]
+                    if tr_cand and tr_cand in raw_payload_str:
+                        qr_record = q
+                        qr_id = tr_cand
+                        break
+                except Exception:
+                    pass
+
     # 3. Resolve Target Machine with Strict Machine Isolation (Requirements 5 & 12)
     device = None
     if qr_record:
@@ -398,7 +434,7 @@ def _handle_payment_captured(
 
     if not device and device_id_note:
         device = db.query(Device).filter(
-            (Device.device_id == str(device_id_note)) | (Device.mac_address.ilike(str(device_id_note).strip()))
+            (Device.device_id == str(device_id_note).strip()) | (Device.mac_address.ilike(str(device_id_note).strip()))
         ).first()
 
     # Search DeviceConfig or DeviceModule for QR code string/payload containing qr_id
@@ -419,15 +455,28 @@ def _handle_payment_captured(
                     device = mod.device
                     break
 
-    # If device still not resolved, check if an active slot price matches the exact incoming payment amount (e.g. 100 paise = Rs 1.00, 200 paise = Rs 2.00)
+    # If device still not resolved, check if an active slot price matches the exact incoming payment amount
+    slot = None
     if not device and amount_paise > 0:
         slot_matches = db.query(MachineSlot).filter(MachineSlot.override_price == amount_paise, MachineSlot.is_active == True).all()
         if len(slot_matches) == 1:
             device = slot_matches[0].device
             slot = slot_matches[0]
 
+    # Single-machine active fleet or initial bench-test node:
+    # If exactly 1 machine is active in the fleet (e.g. VM-000001 during setup), route to it.
+    # When fleet scales to 2+ machines, strict isolation prevents blind routing!
+    if not device:
+        active_devices = db.query(Device).filter(Device.status == "ACTIVE").all()
+        if len(active_devices) == 1:
+            device = active_devices[0]
+            logger.info(f"[Razorpay Webhook] Single active fleet machine '{device.device_id}' detected. Routing payment {p_id} ({amount_paise} paise).")
+        elif db.query(Device).count() == 1:
+            device = db.query(Device).first()
+            logger.info(f"[Razorpay Webhook] Only 1 machine '{device.device_id}' in platform. Routing payment {p_id} ({amount_paise} paise).")
+
     # Strict 1000+ Machine Isolation Policy:
-    # Never blind-default to VM-000001 if a QR is unmapped or belongs to another machine!
+    # If 2+ machines exist and payment cannot be matched to any machine, halt dispense to prevent cross-machine dispensing!
     if not device:
         logger.error(
             f"[Razorpay Webhook] Strict Isolation Enforced: Payment {p_id} for QR '{qr_id}' "
@@ -436,7 +485,7 @@ def _handle_payment_captured(
         )
         return {
             "status": "UNMATCHED_DEVICE",
-            "message": f"Payment received for QR '{qr_id}', but QR is not mapped to any specific machine.",
+            "message": f"Payment received for QR '{qr_id}', but QR is not mapped to any specific machine in the multi-machine fleet.",
             "qr_id": qr_id,
             "amount_paise": amount_paise,
         }
@@ -477,31 +526,65 @@ def _handle_payment_captured(
             )
 
     # 5. Price & Slot Resolution
-    slot = None
-    if qr_record and qr_record.slot_id:
-        slot = db.query(MachineSlot).filter_by(id=qr_record.slot_id).first()
-    if not slot and matched_order and matched_order.slot_id:
-        slot = matched_order.slot
-
-    if not slot and slot_number_note:
-        try:
-            slot_num = int(slot_number_note)
-            slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_num).first()
-        except (ValueError, TypeError):
-            pass
-
     if not slot:
-        # Match incoming amount to configured slot price
-        for s in device.slots:
-            if not s.is_active:
-                continue
-            slot_price = s.override_price if s.override_price is not None else (s.product.price if s.product else None)
-            if slot_price == amount_paise:
-                slot = s
-                break
+        if qr_record and qr_record.slot_id:
+            slot = db.query(MachineSlot).filter_by(id=qr_record.slot_id).first()
+        if not slot and matched_order and matched_order.slot_id:
+            slot = matched_order.slot
 
-    if not slot and device.slots:
-        slot = device.slots[0]
+        if not slot and slot_number_note:
+            try:
+                slot_num = int(slot_number_note)
+                slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_num).first()
+            except (ValueError, TypeError):
+                pass
+
+        if not slot:
+            # Match incoming amount to configured slot price
+            for s in device.slots:
+                if not s.is_active:
+                    continue
+                slot_price = s.override_price if s.override_price is not None else (s.product.price if s.product else None)
+                if slot_price == amount_paise:
+                    slot = s
+                    break
+
+        if not slot and device.slots:
+            slot = device.slots[0]
+
+        # If device has no slot at all, auto-create Slot 1
+        if not slot:
+            from src.db.models.vending import Product
+            prod = db.query(Product).filter_by(client_id=device.client_id).first()
+            if not prod:
+                prod = Product(
+                    id=generate_uuid(),
+                    client_id=device.client_id,
+                    name="Vending Item",
+                    product_code=f"PROD-{device.device_id}-1",
+                    price=amount_paise,
+                    is_active=True,
+                )
+                db.add(prod)
+                db.flush()
+            slot = MachineSlot(
+                id=generate_uuid(),
+                device_id=device.id,
+                slot_number=1,
+                product_id=prod.id,
+                capacity=20,
+                current_stock=10,
+                is_active=True,
+                override_price=amount_paise,
+            )
+            db.add(slot)
+            db.flush()
+
+    # Dynamically update slot price if collected payment differs
+    if slot and amount_paise > 0 and len(device.slots) <= 1:
+        slot.override_price = amount_paise
+        if qr_record:
+            qr_record.amount = amount_paise
 
     # 6. Idempotency Check on Razorpay Payment ID (Requirement 11)
     if p_id and p_id != "pay_simulated":

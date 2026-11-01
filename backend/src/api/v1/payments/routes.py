@@ -131,35 +131,6 @@ def create_qr_endpoint(
     )
 
 
-@router.get("/razorpay/qr/{qr_id}", response_model=RazorpayQRResponse)
-def get_qr_endpoint(
-    qr_id: str,
-    db: Session = Depends(get_db),
-):
-    """
-    Retrieve stored Razorpay QR Code details and current status.
-    """
-    qr = db.query(RazorpayQRCode).filter(
-        (RazorpayQRCode.razorpay_qr_id == qr_id) | (RazorpayQRCode.id == qr_id)
-    ).first()
-    if not qr:
-        raise NotFoundException("RazorpayQRCode", qr_id)
-
-    return RazorpayQRResponse(
-        id=qr.id,
-        razorpay_qr_id=qr.razorpay_qr_id,
-        device_id=qr.device.device_id if qr.device else "UNKNOWN",
-        slot_number=qr.slot.slot_number if qr.slot else 1,
-        product_name=qr.slot.product.name if (qr.slot and qr.slot.product) else "Vending Item",
-        amount_rupees=round(qr.amount / 100.0, 2),
-        amount_paise=qr.amount,
-        usage=qr.usage,
-        qr_payload=qr.qr_payload,
-        image_url=qr.image_url,
-        status=qr.status,
-    )
-
-
 @router.get("/razorpay/qr/mappings/all")
 def list_all_qr_mappings(
     db: Session = Depends(get_db),
@@ -221,6 +192,35 @@ def bind_qr_to_machine(
         "product_name": product_name,
         "message": f"QR '{qr_id_or_tr.strip()}' is now exclusively mapped to {device.device_id} at Rs {amount_rupees:.2f}.",
     }
+
+
+@router.get("/razorpay/qr/{qr_id}", response_model=RazorpayQRResponse)
+def get_qr_endpoint(
+    qr_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve stored Razorpay QR Code details and current status.
+    """
+    qr = db.query(RazorpayQRCode).filter(
+        (RazorpayQRCode.razorpay_qr_id == qr_id) | (RazorpayQRCode.id == qr_id)
+    ).first()
+    if not qr:
+        raise NotFoundException("RazorpayQRCode", qr_id)
+
+    return RazorpayQRResponse(
+        id=qr.id,
+        razorpay_qr_id=qr.razorpay_qr_id,
+        device_id=qr.device.device_id if qr.device else "UNKNOWN",
+        slot_number=qr.slot.slot_number if qr.slot else 1,
+        product_name=qr.slot.product.name if (qr.slot and qr.slot.product) else "Vending Item",
+        amount_rupees=round(qr.amount / 100.0, 2),
+        amount_paise=qr.amount,
+        usage=qr.usage,
+        qr_payload=qr.qr_payload,
+        image_url=qr.image_url,
+        status=qr.status,
+    )
 
 
 @router.post("/razorpay/verify-payment", response_model=RazorpayVerifyPaymentResponse)
