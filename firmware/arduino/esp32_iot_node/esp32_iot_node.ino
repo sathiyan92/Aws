@@ -143,7 +143,7 @@ Preferences prefs;
 // Set FORCE_STATIC_PROGRAM_CONFIG to false if you want the QR code to be controlled
 // dynamically via the Web Dashboard / Cloud.
 // ==============================================================================
-#define FORCE_STATIC_PROGRAM_CONFIG   true  // Set true to use values below, false for web portal control
+#define FORCE_STATIC_PROGRAM_CONFIG   false  // Set true to use values below, false for web portal control
 
 const char* STATIC_QR_CODE      = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2";
 const char* STATIC_TR_ID        = "TuoZnOxKYLXaLvqrv2"; // Machine's unique Razorpay QR ID
@@ -181,6 +181,7 @@ int    pending_slot_number  = 1;
 float  pending_amount_rupee = 2.00;
 String pending_product_name = "G-TECH Test";
 String custom_qr_code       = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+String dynamic_tr_id        = ""; // Dynamically synced TR ID from cloud portal
 String last_dispensed_order_id = ""; // Flash-persisted order ID to prevent duplicate vends across resets
 
 // Polling intervals
@@ -645,6 +646,7 @@ void loadPersistentConfig() {
   pending_amount_rupee = prefs.getFloat("price", pending_amount_rupee);
   pending_product_name = prefs.getString("p_name", pending_product_name);
   current_config_version = prefs.getInt("cfg_ver", current_config_version);
+  dynamic_tr_id = prefs.getString("tr_id", "");
 #endif
   last_dispensed_order_id = prefs.getString("last_order", "");
   prefs.end();
@@ -1137,49 +1139,20 @@ void pollPendingDispense() {
         return;
       }
 
-      if (orderQrId.length() > 0) {
-        String myTr = String(STATIC_TR_ID);
-        String myQr = custom_qr_code.length() > 0 ? custom_qr_code : String(STATIC_QR_CODE);
-        bool isMatch = false;
-
-        String cleanOrderQr = orderQrId;
-        cleanOrderQr.replace("qr_", "");
-        cleanOrderQr.replace("qrv2", "");
-
-        String cleanMyTr = myTr;
-        cleanMyTr.replace("qr_", "");
-        cleanMyTr.replace("qrv2", "");
-
-        // 1. Direct match with current active TR ID or QR payload
-        if (cleanMyTr.length() > 0 && (cleanOrderQr == cleanMyTr || cleanOrderQr.indexOf(cleanMyTr) >= 0 || cleanMyTr.indexOf(cleanOrderQr) >= 0)) {
-          isMatch = true;
-        } else if (myQr.indexOf(cleanOrderQr) >= 0 || myQr.indexOf(orderQrId) >= 0) {
-          isMatch = true;
-        } else if (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId)) {
-          isMatch = true;
-        }
-        // 2. Multi-standee support: Any valid GTECH Razorpay standee QR registered to this machine
-        else if (cleanOrderQr.indexOf("TuZRXzwHRZaG7y") >= 0 || cleanOrderQr.indexOf("TuoZnOxKYLXaLv") >= 0 || cleanOrderQr.indexOf("TuXKipEEX2KteF") >= 0) {
-          isMatch = true;
-        }
-        // 3. Authenticated Cloud Dispatch: Server issued a cryptographically verified single-use dispense_token specifically for this machine
-        else if (dispenseToken.length() > 0) {
-          isMatch = true;
-        }
-
-        if (!isMatch) {
-          Serial.println("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-          Serial.printf("[SECURITY BLOCKED] Cross-machine payment attempt detected!\n");
-          Serial.printf("  Incoming Payment QR ID: '%s'\n", orderQrId.c_str());
-          Serial.printf("  This Machine's TR ID  : '%s'\n", myTr.c_str());
-          Serial.println("  Dispense REJECTED to protect 1000+ machine fleet isolation!");
-          Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-          http.end();
-          return;
-        } else {
-          Serial.printf("[✓ Match] Payment QR '%s' verified for %s! Initiating dispense...\n", orderQrId.c_str(), device_id.c_str());
-        }
+      // ----------------------------------------------------------------------
+      // VALIDATE CLOUD DISPENSE AUTHORIZATION
+      // Cloud dynamically maps uploaded QR codes & TR IDs to this machine,
+      // and issues an authenticated single-use dispense_token.
+      // ----------------------------------------------------------------------
+      if (dispenseToken.length() == 0) {
+        Serial.println("[Dispense] Missing cloud authorization token. Dispense rejected.");
+        http.end();
+        return;
       }
+
+      Serial.printf("[✓ Cloud Authorized] Dispense approved for %s (Order: %s, QR: %s, Price: Rs %.2f)!
+", 
+                    device_id.c_str(), orderId.c_str(), orderQrId.c_str(), amount);
 
       // Check Double-Dispense Guard: If orderId was already dispensed, clear cloud and skip motor
       if (orderId.length() > 0 && orderId == last_dispensed_order_id && !orderId.startsWith("BENCH")) {
@@ -1238,6 +1211,7 @@ void checkForRemoteQRConfigUpdates() {
       float newAmount    = doc["amount_rupees"].as<float>();
       String newName     = doc["product_name"].as<String>();
       String newQrString = doc.containsKey("qr_payload") ? doc["qr_payload"].as<String>() : "";
+      String newTrId     = doc.containsKey("tr_id") ? doc["tr_id"].as<String>() : "";
 
 #if FORCE_STATIC_PROGRAM_CONFIG
       // In Static Program Mode, protect local code overrides from cloud revert
@@ -1246,7 +1220,7 @@ void checkForRemoteQRConfigUpdates() {
       newAmount   = STATIC_PRICE_RUPEES;
 #endif
 
-      if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name) {
+      if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id)) {
         Serial.println("\n==================================================================");
         Serial.println(">>> 📶 REMOTE QR / PRICE UPDATE RECEIVED FROM VENDOR / CLOUD! <<<");
         Serial.printf("  New VPA    : %s\n", newVpa.c_str());
@@ -1265,12 +1239,17 @@ void checkForRemoteQRConfigUpdates() {
           custom_qr_code = newQrString;
         }
 
+        if (newTrId.length() > 0) {
+          dynamic_tr_id = newTrId;
+        }
+
         // Persist to Flash NVS
         prefs.begin("vending_cfg", false);
         prefs.putString("rzp_vpa", razorpay_upi_vpa);
         prefs.putFloat("price", pending_amount_rupee);
         prefs.putString("p_name", pending_product_name);
         prefs.putString("cust_qr", custom_qr_code);
+        prefs.putString("tr_id", dynamic_tr_id);
         prefs.putInt("cfg_ver", current_config_version);
         prefs.end();
 

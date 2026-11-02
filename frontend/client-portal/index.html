@@ -265,6 +265,11 @@
                                         <div style="margin-top: 0.5rem;">
                                             <label style="font-size: 0.7rem; color: var(--text-secondary);">Or paste UPI Link / QR Image URL:</label>
                                             <input type="text" id="clientQrImageUrl" class="input-field" placeholder="upi://pay?am=2.00... or https://example.com/qr.png" style="font-size: 0.8rem;" oninput="updateClientQrImagePreview(this.value)">
+                                            <div id="clientQrDetectedTrBadge" style="margin-top:0.4rem; padding:0.35rem 0.7rem; border-radius:6px; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.3); font-size:0.75rem; color:#818cf8; display:none; align-items:center; gap:0.4rem;">
+                                                <span>⚡ Detected Standee TR ID:</span>
+                                                <code id="clientQrDetectedTrValue" style="color:#a5b4fc; font-weight:700;"></code>
+                                                <span style="color:var(--text-muted); font-size:0.7rem;">(Auto-mapped to this machine)</span>
+                                            </div>
                                         </div>
                                     </div>
                                     <div style="width: 130px; height: 130px; border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #0f172a; overflow: hidden;">
@@ -296,6 +301,11 @@
                                     </p>
                                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                                         <input type="text" id="clientSlotQuickQrInput" class="input-field" placeholder="upi://pay?am=2.00&cu=INR&pa=... or QR URL" style="font-size: 0.85rem; flex: 1; min-width: 240px;" oninput="handleClientSlotQuickQr(this.value)">
+                                        <div id="clientSlotDetectedTrBadge" style="width:100%; margin-top:0.4rem; padding:0.35rem 0.7rem; border-radius:6px; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.3); font-size:0.75rem; color:#818cf8; display:none; align-items:center; gap:0.4rem;">
+                                            <span>⚡ Detected Standee TR ID:</span>
+                                            <code id="clientSlotDetectedTrValue" style="color:#a5b4fc; font-weight:700;"></code>
+                                            <span style="color:var(--text-muted); font-size:0.7rem;">(Auto-mapped to this machine)</span>
+                                        </div>
                                         <input type="file" id="clientSlotQuickQrFileInput" accept="image/*" style="display:none;" onchange="handleClientQRImageUpload(event)">
                                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('clientSlotQuickQrFileInput').click()" style="white-space: nowrap; padding: 0.45rem 0.8rem; font-size: 0.85rem;">📷 Upload QR</button>
                                         <button type="button" class="btn btn-primary" onclick="applyClientQuickQrToDevice()" style="white-space: nowrap; padding: 0.45rem 1rem; font-size: 0.85rem;">⚡ Sync to Machine</button>

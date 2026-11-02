@@ -289,6 +289,11 @@
                                     </p>
                                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
                                         <input type="text" id="vendingQuickQrInput" class="input-field" placeholder="upi://pay?am=1.00&cu=INR&pa=... or QR URL" style="font-size:0.85rem; flex:1; min-width:240px;" oninput="handleVendingQuickQr(this.value)">
+                                        <div id="vendingQuickQrDetectedTrBadge" style="width:100%; margin-top:0.4rem; padding:0.35rem 0.7rem; border-radius:6px; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.3); font-size:0.75rem; color:#818cf8; display:none; align-items:center; gap:0.4rem;">
+                                            <span>⚡ Standee TR ID:</span>
+                                            <code id="vendingQuickQrDetectedTrValue" style="color:#a5b4fc; font-weight:700;"></code>
+                                            <span style="color:var(--text-muted); font-size:0.7rem;">(Auto-mapped to VM-000001)</span>
+                                        </div>
                                         <input type="file" id="vendingQuickQrFileInput" accept="image/*" style="display:none;" onchange="handleVendingQRImageUpload(event)">
                                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('vendingQuickQrFileInput').click()" style="white-space:nowrap; padding:0.45rem 0.8rem; font-size:0.85rem;">📷 Upload QR</button>
                                         <button type="button" class="btn btn-info btn-sm" onclick="applyVendingStandeePreset1()" style="white-space:nowrap; padding:0.45rem 0.8rem; font-size:0.85rem; background:#0284c7; color:#fff;">📌 ₹1.00 Preset</button>
@@ -356,6 +361,11 @@
                                         <span style="font-size:0.72rem; color:var(--text-muted); font-weight:normal;">Auto-extracts price & VPA</span>
                                     </label>
                                     <input type="text" id="pageQrInput" class="input-field" placeholder="upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2" style="font-size:0.85rem; font-family:'JetBrains Mono', monospace;" oninput="handlePageQrInput(this.value)">
+                                    <div id="pageQrDetectedTrBadge" style="margin-top:0.4rem; padding:0.45rem 0.8rem; border-radius:6px; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.3); font-size:0.8rem; color:#818cf8; display:none; align-items:center; gap:0.5rem;">
+                                        <span>⚡ Detected Standee TR ID:</span>
+                                        <code id="pageQrDetectedTrValue" style="color:#a5b4fc; font-weight:700; background:rgba(0,0,0,0.2); padding:0.1rem 0.4rem; border-radius:4px;"></code>
+                                        <span style="color:var(--text-muted); font-size:0.75rem;">(Auto-mapped to this machine)</span>
+                                    </div>
                                 </div>
 
                                 <div style="display: grid; grid-template-columns: 140px 1fr; gap: 1rem; margin-bottom: 1.25rem;">

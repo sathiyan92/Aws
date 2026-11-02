@@ -449,21 +449,24 @@ def _handle_payment_captured(
             (Device.device_id == str(device_id_note).strip()) | (Device.mac_address.ilike(str(device_id_note).strip()))
         ).first()
 
-    # Search DeviceConfig or DeviceModule for QR code string/payload containing qr_id
+    # Search DeviceConfig or DeviceModule for QR code string/payload containing qr_id or clean TR ID
     if not device and qr_id:
         from src.db.models.config import DeviceConfig
         from src.db.models.device import DeviceModule
+        clean_target = str(qr_id).removeprefix("qr_").removesuffix("qrv2").removesuffix("v2").strip()
         all_cfgs = db.query(DeviceConfig).all()
         for cfg in all_cfgs:
             cfg_str = str(cfg.config_payload or "")
-            if str(qr_id) in cfg_str:
+            settings_dict = (cfg.config_payload or {}).get("settings", {})
+            active_tr = settings_dict.get("active_tr_id", "")
+            if (str(qr_id) in cfg_str) or (clean_target and clean_target in cfg_str) or (active_tr and clean_target == active_tr):
                 device = cfg.device
                 break
         if not device:
             all_mods = db.query(DeviceModule).filter_by(module_code="QR_PAYMENT").all()
             for mod in all_mods:
                 mod_str = str(mod.configuration or "")
-                if str(qr_id) in mod_str:
+                if (str(qr_id) in mod_str) or (clean_target and clean_target in mod_str):
                     device = mod.device
                     break
 

@@ -1,3 +1,21 @@
+
+function extractTrIdFromPayload(payload) {
+    if (!payload || typeof payload !== "string") return "";
+    const clean = payload.trim();
+    if (clean.includes("tr=")) {
+        try {
+            const dummy = new URL(clean.replace("upi://pay", "http://dummy.pay"));
+            const tr = dummy.searchParams.get("tr");
+            if (tr) return tr.trim();
+        } catch (e) {
+            const match = clean.match(/[?&]tr=([^&]+)/i);
+            if (match) return match[1].trim();
+        }
+    }
+    const match = clean.match(/(qr_[a-zA-Z0-9]+)/i);
+    if (match) return match[1].trim();
+    return "";
+}
 /**
  * Manufacturer Operations Portal - Reactive Single Page Application
  * Multi-Tenant Cloud IoT Platform for Vending and RFID Systems
@@ -1836,6 +1854,16 @@ async function loadPageQrDeviceConfig(deviceId) {
 
 function handlePageQrInput(val) {
     const clean = val.trim();
+    const detectedTr = extractTrIdFromPayload(clean);
+    const trBadge = document.getElementById("pageQrDetectedTrBadge");
+    const trValSpan = document.getElementById("pageQrDetectedTrValue");
+    if (detectedTr && trBadge && trValSpan) {
+        trValSpan.textContent = detectedTr;
+        trBadge.style.display = "flex";
+    } else if (trBadge) {
+        trBadge.style.display = "none";
+    }
+
     if (clean.startsWith("upi://pay")) {
         try {
             const dummy = new URL(clean.replace("upi://pay", "http://dummy.pay"));
@@ -1956,11 +1984,13 @@ async function applyPageQrSync() {
     const priceVal = priceInput ? parseFloat(priceInput.value) : 1.0;
     const prodName = nameInput ? nameInput.value.trim() : "Commercial Vending Item";
 
+    const detectedTr = extractTrIdFromPayload(clean);
     try {
         const res = await apiFetch(`/api/v1/orders/qr-config/${targetDevId}`, {
             method: "PUT",
             body: JSON.stringify({
                 custom_qr_payload: clean,
+                tr_id: detectedTr || undefined,
                 product_name: prodName,
                 amount_rupees: priceVal
             })
@@ -1982,6 +2012,15 @@ async function applyPageQrSync() {
 // Quick Vending Tab Banner handlers
 function handleVendingQuickQr(val) {
     const clean = val.trim();
+    const detectedTr = extractTrIdFromPayload(clean);
+    const trBadge = document.getElementById("vendingQuickQrDetectedTrBadge");
+    const trValSpan = document.getElementById("vendingQuickQrDetectedTrValue");
+    if (detectedTr && trBadge && trValSpan) {
+        trValSpan.textContent = detectedTr;
+        trBadge.style.display = "flex";
+    } else if (trBadge) {
+        trBadge.style.display = "none";
+    }
     updateVendingQuickQrPreview(clean);
 }
 
@@ -2065,11 +2104,13 @@ async function applyVendingQuickQrToDevice() {
         } catch (e) {}
     }
 
+    const detectedTr = extractTrIdFromPayload(clean);
     try {
         const res = await apiFetch(`/api/v1/orders/qr-config/VM-000001`, {
             method: "PUT",
             body: JSON.stringify({
                 custom_qr_payload: clean,
+                tr_id: detectedTr || undefined,
                 amount_rupees: amVal
             })
         });

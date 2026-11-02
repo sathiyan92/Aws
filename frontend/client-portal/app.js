@@ -1,3 +1,21 @@
+
+function extractTrIdFromPayload(payload) {
+    if (!payload || typeof payload !== "string") return "";
+    const clean = payload.trim();
+    if (clean.includes("tr=")) {
+        try {
+            const dummy = new URL(clean.replace("upi://pay", "http://dummy.pay"));
+            const tr = dummy.searchParams.get("tr");
+            if (tr) return tr.trim();
+        } catch (e) {
+            const match = clean.match(/[?&]tr=([^&]+)/i);
+            if (match) return match[1].trim();
+        }
+    }
+    const match = clean.match(/(qr_[a-zA-Z0-9]+)/i);
+    if (match) return match[1].trim();
+    return "";
+}
 /**
  * Apex Client Tenant Portal - Frontend Application
  * Dynamic Feature Visibility & Server-Side Security Verification
@@ -720,6 +738,16 @@ function updateClientSlotQuickQrPreview(url) {
 
 function handleClientSlotQuickQr(val) {
     const clean = val.trim();
+    const detectedTr = extractTrIdFromPayload(clean);
+    const trBadge = document.getElementById("clientSlotDetectedTrBadge");
+    const trValSpan = document.getElementById("clientSlotDetectedTrValue");
+    if (detectedTr && trBadge && trValSpan) {
+        trValSpan.textContent = detectedTr;
+        trBadge.style.display = "flex";
+    } else if (trBadge) {
+        trBadge.style.display = "none";
+    }
+
     if (clean.startsWith('upi://pay')) {
         try {
             const dummyUrl = new URL(clean.replace('upi://pay', 'http://dummy.pay'));
@@ -756,12 +784,14 @@ async function applyClientQuickQrToDevice() {
     const prodName = s1Name ? s1Name.value.trim() : undefined;
     const priceVal = s1Price ? parseFloat(s1Price.value) : undefined;
 
+    const detectedTr = extractTrIdFromPayload(clean);
     try {
         const res = await fetchWithAuth(`${API_BASE}/orders/qr-config/${state.selectedDeviceId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 custom_qr_payload: clean,
+                tr_id: detectedTr || undefined,
                 product_name: prodName,
                 amount_rupees: priceVal
             })
@@ -916,11 +946,13 @@ function handleClientQRImageUpload(event) {
                 try {
                     const s1Name = document.getElementById('cslot-name-1');
                     const s1Price = document.getElementById('cslot-price-1');
+                    const detectedTr = extractTrIdFromPayload(cleanPayload);
                     await fetchWithAuth(`/api/v1/orders/qr-config/${state.selectedDeviceId}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             custom_qr_payload: cleanPayload,
+                            tr_id: detectedTr || undefined,
                             product_name: s1Name ? s1Name.value.trim() : undefined,
                             amount_rupees: s1Price ? parseFloat(s1Price.value) : undefined
                         })
@@ -1673,12 +1705,14 @@ async function applyFleetQuickQrToDevice() {
         } catch (e) {}
     }
 
+    const detectedTr = extractTrIdFromPayload(clean);
     try {
         const res = await fetchWithAuth(`${API_BASE}/orders/qr-config/${targetDevId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 custom_qr_payload: clean,
+                tr_id: detectedTr || undefined,
                 amount_rupees: amVal
             })
         });
