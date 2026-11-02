@@ -145,8 +145,8 @@ Preferences prefs;
 // ==============================================================================
 #define FORCE_STATIC_PROGRAM_CONFIG   true  // Set true to use values below, false for web portal control
 
-const char* STATIC_QR_CODE      = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
-const char* STATIC_TR_ID        = "qr_TuXKipEEX2KteF"; // Machine's unique Razorpay QR ID
+const char* STATIC_QR_CODE      = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+const char* STATIC_TR_ID        = "TuXKipEEX2KteFqrv2"; // Machine's unique Razorpay QR ID
 const char* STATIC_PRODUCT_NAME = "G-TECH Test";
 const float STATIC_PRICE_RUPEES = 2.00;
 
@@ -180,7 +180,7 @@ String pending_order_number = "";
 int    pending_slot_number  = 1;
 float  pending_amount_rupee = 2.00;
 String pending_product_name = "G-TECH Test";
-String custom_qr_code       = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
+String custom_qr_code       = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
 
 // Polling intervals
 unsigned long last_poll_time = 0;
@@ -1072,7 +1072,7 @@ void pollPendingDispense() {
         String myTr = String(STATIC_TR_ID);
         String myQr = String(STATIC_QR_CODE);
         bool isMatch = false;
-        if (myTr.length() > 0 && (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId) || orderQrId.indexOf(myTr) >= 0 || myTr.indexOf(orderQrId) >= 0)) {
+        if (myTr.length() > 0 && (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId) || orderQrId.indexOf(myTr) >= 0 || myTr.indexOf(orderQrId) >= 0 || orderQrId.indexOf("TuXKipEEX2KteF") >= 0 || myTr.indexOf("TuXKipEEX2KteF") >= 0)) {
           isMatch = true;
         } else if (myQr.indexOf(orderQrId) >= 0) {
           isMatch = true;

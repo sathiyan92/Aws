@@ -183,9 +183,9 @@ def _ensure_fleet_defaults(engine) -> None:
                 slot.override_price = 200
                 db.flush()
 
-        # 5. Ensure RazorpayQRCode for official QR ID qr_TuXKipEEX2KteF
-        raw_qr = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF"
-        qr_keys = ["qr_TuXKipEEX2KteF", "TuXKipEEX2KteF"]
+        # 5. Ensure RazorpayQRCode for both official QR ID qr_TuXKipEEX2KteF and standee tr TuXKipEEX2KteFqrv2
+        raw_qr = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2"
+        qr_keys = ["qr_TuXKipEEX2KteF", "TuXKipEEX2KteF", "TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2"]
         for q_key in qr_keys:
             existing_qr = db.query(RazorpayQRCode).filter_by(razorpay_qr_id=q_key).first()
             if not existing_qr:
@@ -201,7 +201,7 @@ def _ensure_fleet_defaults(engine) -> None:
                     currency="INR",
                     qr_payload=raw_qr,
                     status="active",
-                    notes={"device_id": device.device_id, "tr": "qr_TuXKipEEX2KteF"},
+                    notes={"device_id": device.device_id, "tr": q_key},
                 )
                 db.add(qr_rec)
             else:
@@ -212,7 +212,7 @@ def _ensure_fleet_defaults(engine) -> None:
                 existing_qr.status = "active"
 
         # 6. Purge rogue auto-linked QR mappings so other QRs never vend VM-000001
-        rogue_keys = ["qr_TuZRXzwHRZaG7y", "TuZRXzwHRZaG7y", "TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2"]
+        rogue_keys = ["qr_TuZRXzwHRZaG7y", "TuZRXzwHRZaG7y"]
         all_existing = db.query(RazorpayQRCode).all()
         for eq in all_existing:
             if eq.razorpay_qr_id in rogue_keys:
