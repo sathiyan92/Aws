@@ -313,9 +313,9 @@ def clean_fleet_qr_mappings(
     all_qrs = db.query(RazorpayQRCode).all()
     deleted = []
     for q in all_qrs:
-        is_vm1_official = q.razorpay_qr_id in ("qr_TuXKipEEX2KteF", "TuXKipEEX2KteF")
+        is_vm1_official = q.razorpay_qr_id in ("qr_TuXKipEEX2KteF", "TuXKipEEX2KteF", "TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2")
         is_auto_linked = isinstance(q.notes, dict) and q.notes.get("auto_linked")
-        is_unknown_alias = q.razorpay_qr_id in ("qr_TuZRXzwHRZaG7y", "TuZRXzwHRZaG7y", "TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2")
+        is_unknown_alias = q.razorpay_qr_id in ("qr_TuZRXzwHRZaG7y", "TuZRXzwHRZaG7y")
         if (is_auto_linked or is_unknown_alias) and not (keep_vm1_default and is_vm1_official):
             deleted.append(q.razorpay_qr_id)
             db.delete(q)
@@ -434,4 +434,74 @@ def reprocess_failed_webhooks(
         "reprocessed_count": len(results),
         "details": results,
     }
+
+
+@router.post("/test-dispense/{device_id}", tags=["Diagnostics & Testing"])
+def trigger_test_dispense(
+    device_id: str,
+    slot_number: int = Query(1, ge=1, le=10),
+    amount_rupees: float = Query(2.0, ge=0.0),
+    db: Session = Depends(get_db),
+):
+    """
+    [Diagnostic & Manual Dispense Endpoint]
+    Creates an authorized dispense order in the database for the given device.
+    The next time the ESP32 polls (within 2 seconds), it will immediately dispense!
+    """
+    import datetime
+    from src.db.models.device import Device
+    from src.db.models.vending import Order, MachineSlot
+    from src.db.base import utc_now, generate_uuid
+
+    device = db.query(Device).filter(
+        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
+    ).first()
+    if not device:
+        raise NotFoundException("Device", device_id)
+
+    slot = db.query(MachineSlot).filter_by(device_id=device.id, slot_number=slot_number).first()
+
+    order = Order(
+        id=generate_uuid(),
+        order_number=f"TEST-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        client_id=device.client_id,
+        device_id=device.id,
+        slot_id=slot.id if slot else None,
+        product_id=slot.product_id if slot else None,
+        total_amount=int(amount_rupees * 100),
+        currency="INR",
+        order_status="DISPENSE_AUTHORIZED",
+        paid_at=utc_now(),
+        dispense_token=f"auth_test_{generate_uuid()[:8]}",
+        dispense_token_expires_at=utc_now() + datetime.timedelta(hours=1),
+        razorpay_qr_id="TuXKipEEX2KteFqrv2",
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    try:
+        from src.services.websocket_manager import ws_manager
+        ws_manager.push_vend_command_sync(device.device_id, {
+            "event": "DISPENSE",
+            "device_id": device.device_id,
+            "slot_number": slot_number,
+            "amount_rupees": amount_rupees,
+            "product_name": slot.product.name if (slot and slot.product) else "G-TECH Test",
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "dispense_token": order.dispense_token,
+            "qr_id": order.razorpay_qr_id,
+        })
+    except Exception:
+        pass
+
+    return {
+        "status": "DISPENSE_AUTHORIZED",
+        "message": f"Test dispense created for {device.device_id} Slot {slot_number}. Motor will run on next ESP32 poll!",
+        "order_id": order.id,
+        "order_number": order.order_number,
+        "dispense_token": order.dispense_token,
+    }
+
 
