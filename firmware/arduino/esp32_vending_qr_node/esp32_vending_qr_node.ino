@@ -1150,9 +1150,7 @@ void pollPendingDispense() {
         return;
       }
 
-      Serial.printf("[✓ Cloud Authorized] Dispense approved for %s (Order: %s, QR: %s, Price: Rs %.2f)!
-", 
-                    device_id.c_str(), orderId.c_str(), orderQrId.c_str(), amount);
+      Serial.printf("[✓ Cloud Authorized] Dispense approved for %s (Order: %s, QR: %s, Price: Rs %.2f)!\n", device_id.c_str(), orderId.c_str(), orderQrId.c_str(), amount);
 
       // Check Double-Dispense Guard: If orderId was already dispensed, clear cloud and skip motor
       if (orderId.length() > 0 && orderId == last_dispensed_order_id && !orderId.startsWith("BENCH")) {
