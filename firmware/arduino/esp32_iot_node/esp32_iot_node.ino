@@ -206,6 +206,9 @@ bool in_ap_setup_mode = false;
 
 // Forward Declarations
 void uiDrawStandbyQRScreen();
+void uiDrawWiFiConnectingScreen(const String& ssid);
+void uiDrawWiFiConnectedScreen(const String& ssid, const String& ip);
+void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress);
 void uiDrawVendingScreen(int slotNumber, float amount, String productName);
 void uiDrawCompleteScreen();
 void setMotor(int slotNumber, bool turnOn);
@@ -323,7 +326,7 @@ void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
   return;
 #endif
 
-  if (text == NULL || strlen(text) == 0) {
+  if (text == NULL || strlen(text) == 0 || strcmp(text, STATIC_QR_CODE) == 0) {
     drawStandeeBitmapQR(startX, startY, maxBoxSize);
     return;
   }
@@ -720,6 +723,51 @@ void uiDrawWiFiConnectingScreen(const String& ssid) {
   TFT_display.print("Note: Hotspot setup portal will auto-launch if connection fails.");
 }
 
+void uiDrawWiFiConnectedScreen(const String& ssid, const String& ip) {
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Header Bar
+  TFT_display.fillRect(0, 0, 480, 45, COLOR_HEADER);
+  TFT_display.drawFastHLine(0, 45, 480, COLOR_GREEN);
+
+  TFT_display.setCursor(15, 14);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("WI-FI CONNECTED SUCCESSFULLY!");
+
+  // Success Card Box
+  TFT_display.fillRect(20, 65, 440, 235, COLOR_CARD);
+  TFT_display.drawRect(20, 65, 440, 235, COLOR_GREEN);
+
+  // Big Prominent Green Check Banner
+  TFT_display.fillRect(35, 80, 410, 50, COLOR_GREEN);
+  TFT_display.setCursor(55, 95);
+  TFT_display.setTextColor(COLOR_BLACK);
+  TFT_display.setTextSize(3);
+  TFT_display.print("NETWORK ONLINE");
+
+  // Details
+  TFT_display.setCursor(45, 148);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("Connected to: %s", ssid.c_str());
+
+  TFT_display.setCursor(45, 185);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("Assigned IP : %s", ip.c_str());
+
+  TFT_display.setCursor(45, 222);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(2);
+  TFT_display.print("Status      : Ready to Vend");
+
+  TFT_display.setCursor(45, 265);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Loading Vending Machine Standby QR Screen...");
+}
+
 void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress) {
   TFT_display.fillScreen(COLOR_BG);
 
@@ -946,12 +994,9 @@ void connectToWiFi() {
     Serial.printf("    Assigned IP : %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("    Signal RSSI : %d dBm\n", WiFi.RSSI());
 
-    TFT_display.fillRect(40, 165, 400, 35, COLOR_CARD);
-    TFT_display.setCursor(40, 165);
-    TFT_display.setTextColor(COLOR_GREEN);
-    TFT_display.setTextSize(2);
-    TFT_display.print("WI-FI CONNECTED!");
-    delay(1000);
+    // Full on-screen success screen for 2 seconds as requested by user
+    uiDrawWiFiConnectedScreen(wifi_ssid, WiFi.localIP().toString());
+    delay(2000);
   } else {
     wl_status_t st = WiFi.status();
     Serial.printf("\n[!] Wi-Fi connection timed out (status code: %d).\n", (int)st);
@@ -1123,8 +1168,8 @@ void checkForRemoteQRConfigUpdates() {
   HTTPClient http;
   String endpoint = server_base_url + "/api/v1/orders/qr-config/" + device_id;
 
-  http.setConnectTimeout(4000);
-  http.setTimeout(4000);
+  http.setConnectTimeout(2500);
+  http.setTimeout(2500);
   http.begin(client, endpoint);
 
   int httpCode = http.GET();
@@ -1201,8 +1246,8 @@ bool authenticateWithCloud() {
 
   Serial.printf("\n[Cloud] Authenticating Machine '%s' (MAC: %s, Chip: %s) with Server: %s...\n",
                 device_id.c_str(), realMac.c_str(), chipId.c_str(), endpoint.c_str());
-  http.setConnectTimeout(8000);
-  http.setTimeout(8000);
+  http.setConnectTimeout(2500);
+  http.setTimeout(2500);
   http.begin(client, endpoint);
   http.addHeader("Content-Type", "application/json");
 
@@ -1538,19 +1583,18 @@ void setup() {
   // 3. Load Flash NVS Config
   loadPersistentConfig();
 
-  // 4. Connect to Wi-Fi
+  // 4. Connect to Wi-Fi (Shows "Wi-Fi Connected Successfully!" for 2 seconds)
   connectToWiFi();
 
-  // 5. Authenticate with Cloud Gateway & Bind Hardware MAC Address
+  // 5. Render Standby QR Screen IMMEDIATELY so QR code and product are visible with zero delay!
+  uiDrawStandbyQRScreen();
+  printHelpMenu();
+
+  // 6. Fast non-blocking cloud handshake (occurs in background after QR is already displayed)
   if (WiFi.status() == WL_CONNECTED) {
     authenticateWithCloud();
     sendHeartbeat();
-    checkForRemoteQRConfigUpdates();
   }
-
-  // 6. Render Standby QR Screen
-  uiDrawStandbyQRScreen();
-  printHelpMenu();
 
   Serial.println("[✓] Zero-Touch Vending Ready! Customer can scan QR anytime.");
 }
