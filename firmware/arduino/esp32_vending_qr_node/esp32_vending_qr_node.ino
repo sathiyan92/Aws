@@ -181,6 +181,7 @@ int    pending_slot_number  = 1;
 float  pending_amount_rupee = 2.00;
 String pending_product_name = "G-TECH Test";
 String custom_qr_code       = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+String last_dispensed_order_id = ""; // Flash-persisted order ID to prevent duplicate vends across resets
 
 // Polling intervals
 unsigned long last_poll_time = 0;
@@ -645,6 +646,7 @@ void loadPersistentConfig() {
   pending_product_name = prefs.getString("p_name", pending_product_name);
   current_config_version = prefs.getInt("cfg_ver", current_config_version);
 #endif
+  last_dispensed_order_id = prefs.getString("last_order", "");
   prefs.end();
 
   Serial.println("\n==================================================================");
@@ -656,6 +658,7 @@ void loadPersistentConfig() {
   Serial.printf("  Item Price (Rupees)  : Rs %.2f\n", pending_amount_rupee);
   Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.length() > 0 ? wifi_ssid.c_str() : "(Not Configured)");
   Serial.printf("  Cloud Server Base URL: %s\n", server_base_url.c_str());
+  Serial.printf("  Last Dispensed Order : %s (Duplicate Guard Active)\n", last_dispensed_order_id.length() > 0 ? last_dispensed_order_id.c_str() : "(None)");
   Serial.println("==================================================================\n");
 }
 
@@ -1005,6 +1008,24 @@ void connectToWiFi() {
 // 10. REAL-TIME DISPENSE MOTOR EXECUTION ("PLEASE COLLECT MATERIAL")
 // ==============================================================================
 void dispenseProduct(int slotNumber, float amount, String orderId, String dispenseToken, String productName) {
+  // Idempotency Guard: Never dispense the same orderId twice across resets or network retries!
+  if (orderId.length() > 0 && orderId == last_dispensed_order_id && !orderId.startsWith("BENCH")) {
+    Serial.printf("\n[!] DOUBLE-DISPENSE BLOCKED: Order '%s' was ALREADY dispensed!\n", orderId.c_str());
+    Serial.println("    Acknowledging cloud to clear queue without running motor again...");
+    if (WiFi.status() == WL_CONNECTED) {
+      confirmDispenseToCloud(orderId, dispenseToken);
+    }
+    return;
+  }
+
+  // Persist orderId in RAM and Flash NVS immediately before turning on motor
+  last_dispensed_order_id = orderId;
+  if (orderId.length() > 0 && !orderId.startsWith("BENCH")) {
+    prefs.begin("vending_cfg", false);
+    prefs.putString("last_order", orderId);
+    prefs.end();
+  }
+
   current_state = STATE_DISPENSING;
   String targetProduct = (productName.length() > 0) ? productName : pending_product_name;
 
@@ -1125,6 +1146,14 @@ void pollPendingDispense() {
           http.end();
           return;
         }
+      }
+
+      // Check Double-Dispense Guard: If orderId was already dispensed, clear cloud and skip motor
+      if (orderId.length() > 0 && orderId == last_dispensed_order_id && !orderId.startsWith("BENCH")) {
+        Serial.printf("\n[Poll] Double-vend guard: Order '%s' was already dispensed! Re-acknowledging cloud...\n", orderId.c_str());
+        http.end();
+        confirmDispenseToCloud(orderId, dispenseToken);
+        return;
       }
 
       http.end();
