@@ -49,9 +49,9 @@ String getDeviceMacAddress() {
 // OPTIONAL: Quick Manual Hardcoded Defaults for Bench Testing
 // (Leave empty to configure via Captive Portal or Serial CLI)
 // ------------------------------------------------------------------------------
-const char* DEFAULT_WIFI_SSID = "";        // e.g. "MyOfficeWiFi"
-const char* DEFAULT_WIFI_PASS = "";        // e.g. "SecretPassword123"
-const char* DEFAULT_DEVICE_ID = "VM-000002";
+const char* DEFAULT_WIFI_SSID = "Airtel_Sathiyan-Tamil";        // e.g. "MyOfficeWiFi"
+const char* DEFAULT_WIFI_PASS = "Sraja@92@";        // e.g. "SecretPassword123"
+const char* DEFAULT_DEVICE_ID = "VM-000001";
 const char* DEFAULT_SERVER_URL = "http://35.154.219.82:8000";
 
 const int PIN_STATUS_LED = 2; // Built-in LED on GPIO 2
