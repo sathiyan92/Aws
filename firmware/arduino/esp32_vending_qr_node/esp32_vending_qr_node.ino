@@ -57,8 +57,6 @@
 #include <ArduinoJson.h>
 #include <DIYables_TFT_SPI.h>
 #include "qrcode.h"
-#include <ArduinoWebsockets.h>
-using namespace websockets;
 
 // ------------------------------------------------------------------------------
 // HARDWARE MAC & SILICON CHIP ID UTILITY
@@ -1001,93 +999,6 @@ void pollPendingDispense() {
 // ==============================================================================
 // 12. REMOTE QR & PRICE CONFIGURATION SYNC (VENDOR / MANUFACTURER REAL-TIME UPDATE)
 // ==============================================================================
-// ==============================================================================
-// 11B. WEBSOCKET REAL-TIME PUSH CLIENT (OPTION A: ZERO-POLLING VENDING)
-// ==============================================================================
-WebsocketsClient wsClient;
-bool wsConnected = false;
-unsigned long lastWsHeartbeat = 0;
-unsigned long lastWsReconnectAttempt = 0;
-
-void onWebSocketMessage(WebsocketsMessage message) {
-  Serial.printf("\n[WebSocket ⚡ PUSH EVENT RECEIVED] %s\n", message.data().c_str());
-  StaticJsonDocument<512> doc;
-  DeserializationError err = deserializeJson(doc, message.data());
-  if (!err) {
-    String event = doc["event"].as<String>();
-    if (event == "DISPENSE") {
-      int slot = doc.containsKey("slot_number") ? doc["slot_number"].as<int>() : 1;
-      float amount = doc.containsKey("amount_rupees") ? doc["amount_rupees"].as<float>() : 2.00;
-      String orderId = doc.containsKey("order_id") ? doc["order_id"].as<String>() : ("ORD-" + String(millis()));
-      String token = doc.containsKey("dispense_token") ? doc["dispense_token"].as<String>() : "";
-      String prodName = doc.containsKey("product_name") ? doc["product_name"].as<String>() : pending_product_name;
-      String orderQrId = doc.containsKey("qr_id") ? doc["qr_id"].as<String>() : "";
-
-      // Strict QR verification to maintain fleet isolation
-      if (orderQrId.length() > 0) {
-        String myTr = String(STATIC_TR_ID);
-        String myQr = String(STATIC_QR_CODE);
-        bool isMatch = false;
-        if (myTr.length() > 0 && (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId) || orderQrId.indexOf(myTr) >= 0 || myTr.indexOf(orderQrId) >= 0)) {
-          isMatch = true;
-        } else if (myQr.indexOf(orderQrId) >= 0) {
-          isMatch = true;
-        }
-        if (!isMatch) {
-          Serial.printf("[SECURITY BLOCKED] Cross-machine payment attempt: '%s' != '%s'\n", orderQrId.c_str(), myTr.c_str());
-          return;
-        }
-      }
-
-      Serial.println("\n******************************************************************");
-      Serial.println(">>> 🚀 [WEBSOCKET PUSH] INSTANT VEND TRIGGERED! ZERO POLLING DELAY!");
-      Serial.printf("    Amount: Rs %.2f | Slot: %d | Order: %s\n", amount, slot, orderId.c_str());
-      Serial.println("******************************************************************\n");
-      dispenseProduct(slot, amount, orderId, token, prodName);
-    }
-  }
-}
-
-void onWebSocketEvent(WebsocketsEvent event, String data) {
-  if (event == WebsocketsEvent::ConnectionOpened) {
-    Serial.println("\n******************************************************************");
-    Serial.println(">>> ⚡ WEBSOCKET CONNECTED TO CLOUD (OPTION A: ZERO POLLING) <<<");
-    Serial.println("    Machine is listening for real-time payment webhooks!");
-    Serial.println("******************************************************************\n");
-    wsConnected = true;
-    wsClient.send("ping");
-  } else if (event == WebsocketsEvent::ConnectionClosed) {
-    Serial.println("[WebSocket 🔌] Connection closed. Will auto-reconnect...");
-    wsConnected = false;
-  }
-}
-
-void connectToWebSocket() {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  String wsUrl = server_base_url + "/ws/vending/" + device_id;
-  wsUrl.replace("http://", "ws://");
-  wsUrl.replace("https://", "wss://");
-
-  Serial.printf("[WebSocket] Connecting to live push channel: %s...\n", wsUrl.c_str());
-  wsClient.onMessage(onWebSocketMessage);
-  wsClient.onEvent(onWebSocketEvent);
-  wsClient.connect(wsUrl);
-}
-
-void serviceWebSocket() {
-  if (wsConnected) {
-    wsClient.poll();
-    if (millis() - lastWsHeartbeat > 25000) {
-      lastWsHeartbeat = millis();
-      wsClient.send("ping");
-    }
-  } else if (WiFi.status() == WL_CONNECTED && millis() - lastWsReconnectAttempt > 10000) {
-    lastWsReconnectAttempt = millis();
-    connectToWebSocket();
-  }
-}
-
 void checkForRemoteQRConfigUpdates() {
   if (WiFi.status() != WL_CONNECTED || current_state != STATE_STANDBY_QR) return;
 
@@ -1518,7 +1429,6 @@ void setup() {
     authenticateWithCloud();
     sendHeartbeat();
     checkForRemoteQRConfigUpdates();
-    connectToWebSocket(); // Option A: Open live push channel
   }
 
   // 6. Render Standby QR Screen
@@ -1592,14 +1502,10 @@ void loop() {
 
   // 5. Operations in Standby QR State
   if (current_state == STATE_STANDBY_QR) {
-    // 5a. Option A: Real-Time Event-Driven WebSocket Push (Zero-Polling)
-    serviceWebSocket();
-    if (!wsConnected) {
-      // Fallback slow poll only if WebSocket is disconnected
-      if (millis() - last_poll_time >= 8000) {
-        last_poll_time = millis();
-        pollPendingDispense();
-      }
+    // 5a. Real-time polling for incoming Razorpay payment
+    if (millis() - last_poll_time >= POLL_INTERVAL_MS) {
+      last_poll_time = millis();
+      pollPendingDispense();
     }
 
     // 5b. Periodic check for pending Over-The-Air (OTA) updates
