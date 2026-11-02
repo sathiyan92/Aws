@@ -404,7 +404,7 @@ function onDeviceSelectionChanged() {
     elements.deviceTypeBadge.textContent = currentDevice.product_type;
 
     // 1. DYNAMIC TOGGLING OF QR MODULE
-    if (currentDevice.has_qr_payment) {
+    if (currentDevice.has_qr_payment || currentDevice.product_type === 'VENDING_MACHINE') {
         elements.navQR.classList.remove('dynamic-hidden');
     } else {
         elements.navQR.classList.add('dynamic-hidden');
@@ -428,7 +428,7 @@ function onDeviceSelectionChanged() {
     updateCapabilityBanner(currentDevice);
 
     // 4. GUARD ACTIVE TAB: If the active tab was just hidden, redirect gracefully to tab-fleet
-    if (state.currentTab === 'tab-qr' && !currentDevice.has_qr_payment) {
+    if (state.currentTab === 'tab-qr' && !currentDevice.has_qr_payment && currentDevice.product_type !== 'VENDING_MACHINE') {
         switchTab('tab-fleet');
         showToast(`QR module is not enabled for ${currentDevice.device_id}. Switched to Overview.`, 'warning');
     } else if (state.currentTab === 'tab-coin' && !currentDevice.has_coin_payment) {
@@ -1023,17 +1023,40 @@ async function simulateClientTestPaymentPaid() {
     }
 }
 
-function applyClientStandeePreset() {
-    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=qr_TuXKipEEX2KteF";
+function applyClientStandeePreset1() {
+    const standeePayload = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2";
     const qrUrlInput = document.getElementById('clientQrImageUrl');
+    const quickInput = document.getElementById('clientSlotQuickQrInput');
     if (qrUrlInput) qrUrlInput.value = standeePayload;
+    if (quickInput) quickInput.value = standeePayload;
+    if (elements.qrVpa) elements.qrVpa.value = "gtech282722.rzp@rxairtel";
+    if (elements.qrMerchantName) elements.qrMerchantName.value = "GTECH";
+    const slot1Price = document.getElementById('cslot-price-1');
+    if (slot1Price) slot1Price.value = "1.00";
+
+    updateClientQrImagePreview(standeePayload);
+    updateClientSlotQuickQrPreview(standeePayload);
+    showToast("📌 ₹1.00 GTECH Standee QR preset loaded! Click 'Save QR Settings' or '⚡ Sync to Machine' to activate.");
+}
+
+function applyClientStandeePreset2() {
+    const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const qrUrlInput = document.getElementById('clientQrImageUrl');
+    const quickInput = document.getElementById('clientSlotQuickQrInput');
+    if (qrUrlInput) qrUrlInput.value = standeePayload;
+    if (quickInput) quickInput.value = standeePayload;
     if (elements.qrVpa) elements.qrVpa.value = "gtech282722.rzp@rxairtel";
     if (elements.qrMerchantName) elements.qrMerchantName.value = "GTECH";
     const slot1Price = document.getElementById('cslot-price-1');
     if (slot1Price) slot1Price.value = "2.00";
 
-    updateClientQrPreview(standeePayload);
-    showToast("📌 GTECH Standee QR preset loaded! Click 'Save QR Settings' to activate.");
+    updateClientQrImagePreview(standeePayload);
+    updateClientSlotQuickQrPreview(standeePayload);
+    showToast("📌 ₹2.00 GTECH Standee QR preset loaded! Click 'Save QR Settings' or '⚡ Sync to Machine' to activate.");
+}
+
+function applyClientStandeePreset() {
+    applyClientStandeePreset1();
 }
 
 async function handleSaveQRSettings(e) {
@@ -1542,3 +1565,117 @@ function togglePasswordVisibility(inputId, btn) {
 
 // Start application
 document.addEventListener('DOMContentLoaded', init);
+
+
+// ==============================================================================
+// QUICK FLEET OVERVIEW TAB QR BANNER
+// ==============================================================================
+
+function handleFleetSlotQuickQr(val) {
+    const clean = val.trim();
+    updateFleetSlotQuickQrPreview(clean);
+}
+
+function updateFleetSlotQuickQrPreview(clean) {
+    const img = document.getElementById("fleetSlotQuickQrPreview");
+    const ph = document.getElementById("fleetSlotQuickQrPlaceholder");
+    if (!img || !ph) return;
+
+    if (clean && clean.length > 0) {
+        const isImage = clean.startsWith("data:image/") || /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(clean);
+        if (isImage) {
+            img.src = clean;
+        } else {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(clean)}`;
+        }
+        img.style.display = "block";
+        ph.style.display = "none";
+    } else {
+        img.src = "";
+        img.style.display = "none";
+        ph.style.display = "block";
+    }
+}
+
+function applyFleetStandeePreset1() {
+    const standee1 = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2";
+    const input = document.getElementById("fleetSlotQuickQrInput");
+    if (input) input.value = standee1;
+    updateFleetSlotQuickQrPreview(standee1);
+    showToast("📌 ₹1.00 Standee QR loaded! Click '⚡ Sync to Machine' to push.", "info");
+}
+
+function applyFleetStandeePreset2() {
+    const standee2 = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const input = document.getElementById("fleetSlotQuickQrInput");
+    if (input) input.value = standee2;
+    updateFleetSlotQuickQrPreview(standee2);
+    showToast("📌 ₹2.00 Standee QR loaded! Click '⚡ Sync to Machine' to push.", "info");
+}
+
+function handleFleetQRImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result;
+        updateFleetSlotQuickQrPreview(base64Data);
+        decodeClientQRFromDataURL(base64Data, function(decoded) {
+            let clean = decoded;
+            if (!clean && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
+                clean = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+            }
+            if (clean) {
+                const input = document.getElementById("fleetSlotQuickQrInput");
+                if (input) input.value = clean;
+                updateFleetSlotQuickQrPreview(clean);
+                showToast("✓ QR Decoded from image! Click '⚡ Sync to Machine' to push.", "success");
+            } else {
+                showToast("Could not decode QR from image. Paste UPI link directly.", "warning");
+            }
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+async function applyFleetQuickQrToDevice() {
+    const targetDevId = state.selectedDeviceId || "VM-000001";
+    const input = document.getElementById("fleetSlotQuickQrInput");
+    const clean = input ? input.value.trim() : "";
+    if (!clean) {
+        showToast("Please enter a valid UPI link or QR code.", "warning");
+        return;
+    }
+
+    let amVal = undefined;
+    if (clean.startsWith("upi://pay")) {
+        try {
+            const dummy = new URL(clean.replace("upi://pay", "http://dummy.pay"));
+            const am = dummy.searchParams.get("am");
+            if (am) amVal = parseFloat(am);
+        } catch (e) {}
+    }
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/orders/qr-config/${targetDevId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                custom_qr_payload: clean,
+                amount_rupees: amVal
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`⚡ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to ${targetDevId}!`, "success");
+            await loadFleetCapabilities();
+        } else {
+            const err = await res.json();
+            showToast(`Sync error: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}

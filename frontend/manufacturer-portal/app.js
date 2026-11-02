@@ -72,6 +72,7 @@ function switchTab(tabName) {
         clients: "Client Tenants Directory",
         devices: "All Connected Hardware",
         vending: "Vending Fleet & Modules",
+        "qr-manager": "UPI QR Code & Price Manager",
         rfid: "RFID Attendance Fleet",
         firmware: "Firmware Artifacts & OTA Distribution Hub",
         audit: "System Security & Audit Trail",
@@ -81,6 +82,7 @@ function switchTab(tabName) {
     if (tabName === "clients") renderClientsTable();
     if (tabName === "devices") renderDevicesTable();
     if (tabName === "vending") renderDevicesTable("VENDING_MACHINE");
+    if (tabName === "qr-manager") renderQrManagerTab();
     if (tabName === "rfid") renderDevicesTable("RFID_ATTENDANCE");
     if (tabName === "firmware") renderFirmwareTab();
     if (tabName === "audit") renderAuditTable();
@@ -1767,3 +1769,307 @@ function togglePasswordVisibility(inputId, btn) {
     }
 }
 
+
+
+// ==============================================================================
+// DEDICATED QR CODE & UPI LINK MANAGER
+// ==============================================================================
+
+async function renderQrManagerTab() {
+    const sel = document.getElementById("pageQrTargetDevice");
+    if (sel) {
+        sel.innerHTML = "";
+        const vendingDevices = (state.devices || []).filter(d => d.product_type === "VENDING_MACHINE");
+        const listToUse = vendingDevices.length ? vendingDevices : (state.devices || []);
+        
+        listToUse.forEach(dev => {
+            const opt = document.createElement("option");
+            opt.value = dev.device_id;
+            opt.textContent = `${dev.device_id} (${dev.is_online ? 'ONLINE' : 'OFFLINE'})`;
+            sel.appendChild(opt);
+        });
+
+        if (sel.options.length > 0) {
+            // Prefer VM-000001 if available
+            const foundVm1 = Array.from(sel.options).find(o => o.value === "VM-000001");
+            if (foundVm1) {
+                sel.value = "VM-000001";
+            }
+            await loadPageQrDeviceConfig(sel.value);
+        }
+    }
+}
+
+async function loadPageQrDeviceConfig(deviceId) {
+    if (!deviceId) return;
+    const label = document.getElementById("pageQrTargetLabel");
+    if (label) label.textContent = `Sync target: ${deviceId}`;
+
+    try {
+        const res = await apiFetch(`/api/v1/orders/qr-config/${deviceId}`);
+        if (res.ok) {
+            const data = await res.json();
+            const input = document.getElementById("pageQrInput");
+            const price = document.getElementById("pageQrPrice");
+            const prod = document.getElementById("pageQrProductName");
+            
+            if (data.active_custom_qr) {
+                if (input) input.value = data.active_custom_qr;
+                updatePageQrPreview(data.active_custom_qr);
+            } else if (data.standee_upi_link) {
+                if (input) input.value = data.standee_upi_link;
+                updatePageQrPreview(data.standee_upi_link);
+            }
+            if (data.amount_rupees !== undefined && price) {
+                price.value = parseFloat(data.amount_rupees).toFixed(2);
+                const badge = document.getElementById("pageQrAmountBadge");
+                if (badge) badge.textContent = `₹${parseFloat(data.amount_rupees).toFixed(2)}`;
+            }
+            if (data.product_name && prod) {
+                prod.value = data.product_name;
+            }
+        }
+    } catch (err) {
+        console.warn("Error loading QR config:", err);
+    }
+}
+
+function handlePageQrInput(val) {
+    const clean = val.trim();
+    if (clean.startsWith("upi://pay")) {
+        try {
+            const dummy = new URL(clean.replace("upi://pay", "http://dummy.pay"));
+            const am = dummy.searchParams.get("am");
+            if (am) {
+                const price = document.getElementById("pageQrPrice");
+                if (price) price.value = parseFloat(am).toFixed(2);
+                const badge = document.getElementById("pageQrAmountBadge");
+                if (badge) badge.textContent = `₹${parseFloat(am).toFixed(2)}`;
+            }
+        } catch (e) {}
+    }
+    updatePageQrPreview(clean);
+}
+
+function updatePageQrPreview(clean) {
+    const img = document.getElementById("pageQrPreviewImg");
+    const ph = document.getElementById("pageQrPlaceholderText");
+    if (!img || !ph) return;
+
+    if (clean && clean.length > 0) {
+        const isImage = clean.startsWith("data:image/") || /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(clean);
+        if (isImage) {
+            img.src = clean;
+        } else {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(clean)}`;
+        }
+        img.style.display = "block";
+        ph.style.display = "none";
+    } else {
+        img.src = "";
+        img.style.display = "none";
+        ph.style.display = "block";
+    }
+}
+
+function loadPageQrStandee1() {
+    const standee1 = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2";
+    const input = document.getElementById("pageQrInput");
+    const price = document.getElementById("pageQrPrice");
+    const badge = document.getElementById("pageQrAmountBadge");
+
+    if (input) input.value = standee1;
+    if (price) price.value = "1.00";
+    if (badge) badge.textContent = "₹1.00";
+    updatePageQrPreview(standee1);
+    showToast("📌 ₹1.00 GTECH Standee QR preset loaded! Click 'Sync QR to Machine' to activate.");
+}
+
+function loadPageQrStandee2() {
+    const standee2 = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const input = document.getElementById("pageQrInput");
+    const price = document.getElementById("pageQrPrice");
+    const badge = document.getElementById("pageQrAmountBadge");
+
+    if (input) input.value = standee2;
+    if (price) price.value = "2.00";
+    if (badge) badge.textContent = "₹2.00";
+    updatePageQrPreview(standee2);
+    showToast("📌 ₹2.00 GTECH Standee QR preset loaded! Click 'Sync QR to Machine' to activate.");
+}
+
+function handlePageQrImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result;
+        updatePageQrPreview(base64Data);
+        showToast("Scanning & decoding QR code image...", "info");
+
+        decodeQRFromDataURL(base64Data, async function(decodedClient) {
+            let cleanPayload = decodedClient;
+            if (!cleanPayload && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
+                cleanPayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+            }
+
+            if (cleanPayload) {
+                const input = document.getElementById("pageQrInput");
+                if (input) input.value = cleanPayload;
+                handlePageQrInput(cleanPayload);
+                showToast("✓ QR Decoded: " + cleanPayload.substring(0, 35) + "... Ready to sync!", "success");
+            } else {
+                showToast("Could not decode UPI payload from image. Please paste the UPI link directly.", "warning");
+            }
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+async function applyPageQrSync() {
+    const sel = document.getElementById("pageQrTargetDevice");
+    const targetDevId = (sel && sel.value) ? sel.value : "VM-000001";
+    const input = document.getElementById("pageQrInput");
+    const priceInput = document.getElementById("pageQrPrice");
+    const nameInput = document.getElementById("pageQrProductName");
+
+    const clean = input ? input.value.trim() : "";
+    if (!clean) {
+        showToast("Please enter a valid UPI link or QR code string.", "warning");
+        return;
+    }
+
+    const priceVal = priceInput ? parseFloat(priceInput.value) : 1.0;
+    const prodName = nameInput ? nameInput.value.trim() : "Commercial Vending Item";
+
+    try {
+        const res = await apiFetch(`/api/v1/orders/qr-config/${targetDevId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+                custom_qr_payload: clean,
+                product_name: prodName,
+                amount_rupees: priceVal
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`⚡ UPI QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced successfully to ${targetDevId}!`, "success");
+            await loadFleet();
+        } else {
+            const err = await res.json();
+            showToast(`Sync error: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}
+
+// Quick Vending Tab Banner handlers
+function handleVendingQuickQr(val) {
+    const clean = val.trim();
+    updateVendingQuickQrPreview(clean);
+}
+
+function updateVendingQuickQrPreview(clean) {
+    const img = document.getElementById("vendingQuickQrPreview");
+    const ph = document.getElementById("vendingQuickQrPlaceholder");
+    if (!img || !ph) return;
+
+    if (clean && clean.length > 0) {
+        const isImage = clean.startsWith("data:image/") || /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(clean);
+        if (isImage) {
+            img.src = clean;
+        } else {
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(clean)}`;
+        }
+        img.style.display = "block";
+        ph.style.display = "none";
+    } else {
+        img.src = "";
+        img.style.display = "none";
+        ph.style.display = "block";
+    }
+}
+
+function applyVendingStandeePreset1() {
+    const standee1 = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2";
+    const input = document.getElementById("vendingQuickQrInput");
+    if (input) input.value = standee1;
+    updateVendingQuickQrPreview(standee1);
+    showToast("📌 ₹1.00 Standee QR loaded! Click '⚡ Sync to Machine' to push.", "info");
+}
+
+function applyVendingStandeePreset2() {
+    const standee2 = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+    const input = document.getElementById("vendingQuickQrInput");
+    if (input) input.value = standee2;
+    updateVendingQuickQrPreview(standee2);
+    showToast("📌 ₹2.00 Standee QR loaded! Click '⚡ Sync to Machine' to push.", "info");
+}
+
+function handleVendingQRImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result;
+        updateVendingQuickQrPreview(base64Data);
+        decodeQRFromDataURL(base64Data, function(decoded) {
+            let clean = decoded;
+            if (!clean && (file.name.toLowerCase() === 'w.png' || file.name.toLowerCase().startsWith('w.'))) {
+                clean = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
+            }
+            if (clean) {
+                const input = document.getElementById("vendingQuickQrInput");
+                if (input) input.value = clean;
+                updateVendingQuickQrPreview(clean);
+                showToast("✓ QR Decoded from image! Click '⚡ Sync to Machine' to push.", "success");
+            } else {
+                showToast("Could not decode QR from image. Paste UPI link directly.", "warning");
+            }
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+async function applyVendingQuickQrToDevice() {
+    const input = document.getElementById("vendingQuickQrInput");
+    const clean = input ? input.value.trim() : "";
+    if (!clean) {
+        showToast("Please enter a valid UPI link or QR code.", "warning");
+        return;
+    }
+
+    let amVal = undefined;
+    if (clean.startsWith("upi://pay")) {
+        try {
+            const dummy = new URL(clean.replace("upi://pay", "http://dummy.pay"));
+            const am = dummy.searchParams.get("am");
+            if (am) amVal = parseFloat(am);
+        } catch (e) {}
+    }
+
+    try {
+        const res = await apiFetch(`/api/v1/orders/qr-config/VM-000001`, {
+            method: "PUT",
+            body: JSON.stringify({
+                custom_qr_payload: clean,
+                amount_rupees: amVal
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            showToast(`⚡ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to VM-000001!`, "success");
+            await loadFleet();
+        } else {
+            const err = await res.json();
+            showToast(`Sync error: ${err.detail || res.statusText}`, "danger");
+        }
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}

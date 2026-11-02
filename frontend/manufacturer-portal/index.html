@@ -40,6 +40,10 @@
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
                     <span>Vending Machines</span>
                 </a>
+                <a class="nav-item" data-tab="qr-manager">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <span>📱 QR & UPI Settings</span>
+                </a>
                 <a class="nav-item" data-tab="rfid">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2"></path></svg>
                     <span>RFID Terminals</span>
@@ -78,6 +82,9 @@
                     <p>Real-Time Commercial IoT Hardware Orchestration</p>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-warning btn-sm" onclick="switchTab('qr-manager')" style="font-weight:700; display:flex; align-items:center; gap:0.4rem; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; box-shadow:0 2px 8px rgba(245,158,11,0.3);">
+                        <span>📱</span> Add / Update QR Code & UPI
+                    </button>
                     <button class="btn btn-secondary btn-sm" id="refreshBtn">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         Refresh
@@ -264,6 +271,36 @@
                                 <h3>Commercial Vending Controller Nodes</h3>
                                 <p>Dedicated view for machines supporting QR, Coin, and Multi-drop vending</p>
                             </div>
+                            <button class="btn btn-warning btn-sm" onclick="switchTab('qr-manager')" style="font-weight:700;">
+                                📱 Open Full QR & UPI Manager &rarr;
+                            </button>
+                        </div>
+
+                        <!-- Quick UPI QR & Price Auto-Sync Banner right on Vending tab -->
+                        <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.3); border-radius:var(--radius-md); padding:1rem; margin-bottom:1.25rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:1.25rem; flex-wrap:wrap;">
+                                <div style="flex:1; min-width:280px;">
+                                    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+                                        <span style="font-size:0.9rem; font-weight:700; color:var(--text-primary);">⚡ Quick UPI QR Code & Price Auto-Sync</span>
+                                        <span class="badge" style="background:rgba(16,185,129,0.15); color:#34d399; font-size:0.7rem;">Live Machine Sync</span>
+                                    </div>
+                                    <p style="font-size:0.78rem; color:var(--text-secondary); margin:0 0 0.6rem 0;">
+                                        Paste your Razorpay Standee UPI link (e.g. <code>upi://pay?am=1.00&pa=...&tr=...</code>) or image URL here. It instantly updates Slot 1 Price, VPA, and refreshes the ESP32 TFT screen!
+                                    </p>
+                                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                        <input type="text" id="vendingQuickQrInput" class="input-field" placeholder="upi://pay?am=1.00&cu=INR&pa=... or QR URL" style="font-size:0.85rem; flex:1; min-width:240px;" oninput="handleVendingQuickQr(this.value)">
+                                        <input type="file" id="vendingQuickQrFileInput" accept="image/*" style="display:none;" onchange="handleVendingQRImageUpload(event)">
+                                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('vendingQuickQrFileInput').click()" style="white-space:nowrap; padding:0.45rem 0.8rem; font-size:0.85rem;">📷 Upload QR</button>
+                                        <button type="button" class="btn btn-info btn-sm" onclick="applyVendingStandeePreset1()" style="white-space:nowrap; padding:0.45rem 0.8rem; font-size:0.85rem; background:#0284c7; color:#fff;">📌 ₹1.00 Preset</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="applyVendingStandeePreset2()" style="white-space:nowrap; padding:0.45rem 0.8rem; font-size:0.85rem;">📌 ₹2.00 Preset</button>
+                                        <button type="button" class="btn btn-primary" onclick="applyVendingQuickQrToDevice()" style="white-space:nowrap; padding:0.45rem 1rem; font-size:0.85rem;">⚡ Sync to Machine</button>
+                                    </div>
+                                </div>
+                                <div style="width:110px; height:110px; border:1px solid var(--border-subtle); border-radius:8px; display:flex; align-items:center; justify-content:center; background:#0f172a; overflow:hidden; flex-shrink:0;">
+                                    <img id="vendingQuickQrPreview" src="" alt="QR Preview" style="max-width:100%; max-height:100%; display:none; object-fit:contain;">
+                                    <span id="vendingQuickQrPlaceholder" style="font-size:0.65rem; color:var(--text-muted); text-align:center; padding:0.4rem;">No Custom QR</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="table-responsive">
                             <table class="data-table">
@@ -283,6 +320,95 @@
                                     <tr><td colspan="8" style="text-align:center; padding:2rem;">Loading vending machines...</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================
+                     TAB: QR CODE & UPI SETUP (Permanent Dedicated View)
+                     ========================================== -->
+                <section id="tab-qr-manager" class="tab-pane">
+                    <div class="card-panel" style="margin-bottom: 1.5rem;">
+                        <div class="panel-header" style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 1rem; margin-bottom: 1.25rem;">
+                            <div>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                                    <span>📱</span> Add & Update UPI QR Code / Standee Link
+                                </h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">
+                                    Paste your Razorpay Standee UPI link, upload a QR photo, or apply 1-click presets. Syncs immediately to the ESP32 screen and backend payment verification.
+                                </p>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:0.75rem;">
+                                <label style="font-size:0.8rem; font-weight:600; color:var(--text-secondary); white-space:nowrap;">Target Machine:</label>
+                                <select id="pageQrTargetDevice" class="input-field" style="width:160px; font-weight:700; color:var(--primary); background:rgba(15,23,42,0.6);" onchange="loadPageQrDeviceConfig(this.value)">
+                                    <option value="VM-000001">VM-000001</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Main Form & QR Visual Grid -->
+                        <div style="display: grid; grid-template-columns: 1fr 260px; gap: 1.5rem; align-items: start;">
+                            <!-- Form Column -->
+                            <div>
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label style="font-size:0.85rem; font-weight:700; color:var(--text-primary); display:flex; justify-content:space-between; align-items:center;">
+                                        <span>UPI Payment Link / QR Code String:</span>
+                                        <span style="font-size:0.72rem; color:var(--text-muted); font-weight:normal;">Auto-extracts price & VPA</span>
+                                    </label>
+                                    <input type="text" id="pageQrInput" class="input-field" placeholder="upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2" style="font-size:0.85rem; font-family:'JetBrains Mono', monospace;" oninput="handlePageQrInput(this.value)">
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 140px 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                                    <div class="form-group" style="margin:0;">
+                                        <label style="font-size:0.85rem; font-weight:700; color:var(--text-primary);">Price in ₹:</label>
+                                        <input type="number" id="pageQrPrice" class="input-field" step="0.5" min="0.5" value="1.00" style="font-size:0.95rem; font-weight:700; color:#34d399;">
+                                    </div>
+                                    <div class="form-group" style="margin:0;">
+                                        <label style="font-size:0.85rem; font-weight:700; color:var(--text-primary);">Item / Slot Name:</label>
+                                        <input type="text" id="pageQrProductName" class="input-field" value="Commercial Vending Item" style="font-size:0.85rem;">
+                                    </div>
+                                </div>
+
+                                <!-- Action Buttons Row -->
+                                <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-bottom:1.25rem;">
+                                    <input type="file" id="pageQrFileInput" accept="image/*" style="display:none;" onchange="handlePageQrImageUpload(event)">
+                                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('pageQrFileInput').click()" style="padding:0.5rem 0.9rem; font-size:0.82rem;">
+                                        📷 Upload QR Image
+                                    </button>
+                                    <button type="button" class="btn btn-info" onclick="loadPageQrStandee1()" style="padding:0.5rem 0.9rem; font-size:0.82rem; background:#0284c7; color:#fff;">
+                                        📌 1-Click Load ₹1.00 Standee QR
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="loadPageQrStandee2()" style="padding:0.5rem 0.9rem; font-size:0.82rem;">
+                                        📌 1-Click Load ₹2.00 Standee QR
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="applyPageQrSync()" style="padding:0.5rem 1.2rem; font-size:0.85rem; font-weight:700; background:linear-gradient(135deg, #10b981, #059669); border:none; box-shadow:0 2px 10px rgba(16,185,129,0.3);">
+                                        ⚡ Sync QR to Machine
+                                    </button>
+                                </div>
+
+                                <!-- Information Box -->
+                                <div style="background:rgba(59,130,246,0.06); border:1px solid rgba(59,130,246,0.25); border-radius:var(--radius-md); padding:0.85rem; font-size:0.8rem; color:var(--text-secondary); line-height:1.45;">
+                                    <strong style="color:var(--text-primary);">💡 How it works:</strong>
+                                    When you click <strong>"Sync QR to Machine"</strong>, the new UPI payload and price are immediately pushed to the ESP32. The machine updates its on-screen TFT QR code and refreshes the live Razorpay webhook receiver without rebooting!
+                                </div>
+                            </div>
+
+                            <!-- Live Scannable Preview Box -->
+                            <div style="background:rgba(15,23,42,0.9); border:1px solid var(--border-subtle); border-radius:12px; padding:1.25rem; display:flex; flex-direction:column; align-items:center; text-align:center;">
+                                <div style="font-size:0.75rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:0.75rem;">
+                                    Scannable Live Preview
+                                </div>
+                                <div style="width:200px; height:200px; background:#fff; border-radius:8px; padding:8px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 15px rgba(0,0,0,0.5); overflow:hidden;">
+                                    <img id="pageQrPreviewImg" src="" alt="QR Preview" style="max-width:100%; max-height:100%; display:none; object-fit:contain;">
+                                    <div id="pageQrPlaceholderText" style="color:#64748b; font-size:0.75rem; padding:1rem;">Enter link or upload image to preview</div>
+                                </div>
+                                <div id="pageQrAmountBadge" style="margin-top:0.75rem; font-size:0.9rem; font-weight:700; color:#34d399;">
+                                    ₹1.00
+                                </div>
+                                <div id="pageQrTargetLabel" class="mono-text" style="font-size:0.7rem; color:var(--text-muted); margin-top:0.25rem;">
+                                    Sync target: VM-000001
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -1122,6 +1248,6 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=2.9"></script>
+    <script src="app.js?v=3.0"></script>
 </body>
 </html>
