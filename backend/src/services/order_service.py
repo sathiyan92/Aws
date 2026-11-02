@@ -3,10 +3,13 @@ Order Service for Vending Machines.
 Manages transaction-based dynamic QR purchase intents, dynamic price resolution,
 UPI deep-link payload generation, expiration timers, and order lifecycle states.
 """
+import logging
 from typing import List, Optional, Dict, Any
 import uuid
 import urllib.parse
 from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from src.core.config.settings import settings
 from src.db.base import utc_now, generate_uuid
@@ -813,43 +816,46 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
                     tr_val = qr_m.group(1).strip()
 
         if tr_val:
-            from src.db.models.vending import RazorpayQRCode
-            amt_paise = int(payload_data.get("amount_rupees", 2.0) * 100)
             clean_tr = tr_val.removeprefix("qr_").removesuffix("qrv2").removesuffix("v2").strip()
             payload["settings"]["active_tr_id"] = clean_tr
+            try:
+                from src.db.models.vending import RazorpayQRCode
+                amt_paise = int(payload_data.get("amount_rupees", 2.0) * 100)
 
-            keys_to_seed = list(set([
-                tr_val,
-                f"qr_{tr_val}",
-                clean_tr,
-                f"qr_{clean_tr}",
-                f"{clean_tr}qrv2",
-                f"qr_{clean_tr}qrv2",
-            ]))
-            for k in keys_to_seed:
-                existing_qr = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == k).first()
-                if not existing_qr:
-                    qr_rec = RazorpayQRCode(
-                        client_id=device.client_id,
-                        device_id=device.id,
-                        slot_id=device.slots[0].id if device.slots else None,
-                        razorpay_qr_id=k,
-                        name=f"Standee QR {k}",
-                        usage="multiple_use",
-                        fixed_amount=True,
-                        amount=amt_paise,
-                        currency="INR",
-                        qr_payload=raw_qr,
-                        status="active",
-                        notes={"device_id": device.device_id, "tr": k},
-                    )
-                    db.add(qr_rec)
-                else:
-                    existing_qr.device_id = device.id
-                    existing_qr.amount = amt_paise
-                    existing_qr.qr_payload = raw_qr
-                    existing_qr.status = "active"
-            logger.info(f"[QR Sync] Auto-mapped standee TR '{clean_tr}' to device {device.device_id}")
+                keys_to_seed = list(set([
+                    tr_val,
+                    f"qr_{tr_val}",
+                    clean_tr,
+                    f"qr_{clean_tr}",
+                    f"{clean_tr}qrv2",
+                    f"qr_{clean_tr}qrv2",
+                ]))
+                for k in keys_to_seed:
+                    existing_qr = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == k).first()
+                    if not existing_qr:
+                        qr_rec = RazorpayQRCode(
+                            client_id=device.client_id,
+                            device_id=device.id,
+                            slot_id=device.slots[0].id if device.slots else None,
+                            razorpay_qr_id=k,
+                            name=f"Standee QR {k}",
+                            usage="multiple_use",
+                            fixed_amount=True,
+                            amount=amt_paise,
+                            currency="INR",
+                            qr_payload=raw_qr,
+                            status="active",
+                            notes={"device_id": device.device_id, "tr": k},
+                        )
+                        db.add(qr_rec)
+                    else:
+                        existing_qr.device_id = device.id
+                        existing_qr.amount = amt_paise
+                        existing_qr.qr_payload = raw_qr
+                        existing_qr.status = "active"
+                logger.info(f"[QR Sync] Auto-mapped standee TR '{clean_tr}' to device {device.device_id}")
+            except Exception as qr_err:
+                logger.warning(f"[QR Sync] Non-critical warning seeding RazorpayQRCode for {device.device_id}: {qr_err}")
     elif has_qr_field:
         # User explicitly cleared custom QR code -> revert to dynamic UPI
         payload["settings"]["custom_qr_payload"] = ""

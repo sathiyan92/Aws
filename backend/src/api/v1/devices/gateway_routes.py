@@ -3,8 +3,11 @@ Device Gateway API endpoints.
 Handles ESP32 physical hardware authentication, cryptographic handshakes,
 heartbeat telemetry ingestion, diagnostic logs, and offline sweeps.
 """
+import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 import hashlib
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session

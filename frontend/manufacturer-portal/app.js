@@ -1,4 +1,20 @@
 
+async function parseApiError(res) {
+    try {
+        const data = await res.json();
+        if (data && data.detail) {
+            if (typeof data.detail === 'string') return data.detail;
+            if (data.detail.message) return data.detail.message;
+            return JSON.stringify(data.detail);
+        }
+    } catch (_) {}
+    try {
+        const text = await res.text();
+        if (text && text.trim().length > 0) return text.trim();
+    } catch (_) {}
+    return res.statusText || `HTTP ${res.status} Error`;
+}
+
 function extractTrIdFromPayload(payload) {
     if (!payload || typeof payload !== "string") return "";
     const clean = payload.trim();
@@ -2001,8 +2017,8 @@ async function applyPageQrSync() {
             showToast(`⚡ UPI QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced successfully to ${targetDevId}!`, "success");
             await loadFleet();
         } else {
-            const err = await res.json();
-            showToast(`Sync error: ${err.detail || res.statusText}`, "danger");
+            const errMsg = await parseApiError(res);
+            showToast(`Sync error: ${errMsg}`, "danger");
         }
     } catch (e) {
         showToast(e.message, "danger");
@@ -2120,8 +2136,8 @@ async function applyVendingQuickQrToDevice() {
             showToast(`⚡ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to VM-000001!`, "success");
             await loadFleet();
         } else {
-            const err = await res.json();
-            showToast(`Sync error: ${err.detail || res.statusText}`, "danger");
+            const errMsg = await parseApiError(res);
+            showToast(`Sync error: ${errMsg}`, "danger");
         }
     } catch (e) {
         showToast(e.message, "danger");

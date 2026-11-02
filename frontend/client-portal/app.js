@@ -1,4 +1,20 @@
 
+async function parseApiError(res) {
+    try {
+        const data = await res.json();
+        if (data && data.detail) {
+            if (typeof data.detail === 'string') return data.detail;
+            if (data.detail.message) return data.detail.message;
+            return JSON.stringify(data.detail);
+        }
+    } catch (_) {}
+    try {
+        const text = await res.text();
+        if (text && text.trim().length > 0) return text.trim();
+    } catch (_) {}
+    return res.statusText || `HTTP ${res.status} Error`;
+}
+
 function extractTrIdFromPayload(payload) {
     if (!payload || typeof payload !== "string") return "";
     const clean = payload.trim();
@@ -803,8 +819,8 @@ async function applyClientQuickQrToDevice() {
             await loadClientSlotsData(state.selectedDeviceId);
             await loadQRData(state.selectedDeviceId);
         } else {
-            const err = await res.json();
-            showToast(`Failed to sync QR: ${err.detail || res.statusText}`, "error");
+            const errMsg = await parseApiError(res);
+            showToast(`Failed to sync QR: ${errMsg}`, "error");
         }
     } catch (e) {
         showToast(e.message, "error");
@@ -1722,8 +1738,8 @@ async function applyFleetQuickQrToDevice() {
             showToast(`⚡ QR Code & Price (₹${data.amount_rupees.toFixed(2)}) synced to ${targetDevId}!`, "success");
             await loadFleetCapabilities();
         } else {
-            const err = await res.json();
-            showToast(`Sync error: ${err.detail || res.statusText}`, "danger");
+            const errMsg = await parseApiError(res);
+            showToast(`Sync error: ${errMsg}`, "danger");
         }
     } catch (e) {
         showToast(e.message, "danger");
