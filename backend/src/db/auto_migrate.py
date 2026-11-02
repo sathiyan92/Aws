@@ -15,6 +15,7 @@ def run_auto_migrations(engine) -> None:
     without dropping existing user data.
     """
     try:
+        import src.db.models
         from src.db.base import Base
         Base.metadata.create_all(bind=engine)
 
@@ -90,7 +91,7 @@ def _ensure_fleet_defaults(engine) -> None:
         from src.db.base import utc_now, generate_uuid
         from src.db.models.client import Client
         from src.db.models.device import Device, DeviceType, DeviceCredential
-        from src.db.models.vending import MachineSlot, Product, RazorpayQRCode
+        from src.db.models.vending import MachineSlot, Product, RazorpayQRCode, Order
         import hashlib
 
         # 1. Ensure Client
@@ -99,9 +100,9 @@ def _ensure_fleet_defaults(engine) -> None:
             client = Client(
                 id=generate_uuid(),
                 name="G-TECH Vending Fleet",
-                code="GTECH",
+                client_code="GTECH",
                 contact_email="admin@gtechinfo.in",
-                is_active=True,
+                status="ACTIVE",
             )
             db.add(client)
             db.flush()
@@ -169,6 +170,8 @@ def _ensure_fleet_defaults(engine) -> None:
             slot = MachineSlot(
                 id=generate_uuid(),
                 device_id=device.id,
+                client_id=client.id,
+                slot_code="SLOT-01",
                 slot_number=1,
                 product_id=prod.id,
                 capacity=20,
