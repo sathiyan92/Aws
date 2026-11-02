@@ -717,10 +717,10 @@ void uiDrawWiFiConnectingScreen(const String& ssid) {
   TFT_display.setTextSize(2);
   TFT_display.print("Negotiating DHCP Lease...");
 
-  TFT_display.setCursor(40, 210);
+  TFT_display.setCursor(40, 218);
   TFT_display.setTextColor(COLOR_GRAY);
   TFT_display.setTextSize(1);
-  TFT_display.print("Note: Hotspot setup portal will auto-launch if connection fails.");
+  TFT_display.print("Connecting: ");
 }
 
 void uiDrawWiFiConnectedScreen(const String& ssid, const String& ip) {
@@ -826,25 +826,10 @@ void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress) {
 void startCaptivePortal() {
   in_ap_setup_mode = true;
 
-  // 1. One-time network scan BEFORE starting SoftAP (so AP beacons are never blocked)
-  Serial.println("[Setup Hotspot] Scanning nearby 2.4 GHz networks...");
-  WiFi.mode(WIFI_STA);
+  // Start SoftAP immediately without any blocking scans
+  String ap_name = "ESP32-Vending-Setup";
   WiFi.disconnect();
   delay(100);
-
-  int n = WiFi.scanNetworks(false, false);
-  String options = "<option value=''>-- Select Nearby Wi-Fi (2.4 GHz) --</option>";
-  for (int i = 0; i < n; ++i) {
-    String ssidName = WiFi.SSID(i);
-    int rssi = WiFi.RSSI(i);
-    if (ssidName.length() > 0) {
-      options += "<option value='" + ssidName + "'>" + ssidName + " (" + String(rssi) + " dBm)</option>";
-    }
-  }
-  WiFi.scanDelete();
-
-  // 2. Start SoftAP
-  String ap_name = "ESP32-Vending-Setup";
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ap_name.c_str());
 
@@ -873,22 +858,20 @@ void startCaptivePortal() {
   webServer.on("/ncsi.txt", handleCaptiveRedirect);
   webServer.on("/connecttest.txt", handleCaptiveRedirect);
 
-  webServer.on("/", [ap_name, ipStr, options]() {
+  webServer.on("/", [ap_name, ipStr]() {
     String realMac = getDeviceMacAddress();
 
     String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>Wi-Fi Setup</title>";
     html += "<style>body{font-family:sans-serif;background:#0b1120;color:#fff;padding:20px;text-align:center;}";
     html += ".card{max-width:360px;margin:0 auto;background:#1e293b;padding:20px;border-radius:12px;border:1px solid #334155;}";
-    html += "input,select{width:100%;box-sizing:border-box;padding:12px;margin:8px 0;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#fff;font-size:15px;}";
+    html += "input{width:100%;box-sizing:border-box;padding:12px;margin:8px 0;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#fff;font-size:15px;}";
     html += "button{width:100%;padding:14px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:12px;}";
     html += "</style></head><body><div class='card'>";
     html += "<h2>⚡ Smart Vending Setup</h2>";
     html += "<p style='color:#38bdf8;font-size:13px;'>MAC: " + realMac + "</p>";
     html += "<form action='/save' method='POST'>";
-    html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Nearby Wi-Fi Networks (2.4 GHz):</label>";
-    html += "<select onchange='if(this.value)document.getElementById(\"ssidInput\").value=this.value;'>" + options + "</select>";
     html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Wi-Fi Name (SSID):</label>";
-    html += "<input id='ssidInput' name='ssid' placeholder='Wi-Fi Name' value='" + wifi_ssid + "' required>";
+    html += "<input id='ssidInput' name='ssid' placeholder='Wi-Fi Name (2.4 GHz)' value='" + wifi_ssid + "' required>";
     html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Wi-Fi Password:</label>";
     html += "<input name='pass' type='password' placeholder='Enter Wi-Fi password' required>";
     html += "<label style='display:block;text-align:left;color:#94a3b8;font-size:12px;'>Device ID:</label>";
@@ -966,26 +949,25 @@ void startCaptivePortal() {
 
 void connectToWiFi() {
   if (wifi_ssid.length() == 0) {
-    Serial.println("[Wi-Fi] No SSID configured. Launching on-screen setup hotspot...");
-    startCaptivePortal();
+    Serial.println("[Wi-Fi] No SSID configured. Continuing directly to Standby Screen...");
     return;
   }
 
   Serial.printf("\n[Wi-Fi] Connecting to: '%s'...\n", wifi_ssid.c_str());
   uiDrawWiFiConnectingScreen(wifi_ssid);
 
-  WiFi.disconnect(true);
-  delay(150);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
 
   int attempts = 0;
-  // Wait up to 35 attempts (17.5 seconds) for router DHCP negotiation
-  while (WiFi.status() != WL_CONNECTED && attempts < 35) {
+  // Wait up to 20 attempts (10 seconds) - never hang on LCD!
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
+    // Draw animated progress blocks on LCD
+    TFT_display.fillRect(110 + (attempts % 16) * 18, 218, 12, 12, COLOR_CYAN);
     attempts++;
   }
 
@@ -994,19 +976,29 @@ void connectToWiFi() {
     Serial.printf("    Assigned IP : %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("    Signal RSSI : %d dBm\n", WiFi.RSSI());
 
-    // Full on-screen success screen for 2 seconds as requested by user
+    // Full on-screen success screen for exactly 2 seconds as requested by user
     uiDrawWiFiConnectedScreen(wifi_ssid, WiFi.localIP().toString());
     delay(2000);
   } else {
-    wl_status_t st = WiFi.status();
-    Serial.printf("\n[!] Wi-Fi connection timed out (status code: %d).\n", (int)st);
-    if (st == WL_NO_SSID_AVAIL) {
-      Serial.println("    Notice: SSID not found! Ensure router/hotspot is 2.4 GHz (ESP32 cannot see 5 GHz).");
-    } else if (st == WL_CONNECT_FAILED) {
-      Serial.println("    Notice: Password rejected or authentication failed.");
-    }
-    Serial.println("    Launching on-screen setup hotspot...\n");
-    startCaptivePortal();
+    Serial.printf("\n[!] Wi-Fi not connected (status: %d). Launching Standby QR Screen...\n", (int)WiFi.status());
+    Serial.println("    (ESP32 will auto-reconnect in background or hold BOOT for Wi-Fi Setup)\n");
+
+    // Display temporary notice on LCD for 1.5 seconds, then PROCEED to QR Screen!
+    TFT_display.fillRect(20, 70, 440, 190, COLOR_CARD);
+    TFT_display.drawRect(20, 70, 440, 190, COLOR_AMBER);
+    TFT_display.setCursor(40, 100);
+    TFT_display.setTextColor(COLOR_AMBER);
+    TFT_display.setTextSize(2);
+    TFT_display.print("WI-FI NOT CONNECTED");
+    TFT_display.setCursor(40, 140);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.setTextSize(2);
+    TFT_display.print("Launching QR Standby Screen...");
+    TFT_display.setCursor(40, 185);
+    TFT_display.setTextColor(COLOR_GRAY);
+    TFT_display.setTextSize(1);
+    TFT_display.print("Auto-reconnecting in background (Hold BOOT for Setup)");
+    delay(1500);
   }
 }
 
