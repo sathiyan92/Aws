@@ -388,18 +388,23 @@ def _handle_payment_captured(
 
     # 2. Find corresponding RazorpayQRCode and PENDING Order via stored QR ID (Requirements 2, 3 & 5)
     qr_record = None
+    clean_target = str(qr_id or "").removeprefix("qr_").removesuffix("qrv2").removesuffix("v2")
     if qr_id:
         qr_record = db.query(RazorpayQRCode).filter(
             (RazorpayQRCode.razorpay_qr_id == str(qr_id))
             | (RazorpayQRCode.razorpay_qr_id == str(qr_id).removeprefix("qr_"))
             | (RazorpayQRCode.razorpay_qr_id == f"qr_{qr_id}")
+            | (RazorpayQRCode.razorpay_qr_id == clean_target)
+            | (RazorpayQRCode.razorpay_qr_id == f"qr_{clean_target}")
+            | (RazorpayQRCode.razorpay_qr_id == f"{clean_target}qrv2")
+            | (RazorpayQRCode.razorpay_qr_id == f"qr_{clean_target}qrv2")
         ).first()
 
     # Never match old/completed orders! Only match currently pending orders.
     matched_order = None
     if qr_id:
         matched_order = db.query(Order).filter(
-            Order.razorpay_qr_id == str(qr_id),
+            Order.razorpay_qr_id.in_([str(qr_id), clean_target, f"qr_{clean_target}", f"{clean_target}qrv2"]),
             Order.order_status.in_(["PENDING", "PAYMENT_PENDING"])
         ).first()
     if not matched_order:
@@ -414,7 +419,8 @@ def _handle_payment_captured(
     if not qr_record and not matched_order:
         all_qrs = db.query(RazorpayQRCode).all()
         for q in all_qrs:
-            if q.razorpay_qr_id and q.razorpay_qr_id in raw_payload_str:
+            cand_clean = str(q.razorpay_qr_id or "").removeprefix("qr_").removesuffix("qrv2").removesuffix("v2")
+            if (q.razorpay_qr_id and q.razorpay_qr_id in raw_payload_str) or (cand_clean and cand_clean in raw_payload_str):
                 qr_record = q
                 qr_id = q.razorpay_qr_id
                 break
@@ -423,10 +429,12 @@ def _handle_payment_captured(
                     parsed = urllib.parse.urlparse(q.qr_payload)
                     qs = urllib.parse.parse_qs(parsed.query)
                     tr_cand = qs.get("tr", [None])[0]
-                    if tr_cand and tr_cand in raw_payload_str:
-                        qr_record = q
-                        qr_id = tr_cand
-                        break
+                    if tr_cand:
+                        tr_cand_clean = tr_cand.removeprefix("qr_").removesuffix("qrv2").removesuffix("v2")
+                        if tr_cand in raw_payload_str or tr_cand_clean in raw_payload_str:
+                            qr_record = q
+                            qr_id = q.razorpay_qr_id
+                            break
                 except Exception:
                     pass
 

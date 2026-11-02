@@ -143,12 +143,12 @@ Preferences prefs;
 // Set FORCE_STATIC_PROGRAM_CONFIG to false if you want the QR code to be controlled
 // dynamically via the Web Dashboard / Cloud.
 // ==============================================================================
-#define FORCE_STATIC_PROGRAM_CONFIG   true  // Set true to use values below, false for web portal control
+#define FORCE_STATIC_PROGRAM_CONFIG   false  // Set true to use values below, false for web portal control //true for program link for razorpay
 
-const char* STATIC_QR_CODE      = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
-const char* STATIC_TR_ID        = "TuXKipEEX2KteFqrv2"; // Machine's unique Razorpay QR ID
+const char* STATIC_QR_CODE      = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2";
+const char* STATIC_TR_ID        = "TuoZnOxKYLXaLvqrv2"; // Machine's unique Razorpay QR ID
 const char* STATIC_PRODUCT_NAME = "G-TECH Test";
-const float STATIC_PRICE_RUPEES = 2.00;
+const float STATIC_PRICE_RUPEES = 1.00;
 
 // Set to true if you want to bypass QR string encoding and draw the raw 2D pixel bitmap:
 #define USE_CUSTOM_STATIC_BITMAP      false
@@ -1128,11 +1128,22 @@ void pollPendingDispense() {
       // ----------------------------------------------------------------------
       if (orderQrId.length() > 0) {
         String myTr = String(STATIC_TR_ID);
-        String myQr = String(STATIC_QR_CODE);
+        String myQr = custom_qr_code.length() > 0 ? custom_qr_code : String(STATIC_QR_CODE);
         bool isMatch = false;
-        if (myTr.length() > 0 && (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId) || orderQrId.indexOf(myTr) >= 0 || myTr.indexOf(orderQrId) >= 0 || orderQrId.indexOf("TuXKipEEX2KteF") >= 0 || myTr.indexOf("TuXKipEEX2KteF") >= 0)) {
+
+        String cleanOrderQr = orderQrId;
+        cleanOrderQr.replace("qr_", "");
+        cleanOrderQr.replace("qrv2", "");
+
+        String cleanMyTr = myTr;
+        cleanMyTr.replace("qr_", "");
+        cleanMyTr.replace("qrv2", "");
+
+        if (cleanMyTr.length() > 0 && (cleanOrderQr == cleanMyTr || cleanOrderQr.indexOf(cleanMyTr) >= 0 || cleanMyTr.indexOf(cleanOrderQr) >= 0)) {
           isMatch = true;
-        } else if (myQr.indexOf(orderQrId) >= 0) {
+        } else if (myQr.indexOf(cleanOrderQr) >= 0 || myQr.indexOf(orderQrId) >= 0) {
+          isMatch = true;
+        } else if (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId)) {
           isMatch = true;
         }
 

@@ -186,10 +186,22 @@ def _ensure_fleet_defaults(engine) -> None:
                 slot.override_price = 200
                 db.flush()
 
-        # 5. Ensure RazorpayQRCode for both official QR ID qr_TuXKipEEX2KteF and standee tr TuXKipEEX2KteFqrv2
-        raw_qr = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2"
-        qr_keys = ["qr_TuXKipEEX2KteF", "TuXKipEEX2KteF", "TuXKipEEX2KteFqrv2", "qr_TuXKipEEX2KteFqrv2"]
-        for q_key in qr_keys:
+        # 5. Ensure RazorpayQRCode bindings for VM-000001 (both 2.00 and 1.00 QR keys)
+        raw_qr_2rs = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2"
+        raw_qr_1rs = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2"
+
+        qr_configs = [
+            ("qr_TuXKipEEX2KteF", 200, raw_qr_2rs),
+            ("TuXKipEEX2KteF", 200, raw_qr_2rs),
+            ("TuXKipEEX2KteFqrv2", 200, raw_qr_2rs),
+            ("qr_TuXKipEEX2KteFqrv2", 200, raw_qr_2rs),
+            ("qr_TuoZnOxKYLXaLv", 100, raw_qr_1rs),
+            ("TuoZnOxKYLXaLv", 100, raw_qr_1rs),
+            ("TuoZnOxKYLXaLvqrv2", 100, raw_qr_1rs),
+            ("qr_TuoZnOxKYLXaLvqrv2", 100, raw_qr_1rs),
+        ]
+
+        for q_key, q_amt, q_payload in qr_configs:
             existing_qr = db.query(RazorpayQRCode).filter_by(razorpay_qr_id=q_key).first()
             if not existing_qr:
                 qr_rec = RazorpayQRCode(
@@ -200,9 +212,9 @@ def _ensure_fleet_defaults(engine) -> None:
                     name=f"Standee QR for {device.device_id}",
                     usage="multiple_use",
                     fixed_amount=True,
-                    amount=200,
+                    amount=q_amt,
                     currency="INR",
-                    qr_payload=raw_qr,
+                    qr_payload=q_payload,
                     status="active",
                     notes={"device_id": device.device_id, "tr": q_key},
                 )
@@ -210,8 +222,8 @@ def _ensure_fleet_defaults(engine) -> None:
             else:
                 existing_qr.device_id = device.id
                 existing_qr.slot_id = slot.id
-                existing_qr.amount = 200
-                existing_qr.qr_payload = raw_qr
+                existing_qr.amount = q_amt
+                existing_qr.qr_payload = q_payload
                 existing_qr.status = "active"
 
         # 6. Purge rogue auto-linked QR mappings so other QRs never vend VM-000001

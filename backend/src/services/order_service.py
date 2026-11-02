@@ -792,28 +792,38 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
                 if tr_val:
                     from src.db.models.vending import RazorpayQRCode
                     amt_paise = int(payload_data.get("amount_rupees", 2.0) * 100)
-                    existing_qr = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == tr_val).first()
-                    if not existing_qr:
-                        qr_rec = RazorpayQRCode(
-                            client_id=device.client_id,
-                            device_id=device.id,
-                            slot_id=device.slots[0].id if device.slots else None,
-                            razorpay_qr_id=tr_val,
-                            name=f"Standee QR {tr_val}",
-                            usage="multiple_use",
-                            fixed_amount=True,
-                            amount=amt_paise,
-                            currency="INR",
-                            qr_payload=raw_qr,
-                            status="active",
-                            notes={"device_id": device.device_id, "tr": tr_val},
-                        )
-                        db.add(qr_rec)
-                    else:
-                        existing_qr.device_id = device.id
-                        existing_qr.amount = amt_paise
-                        existing_qr.qr_payload = raw_qr
-                        existing_qr.status = "active"
+                    clean_tr = tr_val.removeprefix("qr_").removesuffix("qrv2").removesuffix("v2")
+                    keys_to_seed = list(set([
+                        tr_val,
+                        f"qr_{tr_val}",
+                        clean_tr,
+                        f"qr_{clean_tr}",
+                        f"{clean_tr}qrv2",
+                        f"qr_{clean_tr}qrv2",
+                    ]))
+                    for k in keys_to_seed:
+                        existing_qr = db.query(RazorpayQRCode).filter(RazorpayQRCode.razorpay_qr_id == k).first()
+                        if not existing_qr:
+                            qr_rec = RazorpayQRCode(
+                                client_id=device.client_id,
+                                device_id=device.id,
+                                slot_id=device.slots[0].id if device.slots else None,
+                                razorpay_qr_id=k,
+                                name=f"Standee QR {k}",
+                                usage="multiple_use",
+                                fixed_amount=True,
+                                amount=amt_paise,
+                                currency="INR",
+                                qr_payload=raw_qr,
+                                status="active",
+                                notes={"device_id": device.device_id, "tr": k},
+                            )
+                            db.add(qr_rec)
+                        else:
+                            existing_qr.device_id = device.id
+                            existing_qr.amount = amt_paise
+                            existing_qr.qr_payload = raw_qr
+                            existing_qr.status = "active"
             except Exception:
                 pass
     elif has_qr_field:
