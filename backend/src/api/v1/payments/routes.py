@@ -257,6 +257,24 @@ def verify_payment_endpoint(
             order.payment.paid_at = utc_now()
         db.commit()
 
+        # Push instantly to ESP32 via WebSocket
+        try:
+            from src.services.websocket_manager import ws_manager
+            dev_id = order.device.device_id if order.device else "VM-000001"
+            ws_manager.push_vend_command_sync(dev_id, {
+                "event": "DISPENSE",
+                "device_id": dev_id,
+                "slot_number": order.slot.slot_number if order.slot else 1,
+                "amount_rupees": round((order.total_amount or 0) / 100.0, 2),
+                "product_name": order.product.name if order.product else "Vending Item",
+                "order_id": order.id,
+                "order_number": order.order_number,
+                "dispense_token": order.dispense_token or "",
+                "qr_id": order.razorpay_qr_id or "",
+            })
+        except Exception:
+            pass
+
     return RazorpayVerifyPaymentResponse(
         valid=True,
         message="Payment verified! Item is dispensing.",

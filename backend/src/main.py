@@ -71,6 +71,41 @@ app.include_router(orders_router, prefix="/api/v1")
 app.include_router(ota_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 
+# WebSocket Live Push Gateway for Real-Time Zero-Polling Vending
+from fastapi import WebSocket, WebSocketDisconnect
+from src.services.websocket_manager import ws_manager
+
+@app.websocket("/ws/vending/{device_id}")
+@app.websocket("/api/v1/ws/vending/{device_id}")
+async def websocket_vending_endpoint(websocket: WebSocket, device_id: str):
+    """
+    [Real-Time Event-Driven Push Gateway]
+    Persistent WebSocket channel for ESP32 smart vending machines.
+    Pushes instant dispense commands to the machine the exact millisecond
+    a Razorpay payment webhook fires, eliminating repeated HTTP polling!
+    """
+    await ws_manager.connect(device_id, websocket)
+    try:
+        while True:
+            # Keep line active and receive heartbeat/ping from ESP32
+            msg = await websocket.receive_text()
+            if msg in ("ping", "heartbeat", "PONG"):
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        ws_manager.disconnect(device_id)
+    except Exception:
+        ws_manager.disconnect(device_id)
+
+
+@app.get("/ws/status", tags=["WebSockets & Live Push"])
+def websocket_status():
+    """Returns currently connected machines listening for live push events."""
+    return {
+        "connected_count": len(ws_manager.active_connections),
+        "connected_devices": list(ws_manager.active_connections.keys()),
+    }
+
+
 
 @app.on_event("startup")
 def startup_init_database():

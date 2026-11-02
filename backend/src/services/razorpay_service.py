@@ -661,6 +661,26 @@ def _handle_payment_captured(
         },
     ))
 
+    # 10. Live WebSocket Instant Push (Option A - Zero Polling!)
+    try:
+        from src.services.websocket_manager import ws_manager
+        ws_payload = {
+            "event": "DISPENSE",
+            "device_id": device.device_id,
+            "slot_number": slot.slot_number if slot else 1,
+            "amount_rupees": round(amount_paise / 100.0, 2),
+            "product_name": slot.product.name if (slot and slot.product) else "Vending Item",
+            "order_id": order.id,
+            "order_number": order_number,
+            "dispense_token": dispense_token,
+            "qr_id": qr_id or "",
+        }
+        pushed = ws_manager.push_vend_command_sync(device.device_id, ws_payload)
+        if pushed:
+            logger.info(f"[WebSocket ⚡ INSTANT DISPENSE] Push sent to machine '{device.device_id}' for Order {order_number}!")
+    except Exception as ws_err:
+        logger.warning(f"[WebSocket] Notice pushing vend command: {ws_err}")
+
     return {
         "order_id": order.id,
         "order_number": order_number,
