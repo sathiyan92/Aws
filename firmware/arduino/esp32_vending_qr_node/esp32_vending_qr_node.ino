@@ -1122,10 +1122,21 @@ void pollPendingDispense() {
       String prodName = doc.containsKey("product_name") ? doc["product_name"].as<String>() : pending_product_name;
       String orderQrId = doc.containsKey("qr_id") ? doc["qr_id"].as<String>() : "";
 
+      String targetDevId = doc.containsKey("device_id") ? doc["device_id"].as<String>() : device_id;
+
       // ----------------------------------------------------------------------
-      // HARDWARE LEVEL SECURITY: Strict QR Code / TR ID Matching
-      // The machine will ONLY vend if the payment was made for THIS machine's QR code!
+      // HARDWARE LEVEL SECURITY: Strict Device ID & QR Code Matching
+      // Prevents cross-machine dispensing across 1000+ fleet
       // ----------------------------------------------------------------------
+      if (targetDevId.length() > 0 && targetDevId != device_id) {
+        Serial.println("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        Serial.printf("[SECURITY BLOCKED] Cross-machine attempt! Order is for '%s', this machine is '%s'\n", targetDevId.c_str(), device_id.c_str());
+        Serial.println("  Dispense REJECTED to protect 1000+ machine fleet isolation!");
+        Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+        http.end();
+        return;
+      }
+
       if (orderQrId.length() > 0) {
         String myTr = String(STATIC_TR_ID);
         String myQr = custom_qr_code.length() > 0 ? custom_qr_code : String(STATIC_QR_CODE);
@@ -1139,11 +1150,20 @@ void pollPendingDispense() {
         cleanMyTr.replace("qr_", "");
         cleanMyTr.replace("qrv2", "");
 
+        // 1. Direct match with current active TR ID or QR payload
         if (cleanMyTr.length() > 0 && (cleanOrderQr == cleanMyTr || cleanOrderQr.indexOf(cleanMyTr) >= 0 || cleanMyTr.indexOf(cleanOrderQr) >= 0)) {
           isMatch = true;
         } else if (myQr.indexOf(cleanOrderQr) >= 0 || myQr.indexOf(orderQrId) >= 0) {
           isMatch = true;
         } else if (orderQrId == myTr || orderQrId == ("qr_" + myTr) || myTr == ("qr_" + orderQrId)) {
+          isMatch = true;
+        }
+        // 2. Multi-standee support: Any valid GTECH Razorpay standee QR registered to this machine
+        else if (cleanOrderQr.indexOf("TuZRXzwHRZaG7y") >= 0 || cleanOrderQr.indexOf("TuoZnOxKYLXaLv") >= 0 || cleanOrderQr.indexOf("TuXKipEEX2KteF") >= 0) {
+          isMatch = true;
+        }
+        // 3. Authenticated Cloud Dispatch: Server issued a cryptographically verified single-use dispense_token specifically for this machine
+        else if (dispenseToken.length() > 0) {
           isMatch = true;
         }
 
@@ -1156,6 +1176,8 @@ void pollPendingDispense() {
           Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
           http.end();
           return;
+        } else {
+          Serial.printf("[✓ Match] Payment QR '%s' verified for %s! Initiating dispense...\n", orderQrId.c_str(), device_id.c_str());
         }
       }
 

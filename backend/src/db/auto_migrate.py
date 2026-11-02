@@ -186,9 +186,10 @@ def _ensure_fleet_defaults(engine) -> None:
                 slot.override_price = 200
                 db.flush()
 
-        # 5. Ensure RazorpayQRCode bindings for VM-000001 (both 2.00 and 1.00 QR keys)
+        # 5. Ensure RazorpayQRCode bindings for VM-000001 (all valid merchant QR standees: 1.00 and 2.00)
         raw_qr_2rs = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2"
         raw_qr_1rs = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuoZnOxKYLXaLvqrv2"
+        raw_qr_tuz = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuZRXzwHRZaG7y"
 
         qr_configs = [
             ("qr_TuXKipEEX2KteF", 200, raw_qr_2rs),
@@ -199,6 +200,10 @@ def _ensure_fleet_defaults(engine) -> None:
             ("TuoZnOxKYLXaLv", 100, raw_qr_1rs),
             ("TuoZnOxKYLXaLvqrv2", 100, raw_qr_1rs),
             ("qr_TuoZnOxKYLXaLvqrv2", 100, raw_qr_1rs),
+            ("qr_TuZRXzwHRZaG7y", 100, raw_qr_tuz),
+            ("TuZRXzwHRZaG7y", 100, raw_qr_tuz),
+            ("TuZRXzwHRZaG7yqrv2", 100, raw_qr_tuz),
+            ("qr_TuZRXzwHRZaG7yqrv2", 100, raw_qr_tuz),
         ]
 
         for q_key, q_amt, q_payload in qr_configs:
@@ -224,15 +229,7 @@ def _ensure_fleet_defaults(engine) -> None:
                 existing_qr.slot_id = slot.id
                 existing_qr.amount = q_amt
                 existing_qr.qr_payload = q_payload
-                existing_qr.status = "active"
-
-        # 6. Purge rogue auto-linked QR mappings so other QRs never vend VM-000001
-        rogue_keys = ["qr_TuZRXzwHRZaG7y", "TuZRXzwHRZaG7y"]
-        all_existing = db.query(RazorpayQRCode).all()
-        for eq in all_existing:
-            if eq.razorpay_qr_id in rogue_keys:
-                db.delete(eq)
-        db.query(Order).filter(Order.razorpay_qr_id.in_(rogue_keys)).delete(synchronize_session=False)
+                existing_qr.status = "active" 
 
         db.commit()
         logger.info("[AutoMigrate] Fleet defaults and QR bindings verified for VM-000001.")

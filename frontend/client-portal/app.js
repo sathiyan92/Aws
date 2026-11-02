@@ -1039,6 +1039,22 @@ function applyClientStandeePreset1() {
     showToast("📌 ₹1.00 GTECH Standee QR preset loaded! Click 'Save QR Settings' or '⚡ Sync to Machine' to activate.");
 }
 
+function applyClientStandeePreset3() {
+    const standeePayload = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuZRXzwHRZaG7y";
+    const qrUrlInput = document.getElementById('clientQrImageUrl');
+    const quickInput = document.getElementById('clientSlotQuickQrInput');
+    if (qrUrlInput) qrUrlInput.value = standeePayload;
+    if (quickInput) quickInput.value = standeePayload;
+    if (elements.qrVpa) elements.qrVpa.value = "gtech282722.rzp@rxairtel";
+    if (elements.qrMerchantName) elements.qrMerchantName.value = "GTECH";
+    const slot1Price = document.getElementById('cslot-price-1');
+    if (slot1Price) slot1Price.value = "1.00";
+
+    updateClientQrImagePreview(standeePayload);
+    updateClientSlotQuickQrPreview(standeePayload);
+    showToast("📌 ₹1.00 GTECH Standee (TuZRXzwHRZaG7y) loaded! Click 'Save QR Settings' or '⚡ Sync to Machine' to activate.");
+}
+
 function applyClientStandeePreset2() {
     const standeePayload = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
     const qrUrlInput = document.getElementById('clientQrImageUrl');

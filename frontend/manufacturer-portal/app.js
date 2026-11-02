@@ -1885,6 +1885,19 @@ function loadPageQrStandee1() {
     showToast("📌 ₹1.00 GTECH Standee QR preset loaded! Click 'Sync QR to Machine' to activate.");
 }
 
+function loadPageQrStandee3() {
+    const standee3 = "upi://pay?am=1.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuZRXzwHRZaG7y";
+    const input = document.getElementById("pageQrInput");
+    const price = document.getElementById("pageQrPrice");
+    const badge = document.getElementById("pageQrAmountBadge");
+
+    if (input) input.value = standee3;
+    if (price) price.value = "1.00";
+    if (badge) badge.textContent = "₹1.00";
+    updatePageQrPreview(standee3);
+    showToast("📌 ₹1.00 GTECH Standee (TuZRXzwHRZaG7y) loaded! Click 'Sync QR to Machine' to activate.");
+}
+
 function loadPageQrStandee2() {
     const standee2 = "upi://pay?am=2.00&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=TuXKipEEX2KteFqrv2";
     const input = document.getElementById("pageQrInput");
