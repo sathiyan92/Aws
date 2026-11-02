@@ -89,10 +89,20 @@ String getDeviceMacAddress() {
 // Motor / Relay Pins (Default: Working with 1 Motor on GPIO 26)
 const int PIN_MOTOR_SLOT_1  = 26;   // Motor 1 Relay / Driver IN1
 const int PIN_MOTOR_SLOT_2  = 27;   // Motor 2 (Optional secondary motor)
+const int PIN_COIN_PULSE_OUT = 25;  // Coin Pulse Output Pin (Generates pulses based on QR amount)
 const int PIN_SETUP_BTN     = 0;    // ESP32 BOOT Button (Hold 5s for reset)
 
 // Dispense Runtime (Milliseconds)
 const unsigned long MOTOR_DISPENSE_TIME_MS = 3000; // Motor runs for 3 seconds per dispense
+
+// ==============================================================================
+// COIN PULSE CONFIGURATION (TIMING & POLARITY)
+// Generates coin pulses based on QR amount at the SAME TIME as Motor 1 runs!
+// ==============================================================================
+#define COIN_PULSE_ACTIVE_LOW      0     // Set 0 for Active-HIGH (0V idle, 3.3V pulse), 1 for Active-LOW (3.3V idle, 0V pulse)
+const int COIN_PULSE_WIDTH_MS      = 50;  // Pulse ON duration (50ms standard)
+const int COIN_PULSE_GAP_MS        = 50;  // Pulse OFF duration between pulses (50ms standard)
+const float COIN_VALUE_PER_PULSE   = 1.0; // Rs 1.00 per pulse (e.g. Rs 1 = 1 pulse, Rs 2 = 2 pulses, Rs 5 = 5 pulses)
 
 // ==============================================================================
 // 2. RELAY POLARITY CONFIGURATION
@@ -214,6 +224,7 @@ void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress);
 void uiDrawVendingScreen(int slotNumber, float amount, String productName);
 void uiDrawCompleteScreen();
 void setMotor(int slotNumber, bool turnOn);
+void setCoinPulsePin(bool active);
 void dispenseProduct(int slotNumber, float amount, String orderId, String dispenseToken = "", String productName = "");
 void confirmDispenseToCloud(String orderId, String dispenseToken = "");
 void pollPendingDispense();
@@ -232,6 +243,11 @@ void setMotor(int slotNumber, bool turnOn) {
   int pin = (slotNumber == 2 && ACTIVE_MOTOR_COUNT > 1) ? PIN_MOTOR_SLOT_2 : PIN_MOTOR_SLOT_1;
   int state = turnOn ? (RELAY_ACTIVE_LOW ? LOW : HIGH) : (RELAY_ACTIVE_LOW ? HIGH : LOW);
   digitalWrite(pin, state);
+}
+
+void setCoinPulsePin(bool active) {
+  int state = active ? (COIN_PULSE_ACTIVE_LOW ? LOW : HIGH) : (COIN_PULSE_ACTIVE_LOW ? HIGH : LOW);
+  digitalWrite(PIN_COIN_PULSE_OUT, state);
 }
 
 // ==============================================================================
@@ -1031,36 +1047,83 @@ void dispenseProduct(int slotNumber, float amount, String orderId, String dispen
   current_state = STATE_DISPENSING;
   String targetProduct = (productName.length() > 0) ? productName : pending_product_name;
 
+  // Calculate Coin Pulses based on QR Payment Amount (e.g. Rs 1.00 = 1 pulse, Rs 2.00 = 2 pulses, etc.)
+  int coinPulses = (int)((amount / COIN_VALUE_PER_PULSE) + 0.5f);
+  if (coinPulses < 1) coinPulses = 1;
+
   Serial.println("\n******************************************************************");
   Serial.printf(">>> 🚀 RAZORPAY PAYMENT VERIFIED (Rs %.2f)! DISPENSING MOTOR %d...\n", amount, slotNumber);
-  Serial.printf("    Item  : %s\n", targetProduct.c_str());
-  Serial.printf("    Auth  : %s\n", dispenseToken.length() > 0 ? dispenseToken.c_str() : "(Standard)");
+  Serial.printf("    Item       : %s\n", targetProduct.c_str());
+  Serial.printf("    Coin Pulses: %d Pulse(s) on GPIO %d (SAME TIME as Motor 1)\n", coinPulses, PIN_COIN_PULSE_OUT);
+  Serial.printf("    Auth       : %s\n", dispenseToken.length() > 0 ? dispenseToken.c_str() : "(Standard)");
   Serial.println("******************************************************************");
 
   // 1. Draw "PAYMENT SUCCESSFUL" & "PLEASE COLLECT MATERIAL" on LCD (Requirement 9)
   uiDrawVendingScreen(slotNumber, amount, targetProduct);
 
-  // 2. Turn ON Motor (GPIO 26)
+  // 2. Turn ON Motor 1 (GPIO 26)
   setMotor(slotNumber, true);
 
-  // 3. Smooth progress bar animation over 3 seconds
+  // 3. Simultaneously generate Coin Pulses on PIN_COIN_PULSE_OUT while Motor 1 is running!
+  const unsigned long pulsePeriod = (unsigned long)(COIN_PULSE_WIDTH_MS + COIN_PULSE_GAP_MS);
+  unsigned long totalPulseTime = (unsigned long)coinPulses * pulsePeriod;
+  unsigned long totalDispenseDuration = max(MOTOR_DISPENSE_TIME_MS, totalPulseTime);
+
   unsigned long startTime = millis();
   const int barX = 37;
   const int barY = 132;
   const int barMaxW = 406;
   const int barH = 24;
 
-  while (millis() - startTime < MOTOR_DISPENSE_TIME_MS) {
-    unsigned long elapsed = millis() - startTime;
-    int currentW = (elapsed * barMaxW) / MOTOR_DISPENSE_TIME_MS;
-    TFT_display.fillRect(barX, barY, currentW, barH, COLOR_GREEN);
-    delay(40);
-  }
-  TFT_display.fillRect(barX, barY, barMaxW, barH, COLOR_GREEN);
+  int pulsesFired = 0;
+  bool pulseActive = false;
 
-  // 4. Turn OFF Motor
+  while (millis() - startTime < totalDispenseDuration) {
+    unsigned long elapsed = millis() - startTime;
+
+    // --- COIN PULSE GENERATOR (Runs at the SAME TIME as Motor 1) ---
+    if (elapsed < totalPulseTime) {
+      unsigned long pulseCycleTime = elapsed % pulsePeriod;
+
+      if (pulseCycleTime < (unsigned long)COIN_PULSE_WIDTH_MS) {
+        if (!pulseActive) {
+          setCoinPulsePin(true);
+          pulseActive = true;
+          pulsesFired++;
+          Serial.printf("[🪙 Coin Pulse] Pulse #%d / %d -> ON (GPIO %d)\n", pulsesFired, coinPulses, PIN_COIN_PULSE_OUT);
+        }
+      } else {
+        if (pulseActive) {
+          setCoinPulsePin(false);
+          pulseActive = false;
+          Serial.printf("[🪙 Coin Pulse] Pulse #%d -> OFF\n", pulsesFired);
+        }
+      }
+    } else {
+      if (pulseActive) {
+        setCoinPulsePin(false);
+        pulseActive = false;
+      }
+    }
+
+    // --- MOTOR DISPENSE CUTOFF (if totalDispenseDuration > default motor runtime) ---
+    if (elapsed >= MOTOR_DISPENSE_TIME_MS && elapsed < totalDispenseDuration) {
+      setMotor(slotNumber, false);
+    }
+
+    // --- LCD PROGRESS BAR ANIMATION ---
+    int currentW = (int)((elapsed * (unsigned long)barMaxW) / totalDispenseDuration);
+    if (currentW > barMaxW) currentW = barMaxW;
+    TFT_display.fillRect(barX, barY, currentW, barH, COLOR_GREEN);
+
+    delay(10);
+  }
+
+  // 4. Turn OFF Motor & Coin Pulse
+  setCoinPulsePin(false);
   setMotor(slotNumber, false);
-  Serial.printf("[✓] Slot %d Motor Cycle Complete. Product Dispensed!\n", slotNumber);
+  TFT_display.fillRect(barX, barY, barMaxW, barH, COLOR_GREEN);
+  Serial.printf("[✓] Slot %d Motor Cycle Complete & %d Coin Pulses Delivered!\n", slotNumber, coinPulses);
 
   // 5. Display "PLEASE COLLECT MATERIAL FROM TRAY"
   uiDrawCompleteScreen();
@@ -1586,11 +1649,13 @@ void setup() {
   Serial.println("   >>> ESP32 RAZORPAY ZERO-BUTTON VENDING CONTROLLER <<<          ");
   Serial.println("==================================================================");
 
-  // 1. Initialize Motor Pins (Immediate OFF)
+  // 1. Initialize Motor & Coin Pulse Pins (Immediate OFF)
   pinMode(PIN_MOTOR_SLOT_1, OUTPUT);
   pinMode(PIN_MOTOR_SLOT_2, OUTPUT);
+  pinMode(PIN_COIN_PULSE_OUT, OUTPUT);
   setMotor(1, false);
   setMotor(2, false);
+  setCoinPulsePin(false);
 
   pinMode(PIN_SETUP_BTN, INPUT_PULLUP);
 
