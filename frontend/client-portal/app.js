@@ -188,21 +188,18 @@ function setupEventListeners() {
     elements.loginForm.addEventListener('submit', handleLogin);
     elements.logoutBtn.addEventListener('click', handleLogout);
 
-    // Quick demo buttons (safe guarded)
-    if (elements.demoApexBtn) {
-        elements.demoApexBtn.addEventListener('click', () => {
-            elements.loginUsername.value = 'apex_admin';
-            elements.loginPassword.value = 'Apex@Admin2026!';
-            elements.loginForm.dispatchEvent(new Event('submit'));
-        });
-    }
-    if (elements.demoMetroBtn) {
-        elements.demoMetroBtn.addEventListener('click', () => {
-            elements.loginUsername.value = 'metro_admin';
-            elements.loginPassword.value = 'Metro@Retail2026!';
-            elements.loginForm.dispatchEvent(new Event('submit'));
-        });
-    }
+    // Quick demo buttons
+    elements.demoApexBtn.addEventListener('click', () => {
+        elements.loginUsername.value = 'apex_admin';
+        elements.loginPassword.value = 'Apex@Admin2026!';
+        elements.loginForm.dispatchEvent(new Event('submit'));
+    });
+
+    elements.demoMetroBtn.addEventListener('click', () => {
+        elements.loginUsername.value = 'metro_admin';
+        elements.loginPassword.value = 'Metro@Retail2026!';
+        elements.loginForm.dispatchEvent(new Event('submit'));
+    });
 
     // Form submissions
     elements.qrSettingsForm.addEventListener('submit', handleSaveQRSettings);
@@ -440,9 +437,11 @@ function onDeviceSelectionChanged() {
     elements.deviceTypeBadge.style.display = 'inline-flex';
     elements.deviceTypeBadge.textContent = currentDevice.product_type;
 
-    // 1. DYNAMIC TOGGLING OF QR MODULE (Keep permanently visible)
-    if (elements.navQR) {
+    // 1. DYNAMIC TOGGLING OF QR MODULE
+    if (currentDevice.has_qr_payment || currentDevice.product_type === 'VENDING_MACHINE') {
         elements.navQR.classList.remove('dynamic-hidden');
+    } else {
+        elements.navQR.classList.add('dynamic-hidden');
     }
 
     // 2. DYNAMIC TOGGLING OF COIN MODULE
@@ -1746,70 +1745,3 @@ async function applyFleetQuickQrToDevice() {
         showToast(e.message, "danger");
     }
 }
-
-// Client Vendor Change Password Handlers
-function openClientChangePasswordModal() {
-    document.getElementById('clientChangePassForm')?.reset();
-    const uGrp = document.getElementById('clientCpUsernameGroup');
-    const uInp = document.getElementById('clientCpUsername');
-    if (state.token && state.user) {
-        if (uGrp) uGrp.style.display = 'none';
-        if (uInp) uInp.value = state.user.username;
-    } else {
-        if (uGrp) uGrp.style.display = 'block';
-        if (uInp) uInp.value = '';
-    }
-    document.getElementById('modalClientChangePassword')?.classList.remove('hidden');
-}
-
-document.getElementById('openClientChangePassBtn')?.addEventListener('click', openClientChangePasswordModal);
-document.getElementById('btnClientTopChangePass')?.addEventListener('click', openClientChangePasswordModal);
-document.getElementById('sidebarClientChangePass')?.addEventListener('click', openClientChangePasswordModal);
-document.getElementById('btnClientLoginChangePass')?.addEventListener('click', openClientChangePasswordModal);
-
-document.getElementById('closeClientChangePassBtn')?.addEventListener('click', () => {
-    document.getElementById('modalClientChangePassword')?.classList.add('hidden');
-});
-document.getElementById('cancelClientChangePassBtn')?.addEventListener('click', () => {
-    document.getElementById('modalClientChangePassword')?.classList.add('hidden');
-});
-
-document.getElementById('clientChangePassForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const u = document.getElementById('clientCpUsername')?.value?.trim() || (state.user ? state.user.username : '');
-    const cur = document.getElementById('clientCpCurrent').value;
-    const np = document.getElementById('clientCpNew').value;
-    const conf = document.getElementById('clientCpConfirm').value;
-
-    if (np !== conf) {
-        showToast('New password and confirm password do not match!', 'error');
-        return;
-    }
-
-    try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (state.token) {
-            headers['Authorization'] = `Bearer ${state.token}`;
-        }
-        const res = await fetch(`${API_BASE}/api/v1/auth/change-password`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                username_or_email: u || undefined,
-                current_password: cur,
-                new_password: np
-            })
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            document.getElementById('modalClientChangePassword')?.classList.add('hidden');
-            showToast('✓ ' + (data.message || 'Password updated successfully!'));
-        } else {
-            const errMsg = await parseApiError(res);
-            showToast('Change password failed: ' + errMsg, 'error');
-        }
-    } catch (err) {
-        showToast(err.message, 'error');
-    }
-});
