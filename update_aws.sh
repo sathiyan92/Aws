@@ -11,10 +11,10 @@ echo ">>> ⚡ UPDATING IOT FLEET PLATFORM ON AWS LIGHTSAIL..."
 echo "=========================================================================="
 
 # 1. Ensure required system packages and libraries are installed
-echo ">>> [1/7] Ensuring git, rsync, curl, lsof, psmisc, and libzbar0 are present..."
+echo ">>> [1/7] Ensuring git, rsync, curl, lsof, psmisc, libzbar0, and python3-venv are present..."
 which apt-get >/dev/null 2>&1 && {
     apt-get update -y >/dev/null 2>&1 || true
-    apt-get install -y --no-install-recommends git rsync curl lsof psmisc libzbar0 >/dev/null 2>&1 || true
+    apt-get install -y --no-install-recommends git rsync curl lsof psmisc libzbar0 python3-pip python3-venv >/dev/null 2>&1 || true
 }
 
 INSTALL_DIR="/opt/iot-fleet-platform"
@@ -63,21 +63,37 @@ mkdir -p "$INSTALL_DIR/backend/uploads/firmware"
 chmod -R 775 "$INSTALL_DIR/backend/uploads" 2>/dev/null || true
 
 # 4. Clear all Python bytecode caches and install Python dependencies
-echo ">>> [4/7] Installing / updating Python dependencies in virtual environment..."
+echo ">>> [4/7] Installing / updating Python dependencies..."
 find "$INSTALL_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find "$INSTALL_DIR" -name "*.pyc" -delete 2>/dev/null || true
 
-if [ ! -f "$INSTALL_DIR/.venv/bin/python3" ]; then
-    echo ">>> Creating missing Python virtual environment..."
-    python3 -m venv "$INSTALL_DIR/.venv"
+PYTHON_BIN="$INSTALL_DIR/.venv/bin/python3"
+PIP_BIN="$INSTALL_DIR/.venv/bin/pip"
+
+if [ ! -x "$PYTHON_BIN" ] || [ ! -x "$PIP_BIN" ]; then
+    echo ">>> Creating Python virtual environment at $INSTALL_DIR/.venv..."
+    rm -rf "$INSTALL_DIR/.venv"
+    python3 -m venv "$INSTALL_DIR/.venv" || true
 fi
 
-"$INSTALL_DIR/.venv/bin/pip" install --upgrade pip >/dev/null 2>&1 || true
-"$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+if [ -x "$INSTALL_DIR/.venv/bin/python3" ]; then
+    PYTHON_BIN="$INSTALL_DIR/.venv/bin/python3"
+    PIP_BIN="$INSTALL_DIR/.venv/bin/pip"
+else
+    echo ">>> Notice: Falling back to system python3..."
+    PYTHON_BIN="$(which python3)"
+    PIP_BIN="$(which pip3 || which pip)"
+fi
+
+echo "  Python executable: $PYTHON_BIN"
+echo "  Pip executable   : $PIP_BIN"
+
+$PIP_BIN install --upgrade pip >/dev/null 2>&1 || true
+$PIP_BIN install -r "$INSTALL_DIR/requirements.txt"
 
 # 5. Run Database Schema Auto-Migration
 echo ">>> [5/7] Running Database Schema Auto-Migration..."
-(cd "$INSTALL_DIR" && PYTHONPATH="$INSTALL_DIR/backend" "$INSTALL_DIR/.venv/bin/python3" -c "
+(cd "$INSTALL_DIR" && PYTHONPATH="$INSTALL_DIR/backend" "$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '$INSTALL_DIR/backend')
 import src.db.models
@@ -89,7 +105,7 @@ print('>>> Database auto-migration completed successfully!')
 
 # Test running backend import directly to catch any import errors
 echo ">>> Verifying backend application imports..."
-(cd "$INSTALL_DIR" && "$INSTALL_DIR/.venv/bin/python3" -c "
+(cd "$INSTALL_DIR" && "$PYTHON_BIN" -c "
 import run_server
 print('>>> Application entrypoint verified successfully!')
 ") || {
@@ -108,8 +124,8 @@ pkill -9 -f "run_server" 2>/dev/null || true
 pkill -9 -f "main:app" 2>/dev/null || true
 sleep 1
 
-# Write systemd service unit file using run_server.py
-cat << 'EOF' > /etc/systemd/system/iot-fleet-platform.service
+# Write systemd service unit file dynamically referencing verified Python binary
+cat << EOF > /etc/systemd/system/iot-fleet-platform.service
 [Unit]
 Description=IoT Fleet Platform - FastAPI Server, Web Portal & OTA Engine
 After=network.target
@@ -120,7 +136,7 @@ User=root
 WorkingDirectory=/opt/iot-fleet-platform
 Environment="PYTHONPATH=/opt/iot-fleet-platform/backend"
 Environment="PORT=8000"
-ExecStart=/opt/iot-fleet-platform/.venv/bin/python3 /opt/iot-fleet-platform/run_server.py
+ExecStart=$PYTHON_BIN /opt/iot-fleet-platform/run_server.py
 Restart=always
 RestartSec=3
 
