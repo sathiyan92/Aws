@@ -233,6 +233,7 @@ void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress);
 void uiDrawVendingScreen(int slotNumber, float amount, String productName);
 void uiDrawCompleteScreen();
 void uiUpdateNetworkStatus(NetworkStatus newStatus);
+void uiDrawOfflineNotice(NetworkStatus status);
 void setMotor(int slotNumber, bool turnOn);
 void setCoinPulsePin(bool active);
 void dispenseProduct(int slotNumber, float amount, String orderId, String dispenseToken = "", String productName = "");
@@ -411,55 +412,129 @@ void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
  * Live Dynamic Network & Internet Status Monitor
  * Instantly updates the LCD status badge and alert banner without redrawing or flickering the QR code!
  */
+/**
+ * Offline / No Internet Notice Panel (Replaces QR Code when disconnected)
+ * Prevents customers from paying when machine cannot communicate with the cloud!
+ * Displays prominent disconnected icon / symbol and clear warning text.
+ */
+void uiDrawOfflineNotice(NetworkStatus status) {
+  bool isNoWifi = (status == NET_STATUS_NO_WIFI);
+  uint16_t accentColor = isNoWifi ? COLOR_RED : COLOR_AMBER;
+
+  // 1. Draw Offline Card Box (x: 18, y: 54, w: 190, h: 190)
+  TFT_display.fillRect(18, 54, 190, 190, COLOR_CARD);
+  TFT_display.drawRect(18, 54, 190, 190, accentColor);
+  TFT_display.drawRect(19, 55, 188, 188, accentColor);
+  TFT_display.drawRect(21, 57, 184, 184, COLOR_CARD_BORDER);
+
+  int cx = 113; // Horizontal center of the 190px box (18 + 95)
+
+  if (isNoWifi) {
+    // --- ICON: WI-FI DISCONNECTED SYMBOL (Wi-Fi waves with bold Red 'X' slash) ---
+    int cy = 94;
+
+    // Wi-Fi base dot
+    TFT_display.fillCircle(cx, cy + 18, 3, COLOR_GRAY);
+
+    // Wi-Fi outer wave arcs
+    TFT_display.drawCircle(cx, cy + 18, 14, COLOR_GRAY);
+    TFT_display.drawCircle(cx, cy + 18, 15, COLOR_GRAY);
+    TFT_display.drawCircle(cx, cy + 18, 25, COLOR_GRAY);
+    TFT_display.drawCircle(cx, cy + 18, 26, COLOR_GRAY);
+
+    // Mask bottom half so only upper arcs appear
+    TFT_display.fillRect(18, cy + 19, 190, 30, COLOR_CARD);
+
+    // Bold Red 'X' across the Wi-Fi icon
+    for (int o = -2; o <= 2; o++) {
+      TFT_display.drawLine(cx - 24 + o, cy - 8, cx + 24 + o, cy + 24, COLOR_RED);
+      TFT_display.drawLine(cx + 24 + o, cy - 8, cx - 24 + o, cy + 24, COLOR_RED);
+    }
+
+    // Title: NO WI-FI
+    TFT_display.setTextSize(2);
+    TFT_display.setTextColor(COLOR_RED);
+    TFT_display.setCursor(38, 134);
+    TFT_display.print("NO WI-FI");
+  } else {
+    // --- ICON: WARNING TRIANGLE SYMBOL (Amber triangle with white exclamation '!') ---
+    int cy = 92;
+
+    // Bold layered warning triangle
+    for (int t = 0; t < 3; t++) {
+      TFT_display.drawTriangle(cx, cy - 24 + t, cx - 28 + t, cy + 18 - t, cx + 28 - t, cy + 18 - t, COLOR_AMBER);
+    }
+    TFT_display.drawTriangle(cx, cy - 22, cx - 26, cy + 16, cx + 26, cy + 16, COLOR_YELLOW);
+
+    // Exclamation Mark '!'
+    TFT_display.fillRect(cx - 2, cy - 12, 5, 16, COLOR_WHITE);
+    TFT_display.fillCircle(cx, cy + 12, 2, COLOR_WHITE);
+
+    // Title: NO INTERNET
+    TFT_display.setTextSize(2);
+    TFT_display.setTextColor(COLOR_AMBER);
+    TFT_display.setCursor(24, 134);
+    TFT_display.print("NO INTERNET");
+  }
+
+  // Subtext inside box
+  TFT_display.setTextSize(1);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setCursor(34, 160);
+  TFT_display.print("QR PAYMENTS OFFLINE");
+
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setCursor(38, 176);
+  TFT_display.print("PLEASE DO NOT PAY");
+
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setCursor(44, 194);
+  TFT_display.print("Reconnecting...");
+
+  // Status pill at bottom of box
+  TFT_display.fillRect(30, 214, 166, 18, COLOR_DARK_GRAY);
+  TFT_display.drawRect(30, 214, 166, 18, COLOR_CARD_BORDER);
+  TFT_display.setCursor(38, 219);
+  TFT_display.setTextColor(accentColor);
+  TFT_display.print(isNoWifi ? "WiFi Signal Lost" : "Cloud Link Offline");
+
+  // 2. Subtext below box (x: 10 - 215, y: 254 - 316)
+  TFT_display.fillRect(10, 252, 210, 64, COLOR_BG);
+
+  TFT_display.setCursor(20, 258);
+  TFT_display.setTextColor(COLOR_ORANGE);
+  TFT_display.setTextSize(1);
+  TFT_display.print("QR code hidden while offline");
+
+  TFT_display.setCursor(18, 274);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Appears automatically when online");
+
+  // Bottom alert bar
+  TFT_display.fillRect(10, 292, 205, 22, accentColor);
+  TFT_display.setCursor(16, 298);
+  TFT_display.setTextColor(isNoWifi ? COLOR_WHITE : COLOR_BLACK);
+  TFT_display.setTextSize(1);
+  TFT_display.print(isNoWifi ? "! WI-FI DISCONNECTED !" : "! NO CLOUD / INTERNET !");
+}
+
+/**
+ * Live Dynamic Network & Internet Status Monitor
+ * Automatically hides/shows the QR code based on cloud and WiFi status!
+ */
 void uiUpdateNetworkStatus(NetworkStatus newStatus) {
   if (current_state != STATE_STANDBY_QR) return;
   if (newStatus == current_net_status) return;
 
+  NetworkStatus oldStatus = current_net_status;
   current_net_status = newStatus;
 
-  // Clear top-right header badge area (x: 320 to 475, y: 5 to 40)
-  TFT_display.fillRect(320, 5, 155, 35, COLOR_HEADER);
+  Serial.printf("[Net Status] State change: %d -> %d\n", oldStatus, newStatus);
 
-  if (newStatus == NET_STATUS_ONLINE) {
-    TFT_display.setCursor(375, 15);
-    TFT_display.setTextColor(COLOR_GREEN);
-    TFT_display.setTextSize(2);
-    TFT_display.print("● READY");
-
-    // Clear alert banner below QR code and restore default vendor text
-    TFT_display.fillRect(10, 292, 205, 22, COLOR_BG);
-    TFT_display.setCursor(18, 296);
-    TFT_display.setTextColor(COLOR_GRAY);
-    TFT_display.setTextSize(1);
-    TFT_display.print("Auto-Transfers to Vendor Account");
-    Serial.println("[Net Status] ● MACHINE ONLINE & READY (Cloud Connected)");
-  } else if (newStatus == NET_STATUS_NO_WIFI) {
-    TFT_display.setCursor(330, 15);
-    TFT_display.setTextColor(COLOR_RED);
-    TFT_display.setTextSize(2);
-    TFT_display.print("● NO WI-FI");
-
-    // Show high-visibility red alert banner below QR
-    TFT_display.fillRect(10, 292, 205, 22, COLOR_RED);
-    TFT_display.setCursor(16, 298);
-    TFT_display.setTextColor(COLOR_WHITE);
-    TFT_display.setTextSize(1);
-    TFT_display.print("! WI-FI DISCONNECTED !");
-    Serial.println("[Net Status] ● ALERT: WI-FI DISCONNECTED (Reconnecting...)");
-  } else if (newStatus == NET_STATUS_NO_INTERNET) {
-    TFT_display.setCursor(330, 15);
-    TFT_display.setTextColor(COLOR_AMBER);
-    TFT_display.setTextSize(2);
-    TFT_display.print("● NO CLOUD");
-
-    // Show warning amber alert banner below QR
-    TFT_display.fillRect(10, 292, 205, 22, COLOR_AMBER);
-    TFT_display.setCursor(16, 298);
-    TFT_display.setTextColor(COLOR_BLACK);
-    TFT_display.setTextSize(1);
-    TFT_display.print("! NO INTERNET / CLOUD !");
-    Serial.println("[Net Status] ● ALERT: WI-FI CONNECTED BUT NO INTERNET / AWS CLOUD OFFLINE");
-  }
+  // Whenever network transitions between ONLINE and OFFLINE (or between NO_WIFI and NO_INTERNET),
+  // re-render the screen so the QR code is immediately hidden (offline) or restored (online)!
+  uiDrawStandbyQRScreen();
 }
 
 /**
@@ -523,37 +598,30 @@ void uiDrawStandbyQRScreen() {
              "&cu=INR&tn=" + device_id;
   }
 
-  // Left: Draw High-Contrast Razorpay QR Code Box
-  drawQRCode(upiUri.c_str(), 18, 54, 190);
+  // Left: Display QR Code ONLY IF MACHINE IS ONLINE!
+  if (current_net_status == NET_STATUS_ONLINE) {
+    // Draw High-Contrast Razorpay QR Code Box
+    drawQRCode(upiUri.c_str(), 18, 54, 190);
 
-  // Subtext under QR
-  TFT_display.setCursor(22, 258);
-  TFT_display.setTextColor(COLOR_WHITE);
-  TFT_display.setTextSize(1);
-  TFT_display.print("GPay / PhonePe / Paytm / BHIM");
-
-  TFT_display.setCursor(24, 276);
-  TFT_display.setTextColor(COLOR_CYAN);
-  TFT_display.setTextSize(1);
-  TFT_display.print("Powered by Razorpay Route");
-
-  if (current_net_status == NET_STATUS_NO_WIFI) {
-    TFT_display.fillRect(10, 292, 205, 22, COLOR_RED);
-    TFT_display.setCursor(16, 298);
+    // Subtext under QR
+    TFT_display.setCursor(22, 258);
     TFT_display.setTextColor(COLOR_WHITE);
     TFT_display.setTextSize(1);
-    TFT_display.print("! WI-FI DISCONNECTED !");
-  } else if (current_net_status == NET_STATUS_NO_INTERNET) {
-    TFT_display.fillRect(10, 292, 205, 22, COLOR_AMBER);
-    TFT_display.setCursor(16, 298);
-    TFT_display.setTextColor(COLOR_BLACK);
+    TFT_display.print("GPay / PhonePe / Paytm / BHIM");
+
+    TFT_display.setCursor(24, 276);
+    TFT_display.setTextColor(COLOR_CYAN);
     TFT_display.setTextSize(1);
-    TFT_display.print("! NO INTERNET / CLOUD !");
-  } else {
+    TFT_display.print("Powered by Razorpay Route");
+
     TFT_display.setCursor(18, 296);
     TFT_display.setTextColor(COLOR_GRAY);
     TFT_display.setTextSize(1);
     TFT_display.print("Auto-Transfers to Vendor Account");
+  } else {
+    // MACHINE IS OFFLINE (NO WI-FI OR NO INTERNET / CLOUD)
+    // DO NOT SHOW PAYMENT QR CODE! Display clear No Internet Message & Graphical Icon!
+    uiDrawOfflineNotice(current_net_status);
   }
 
   // Right Side: Product & Price Card
@@ -584,33 +652,63 @@ void uiDrawStandbyQRScreen() {
   TFT_display.setTextSize(4);
   TFT_display.printf("Rs %.2f", pending_amount_rupee);
 
-  // Instructions Box (No button needed!)
-  TFT_display.fillRect(238, 196, 218, 52, COLOR_DARK_GRAY);
-  TFT_display.setCursor(244, 202);
-  TFT_display.setTextColor(COLOR_AMBER);
-  TFT_display.setTextSize(1);
-  TFT_display.print("NO BUTTON NEEDED!");
+  if (current_net_status == NET_STATUS_ONLINE) {
+    // Instructions Box (Online Mode)
+    TFT_display.fillRect(238, 196, 218, 52, COLOR_DARK_GRAY);
+    TFT_display.setCursor(244, 202);
+    TFT_display.setTextColor(COLOR_AMBER);
+    TFT_display.setTextSize(1);
+    TFT_display.print("NO BUTTON NEEDED!");
 
-  TFT_display.setCursor(244, 216);
-  TFT_display.setTextColor(COLOR_WHITE);
-  TFT_display.setTextSize(1);
-  TFT_display.print("1. Scan QR  2. Pay Rs 10");
+    TFT_display.setCursor(244, 216);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.setTextSize(1);
+    TFT_display.print("1. Scan QR  2. Pay Rs 10");
 
-  TFT_display.setCursor(244, 230);
-  TFT_display.setTextColor(COLOR_GREEN);
-  TFT_display.setTextSize(1);
-  TFT_display.print("3. Machine vends automatically");
+    TFT_display.setCursor(244, 230);
+    TFT_display.setTextColor(COLOR_GREEN);
+    TFT_display.setTextSize(1);
+    TFT_display.print("3. Machine vends automatically");
 
-  // Bottom Live Status
-  TFT_display.setCursor(240, 266);
-  TFT_display.setTextColor(COLOR_GRAY);
-  TFT_display.setTextSize(1);
-  TFT_display.print("STATUS:");
+    // Bottom Live Status
+    TFT_display.setCursor(240, 266);
+    TFT_display.setTextColor(COLOR_GRAY);
+    TFT_display.setTextSize(1);
+    TFT_display.print("STATUS:");
 
-  TFT_display.setCursor(240, 282);
-  TFT_display.setTextColor(COLOR_CYAN);
-  TFT_display.setTextSize(2);
-  TFT_display.print("AWAITING PAY...");
+    TFT_display.setCursor(240, 282);
+    TFT_display.setTextColor(COLOR_CYAN);
+    TFT_display.setTextSize(2);
+    TFT_display.print("AWAITING PAY...");
+  } else {
+    // Instructions Box (Offline Mode)
+    TFT_display.fillRect(238, 196, 218, 52, COLOR_DARK_GRAY);
+    TFT_display.setCursor(244, 202);
+    TFT_display.setTextColor(COLOR_RED);
+    TFT_display.setTextSize(1);
+    TFT_display.print("VENDING TEMPORARILY OFFLINE");
+
+    TFT_display.setCursor(244, 216);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.setTextSize(1);
+    TFT_display.print("No internet link to verify payments");
+
+    TFT_display.setCursor(244, 230);
+    TFT_display.setTextColor(COLOR_AMBER);
+    TFT_display.setTextSize(1);
+    TFT_display.print("Please stand by for auto-reconnect");
+
+    // Bottom Live Status
+    TFT_display.setCursor(240, 266);
+    TFT_display.setTextColor(COLOR_GRAY);
+    TFT_display.setTextSize(1);
+    TFT_display.print("STATUS:");
+
+    TFT_display.setCursor(240, 282);
+    TFT_display.setTextColor(COLOR_RED);
+    TFT_display.setTextSize(2);
+    TFT_display.print("OFFLINE (NO PAY)");
+  }
 }
 
 /**
