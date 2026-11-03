@@ -3,7 +3,7 @@ Pydantic schemas for Client (Tenant) management.
 """
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 class ClientCreateRequest(BaseModel):
@@ -52,6 +52,6 @@ class ClientListResponse(BaseModel):
 class ClientUserCreateRequest(BaseModel):
     """Payload to create or reset credentials for a client vendor user."""
     username: str = Field(..., min_length=3, max_length=64)
-    email: EmailStr = Field(...)
+    email: Optional[str] = Field(None, description="Optional vendor contact email")
     password: str = Field(..., min_length=6)
     full_name: Optional[str] = None

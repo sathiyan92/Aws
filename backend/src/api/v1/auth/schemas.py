@@ -3,7 +3,7 @@ Pydantic schemas for authentication requests, responses, and user profiles.
 """
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
@@ -48,6 +48,6 @@ class MessageResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     """Payload to change user password."""
-    username_or_email: Optional[str] = Field(None, description="Username or email (required if not logged in)")
-    current_password: str = Field(..., description="Current password for verification", min_length=1)
-    new_password: str = Field(..., description="New password", min_length=6)
+    username_or_email: Optional[str] = Field(None, description="Username or email (if changing before login)")
+    current_password: str = Field(..., min_length=1, description="Current password")
+    new_password: str = Field(..., min_length=6, description="New password (minimum 6 characters)")

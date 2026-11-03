@@ -106,8 +106,11 @@ print('>>> Database auto-migration completed successfully!')
 # Test running backend import directly to catch any import errors
 echo ">>> Verifying backend application imports..."
 (cd "$INSTALL_DIR" && "$PYTHON_BIN" -c "
-import run_server
-print('>>> Application entrypoint verified successfully!')
+import sys
+sys.path.insert(0, '$INSTALL_DIR/backend')
+import main
+from src.main import app
+print('>>> Application entrypoint and FastAPI app verified successfully!')
 ") || {
     echo ">>> [!] WARNING: Application import test failed! Check dependencies above."
 }
