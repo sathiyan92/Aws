@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from src.db.session import get_db
 from src.db.models.client import Client
 from src.db.models.device import Device
+from src.db.models.user import User
 from src.core.security.dependencies import (
     TenantContext,
     get_tenant_context,

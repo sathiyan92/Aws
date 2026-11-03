@@ -27,16 +27,19 @@ def create_client(
     user_agent: Optional[str] = None,
 ) -> Client:
     """Create a new client tenant organization, with optional initial vendor login and machine assignment."""
-    if db.query(Client).filter_by(client_code=client_code).first():
-        raise BadRequestException(f"Client code '{client_code}' already exists")
+    clean_code = client_code.strip().upper()
+    if db.query(Client).filter_by(client_code=clean_code).first():
+        raise BadRequestException(f"Vendor code '{clean_code}' already exists. Please choose a different code.")
+
+    clean_email = contact_email.strip() if contact_email else f"{clean_code.lower()}@vendor.local"
 
     client = Client(
-        client_code=client_code,
-        name=name,
-        contact_email=contact_email,
-        contact_phone=contact_phone,
+        client_code=clean_code,
+        name=name.strip(),
+        contact_email=clean_email,
+        contact_phone=contact_phone.strip() if contact_phone else None,
         status="ACTIVE",
-        address=address,
+        address=address.strip() if address else None,
     )
     db.add(client)
     db.flush()
@@ -44,34 +47,37 @@ def create_client(
     # Create Vendor Admin User if password or username provided
     if admin_password or admin_username:
         from src.core.security.hashing import hash_password
-        username = (admin_username or client_code.lower()).strip()
+        username = (admin_username or clean_code.lower()).strip()
         pwd = admin_password or "Vendor@12345"
+        vendor_user_email = clean_email
 
+        # Check if username or email already exists
         existing_user = db.query(User).filter(
-            (User.username == username) | (User.email == contact_email)
+            (User.username == username) | (User.email == vendor_user_email)
         ).first()
-        if existing_user:
+
+        if existing_user and existing_user.role != "MANUFACTURER_ADMIN" and existing_user.username != "admin":
             existing_user.client_id = client.id
             existing_user.password_hash = hash_password(pwd)
             existing_user.role = "CLIENT_ADMIN"
             existing_user.status = "ACTIVE"
-        else:
+        elif not existing_user:
             vendor_user = User(
                 client_id=client.id,
                 username=username,
-                email=contact_email,
+                email=vendor_user_email,
                 password_hash=hash_password(pwd),
-                full_name=f"{name} Admin",
+                full_name=f"{name.strip()} Admin",
                 role="CLIENT_ADMIN",
                 status="ACTIVE",
             )
             db.add(vendor_user)
 
     # Assign initial device to this vendor if requested
-    if assign_device_id:
-        from src.db.models.device import Device
+    if assign_device_id and assign_device_id.strip():
+        dev_id = assign_device_id.strip()
         device = db.query(Device).filter(
-            (Device.device_id == assign_device_id.strip()) | (Device.id == assign_device_id.strip())
+            (Device.device_id == dev_id) | (Device.id == dev_id)
         ).first()
         if device:
             device.client_id = client.id
@@ -93,8 +99,13 @@ def create_client(
         user_agent=user_agent,
     ))
 
-    db.commit()
-    db.refresh(client)
+    try:
+        db.commit()
+        db.refresh(client)
+    except Exception as e:
+        db.rollback()
+        raise BadRequestException(f"Could not save vendor: {e}")
+
     return client
 
 
@@ -102,8 +113,8 @@ def create_client_user(
     db: Session,
     client_id: str,
     username: str,
-    email: str,
-    password: str,
+    email: Optional[str] = None,
+    password: str = "",
     full_name: Optional[str] = None,
     actor_user: Optional[User] = None,
 ) -> User:
@@ -111,15 +122,28 @@ def create_client_user(
     client = get_client_by_id(db, client_id)
     from src.core.security.hashing import hash_password
 
-    clean_username = username.strip()
-    clean_email = email.strip()
+    clean_username = username.strip() if username else ""
+    if not clean_username:
+        raise BadRequestException("Vendor login username is required.")
+    if len(password.strip()) < 6:
+        raise BadRequestException("Password must be at least 6 characters.")
+
+    if email and email.strip():
+        clean_email = email.strip()
+    else:
+        clean_email = f"{clean_username}@{client.client_code.lower()}.local"
+
     existing = db.query(User).filter(
         (User.username == clean_username) | (User.email == clean_email)
     ).first()
 
     if existing:
+        if existing.role == "MANUFACTURER_ADMIN" and existing.username == "admin":
+            raise BadRequestException("Cannot overwrite Platform Administrator account.")
+
         existing.client_id = client.id
-        existing.password_hash = hash_password(password)
+        existing.username = clean_username
+        existing.password_hash = hash_password(password.strip())
         existing.role = "CLIENT_ADMIN"
         existing.status = "ACTIVE"
         if full_name:
@@ -130,15 +154,20 @@ def create_client_user(
             client_id=client.id,
             username=clean_username,
             email=clean_email,
-            password_hash=hash_password(password),
-            full_name=(full_name or f"{client.name} User").strip(),
+            password_hash=hash_password(password.strip()),
+            full_name=(full_name or f"{client.name} Vendor Admin").strip(),
             role="CLIENT_ADMIN",
             status="ACTIVE",
         )
         db.add(user)
 
-    db.commit()
-    db.refresh(user)
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception as e:
+        db.rollback()
+        raise BadRequestException(f"Could not save vendor credentials: {e}")
+
     return user
 
 

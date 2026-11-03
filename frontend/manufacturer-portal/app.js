@@ -619,11 +619,14 @@ function initModals() {
     // Create Client Form Submit
     document.getElementById("createClientForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const code = document.getElementById("newClientCode").value;
-        const name = document.getElementById("newClientName").value;
-        const email = document.getElementById("newClientEmail").value;
-        const phone = document.getElementById("newClientPhone").value;
-        const address = document.getElementById("newClientAddress").value;
+        const code = document.getElementById("newClientCode").value.trim();
+        const name = document.getElementById("newClientName").value.trim();
+        const email = document.getElementById("newClientEmail").value.trim();
+        const phone = document.getElementById("newClientPhone") ? document.getElementById("newClientPhone").value.trim() : "";
+        const address = document.getElementById("newClientAddress") ? document.getElementById("newClientAddress").value.trim() : "";
+        const username = document.getElementById("newClientUsername") ? document.getElementById("newClientUsername").value.trim() : "";
+        const password = document.getElementById("newClientPassword") ? document.getElementById("newClientPassword").value.trim() : "";
+        const assignDev = document.getElementById("newClientDeviceSelect") ? document.getElementById("newClientDeviceSelect").value.trim() : "";
 
         try {
             const res = await apiRequest("/clients", {
@@ -632,16 +635,23 @@ function initModals() {
                     client_code: code,
                     name: name,
                     contact_email: email,
-                    contact_phone: phone,
-                    address: address,
+                    contact_phone: phone || undefined,
+                    address: address || undefined,
+                    admin_username: username || undefined,
+                    admin_password: password || undefined,
+                    assign_device_id: assignDev || undefined,
                 })
             });
             closeModal("modalCreateClient");
-            showToast(`Client '${res.name}' onboarded successfully!`, "success");
+            showToast(`Vendor '${res.name}' onboarded! Login Username: ${username || code.toLowerCase()}`, "success");
             await loadClients();
             await loadStats();
+            await loadDevices();
             renderClientsTable();
-        } catch (err) {}
+            renderDevicesTable();
+        } catch (err) {
+            showToast(err.message || "Failed to onboard vendor", "danger");
+        }
     });
 
     // Assign Device Form Submit
