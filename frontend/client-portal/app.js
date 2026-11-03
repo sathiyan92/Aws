@@ -1745,3 +1745,73 @@ async function applyFleetQuickQrToDevice() {
         showToast(e.message, "danger");
     }
 }
+
+// ==============================================================================
+// Client Vendor Password Change Handlers
+// ==============================================================================
+function openClientChangePasswordModal() {
+    const modal = document.getElementById("modalClientChangePassword");
+    if (!modal) return;
+    const input = document.getElementById("clientCpUsername");
+    if (input) {
+        input.value = (state.tenant && state.tenant.client_code ? state.tenant.client_code.toLowerCase() : "") || "apex_admin";
+    }
+    const curr = document.getElementById("clientCpCurrent");
+    if (curr) curr.value = "";
+    const np = document.getElementById("clientCpNew");
+    if (np) np.value = "";
+    const cp = document.getElementById("clientCpConfirm");
+    if (cp) cp.value = "";
+    modal.classList.remove("hidden");
+    modal.classList.add("open");
+}
+
+function closeClientChangePasswordModal() {
+    const modal = document.getElementById("modalClientChangePassword");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.classList.add("hidden");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("btnClientTopChangePass")?.addEventListener("click", openClientChangePasswordModal);
+    document.getElementById("sidebarClientChangePass")?.addEventListener("click", openClientChangePasswordModal);
+    document.getElementById("btnClientLoginChangePass")?.addEventListener("click", openClientChangePasswordModal);
+    document.getElementById("closeClientChangePassBtn")?.addEventListener("click", closeClientChangePasswordModal);
+    document.getElementById("cancelClientChangePassBtn")?.addEventListener("click", closeClientChangePasswordModal);
+
+    document.getElementById("clientChangePassForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const username = document.getElementById("clientCpUsername")?.value.trim();
+        const current = document.getElementById("clientCpCurrent")?.value.trim();
+        const newPwd = document.getElementById("clientCpNew")?.value.trim();
+        const confirmPwd = document.getElementById("clientCpConfirm")?.value.trim();
+
+        if (newPwd !== confirmPwd) {
+            showToast("New passwords do not match!", "danger");
+            return;
+        }
+
+        try {
+            const res = await fetchWithAuth(`${API_BASE}/auth/change-password`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    username_or_email: username || undefined,
+                    current_password: current,
+                    new_password: newPwd,
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message || "Vendor password updated successfully!", "success");
+                closeClientChangePasswordModal();
+            } else {
+                const err = await parseApiError(res);
+                showToast(`Password error: ${err}`, "danger");
+            }
+        } catch (err) {
+            showToast(err.message, "danger");
+        }
+    });
+});

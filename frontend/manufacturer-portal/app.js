@@ -312,8 +312,9 @@ function renderClientsTable() {
             <td>${c.contact_phone || '—'}</td>
             <td><span class="badge badge-online">${c.status}</span></td>
             <td><span style="font-weight:700; color:var(--primary);">${c.device_count}</span> machines (${c.active_device_count} active)</td>
-            <td>
-                <button class="btn btn-secondary btn-sm" onclick="filterDevicesByClient('${c.id}', '${c.name}')">View Fleet</button>
+            <td style="display:flex; gap:0.4rem; align-items:center;">
+                <button class="btn btn-secondary btn-sm" onclick="filterDevicesByClient('${c.id}', '${c.name.replace(/'/g, "\\'")}')">View Fleet</button>
+                <button class="btn btn-warning btn-sm" onclick="openManageVendorLoginModal('${c.id}', '${c.name.replace(/'/g, "\\'")}')" title="Manage Vendor Login Username & Password" style="font-weight:600;">🔑 Login & Pass</button>
             </td>
         </tr>
     `).join("");
@@ -918,6 +919,16 @@ function openProvisionModal() {
 }
 
 function openCreateClientModal() {
+    const sel = document.getElementById("newClientDeviceSelect");
+    if (sel) {
+        let opts = '<option value="">-- None / Assign Later --</option>';
+        if (state.devices && state.devices.length > 0) {
+            opts += state.devices.map(d => `<option value="${d.device_id}">${d.device_id} (${d.device_type} - ${d.status})</option>`).join("");
+        } else {
+            opts += '<option value="VM-000001">VM-000001 (Smart Vending ESP32)</option>';
+        }
+        sel.innerHTML = opts;
+    }
     openModal("modalCreateClient");
 }
 
@@ -2143,3 +2154,107 @@ async function applyVendingQuickQrToDevice() {
         showToast(e.message, "danger");
     }
 }
+
+// ==============================================================================
+// Admin Password Change & Vendor Login Management
+// ==============================================================================
+function openChangePasswordModal(userPrefill) {
+    const input = document.getElementById("cpUsernameOrEmail");
+    if (input) {
+        input.value = userPrefill || (state.user && state.user.username) || "admin";
+    }
+    const curr = document.getElementById("cpCurrentPassword");
+    if (curr) curr.value = "";
+    const np = document.getElementById("cpNewPassword");
+    if (np) np.value = "";
+    const cp = document.getElementById("cpConfirmPassword");
+    if (cp) cp.value = "";
+    openModal("modalChangePassword");
+}
+
+function generateManageVendorPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let pwd = "Vnd@";
+    for (let i = 0; i < 6; i++) {
+        pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById("manageVendorPassword");
+    if (input) input.value = pwd;
+}
+
+async function openManageVendorLoginModal(clientId, clientName) {
+    document.getElementById("manageVendorClientId").value = clientId;
+    document.getElementById("manageVendorClientName").textContent = clientName;
+    document.getElementById("manageVendorUsername").value = "";
+    document.getElementById("manageVendorPassword").value = "";
+    document.getElementById("manageVendorEmail").value = "";
+
+    try {
+        const users = await apiRequest(`/clients/${clientId}/users`);
+        if (users && users.length > 0) {
+            const u = users[0];
+            document.getElementById("manageVendorUsername").value = u.username || "";
+            document.getElementById("manageVendorEmail").value = u.email || "";
+        }
+    } catch (e) {
+        console.warn("Could not fetch vendor users:", e);
+    }
+    generateManageVendorPassword();
+    openModal("modalManageVendorLogin");
+}
+
+// Wire password change and vendor management form listeners
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("changePasswordForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const username_or_email = document.getElementById("cpUsernameOrEmail")?.value.trim();
+        const current_password = document.getElementById("cpCurrentPassword")?.value.trim();
+        const new_password = document.getElementById("cpNewPassword")?.value.trim();
+        const confirm_password = document.getElementById("cpConfirmPassword")?.value.trim();
+
+        if (new_password !== confirm_password) {
+            showToast("New passwords do not match!", "danger");
+            return;
+        }
+
+        try {
+            const res = await apiRequest("/auth/change-password", {
+                method: "POST",
+                body: JSON.stringify({
+                    username_or_email: username_or_email || undefined,
+                    current_password: current_password,
+                    new_password: new_password
+                })
+            });
+            showToast(res.message || "Password updated successfully!", "success");
+            closeModal("modalChangePassword");
+        } catch (err) {
+            showToast(err.message, "danger");
+        }
+    });
+
+    document.getElementById("manageVendorLoginForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const clientId = document.getElementById("manageVendorClientId").value;
+        const username = document.getElementById("manageVendorUsername").value.trim();
+        const password = document.getElementById("manageVendorPassword").value.trim();
+        const email = document.getElementById("manageVendorEmail").value.trim();
+
+        try {
+            const res = await apiRequest(`/clients/${clientId}/users`, {
+                method: "POST",
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    email: email || undefined,
+                })
+            });
+            showToast(`✓ Vendor login credentials updated! User: ${username}`, "success");
+            closeModal("modalManageVendorLogin");
+            await loadClients();
+            renderClientsTable();
+        } catch (err) {
+            showToast(err.message, "danger");
+        }
+    });
+});
