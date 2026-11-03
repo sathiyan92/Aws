@@ -440,11 +440,9 @@ function onDeviceSelectionChanged() {
     elements.deviceTypeBadge.style.display = 'inline-flex';
     elements.deviceTypeBadge.textContent = currentDevice.product_type;
 
-    // 1. DYNAMIC TOGGLING OF QR MODULE
-    if (currentDevice.has_qr_payment || currentDevice.product_type === 'VENDING_MACHINE') {
+    // 1. DYNAMIC TOGGLING OF QR MODULE (Keep permanently visible)
+    if (elements.navQR) {
         elements.navQR.classList.remove('dynamic-hidden');
-    } else {
-        elements.navQR.classList.add('dynamic-hidden');
     }
 
     // 2. DYNAMIC TOGGLING OF COIN MODULE

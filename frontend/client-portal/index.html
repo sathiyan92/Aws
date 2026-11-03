@@ -40,10 +40,10 @@
 
                 <div class="nav-section-title" id="moduleNavHeader">Device Feature Modules</div>
                 
-                <!-- Dynamic QR Navigation Item (Visible only when QR is enabled) -->
-                <a class="nav-item" data-tab="tab-qr" id="navQR">
+                <!-- QR & UPI Settings Navigation Item -->
+                <a class="nav-item" data-tab="tab-qr" id="navQR" style="color:#f59e0b; font-weight:700;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                    <span>QR Payments</span>
+                    <span>📱 QR & UPI Settings</span>
                 </a>
 
                 <!-- Dynamic Coin Navigation Item (Visible only when Coin is enabled) -->
@@ -109,7 +109,10 @@
                         <span id="tenantNameHeader" style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">Apex Vending Solutions</span>
                         <div id="tenantIdHeader" style="font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">Tenant: apex-vending</div>
                     </div>
-                    <button class="btn btn-secondary" id="btnClientTopChangePass" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; font-weight:600; display:flex; align-items:center; gap:0.35rem;" title="Change Account Password">
+                    <button class="btn btn-warning btn-sm" onclick="switchTab('tab-qr')" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight:700; display:flex; align-items:center; gap:0.35rem; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; box-shadow:0 2px 8px rgba(245,158,11,0.3);" title="Configure QR Code & Price">
+                        <span>📱</span> QR & UPI Settings
+                    </button>
+                    <button class="btn btn-secondary" id="btnClientTopChangePass" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight:600; display:flex; align-items:center; gap:0.35rem;" title="Change Account Password">
                         🔑 Change Password
                     </button>
                     <button class="btn btn-secondary" id="refreshCapabilitiesBtn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">
@@ -735,7 +738,8 @@
 
     <!-- Login Overlay for Client User -->
     <div class="modal-overlay" id="loginModal">
-        <div class="modal-container" style="max-width: 420px; text-align: center;">
+        <div class="modal-container" style="max-width: 420px; text-align: center; position:relative;">
+            <button onclick="document.getElementById('loginModal').classList.remove('open')" style="position:absolute; top:12px; right:15px; background:none; border:none; font-size:1.4rem; color:var(--text-muted); cursor:pointer;">&times;</button>
             <div class="brand-icon" style="margin: 0 auto 1rem auto; width: 48px; height: 48px;">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
@@ -784,7 +788,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=4.0"></script>
+    <script src="app.js?v=4.5"></script>
 
     <!-- Modal: Change Password (Client Vendor) -->
     <div id="modalClientChangePassword" class="modal-overlay hidden">

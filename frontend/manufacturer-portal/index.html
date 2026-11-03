@@ -119,6 +119,51 @@
                      TAB: OVERVIEW (DASHBOARD)
                      ========================================== -->
                 <section id="tab-overview" class="tab-pane active">
+                    <!-- Quick Action Shortcuts -->
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-bottom:1.5rem;">
+                        <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.35); border-radius:var(--radius-md); padding:1.1rem; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#f59e0b; font-size:0.95rem; display:flex; align-items:center; gap:0.4rem;">
+                                    <span>📱</span> QR Code & UPI Settings
+                                </div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+                                    Update Standee UPI link, price, upload QR & sync to ESP32
+                                </div>
+                            </div>
+                            <button class="btn btn-warning btn-sm" onclick="switchTab('qr-manager')" style="font-weight:700; white-space:nowrap; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; padding:0.45rem 0.85rem;">
+                                Open QR Settings &rarr;
+                            </button>
+                        </div>
+
+                        <div style="background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.35); border-radius:var(--radius-md); padding:1.1rem; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#818cf8; font-size:0.95rem; display:flex; align-items:center; gap:0.4rem;">
+                                    <span>👤</span> Create Vendor Login & Password
+                                </div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+                                    Onboard vendor & assign dedicated vending machine
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="openCreateClientModal()" style="font-weight:700; white-space:nowrap; background:linear-gradient(135deg, #6366f1, #4f46e5); color:#fff; border:none; padding:0.45rem 0.85rem;">
+                                + New Vendor &rarr;
+                            </button>
+                        </div>
+
+                        <div style="background:rgba(14,165,233,0.08); border:1px solid rgba(14,165,233,0.35); border-radius:var(--radius-md); padding:1.1rem; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#38bdf8; font-size:0.95rem; display:flex; align-items:center; gap:0.4rem;">
+                                    <span>🔑</span> Change Account Password
+                                </div>
+                                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+                                    Update your platform administrator password
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" onclick="openChangePasswordModal()" style="font-weight:700; white-space:nowrap; padding:0.45rem 0.85rem;">
+                                Change Password &rarr;
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Stat Cards -->
                     <div class="stats-grid">
                         <div class="stat-card">
@@ -1314,8 +1359,9 @@
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
         <div class="modal-container" style="max-width:420px;">
-            <div class="modal-header">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
                 <h3>🔐 Operations Portal Login</h3>
+                <button class="modal-close" onclick="closeModal('modalLogin')">&times;</button>
             </div>
             <form id="loginForm">
                 <div class="modal-body">
@@ -1350,13 +1396,7 @@
     <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script src="jsQR.min.js"></script>
-    <script>
-        if (typeof jsQR === 'undefined') {
-            document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
-        }
-    </script>
-    <script src="app.js?v=4.0"></script>
+
 
     <!-- Modal: Change Password -->
     <div id="modalChangePassword" class="modal-overlay">
@@ -1391,5 +1431,12 @@
             </form>
         </div>
     </div>
+    <script src="jsQR.min.js"></script>
+    <script>
+        if (typeof jsQR === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
+        }
+    </script>
+    <script src="app.js?v=4.5"></script>
 </body>
 </html>
