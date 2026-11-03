@@ -76,6 +76,9 @@
                         <div class="role" id="userRoleLabel">CLIENT_ADMIN</div>
                     </div>
                 </div>
+                <button class="btn btn-secondary" id="openClientChangePassBtn" style="padding: 0.4rem 0.6rem; font-size: 0.75rem;" title="Change Account Password">
+                    🔑 Password
+                </button>
                 <button class="btn btn-secondary" id="logoutBtn" style="padding: 0.4rem 0.6rem; font-size: 0.75rem;" title="Sign Out">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                 </button>
@@ -738,11 +741,11 @@
             <form id="loginForm" style="text-align: left;">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="loginUsername">Username / Email</label>
-                    <input type="text" id="loginUsername" class="input-field" value="apex_admin" required>
+                    <input type="text" id="loginUsername" class="input-field" placeholder="Enter vendor username or email" required autocomplete="username">
                 </div>
                 <div class="form-group" style="margin-bottom: 1.25rem;">
                     <label for="loginPassword">Password</label>
-                    <input type="password" id="loginPassword" class="input-field" value="Apex@Admin2026!" required>
+                    <input type="password" id="loginPassword" class="input-field" placeholder="Enter password" required autocomplete="current-password">
                 </div>
 
                 <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
@@ -750,16 +753,8 @@
                 </button>
             </form>
 
-            <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border-subtle); font-size: 0.72rem; color: var(--text-muted);">
-                <p><strong>Quick Demo Access:</strong></p>
-                <div style="margin-top: 0.5rem; display: flex; justify-content: center; gap: 0.5rem;">
-                    <button class="btn btn-secondary" id="demoApexBtn" style="font-size: 0.7rem; padding: 0.35rem 0.65rem;">
-                        Apex Vending Admin
-                    </button>
-                    <button class="btn btn-secondary" id="demoMetroBtn" style="font-size: 0.7rem; padding: 0.35rem 0.65rem;">
-                        Metro Retail Admin
-                    </button>
-                </div>
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle); font-size: 0.72rem; color: var(--text-muted); text-align: center;">
+                🔒 Protected Enterprise Portal. Enter your assigned vendor credentials to view and manage your fleet machines.
             </div>
         </div>
     </div>
@@ -774,5 +769,35 @@
         }
     </script>
     <script src="app.js?v=3.0"></script>
+
+    <!-- Modal: Change Password (Client Vendor) -->
+    <div id="modalClientChangePassword" class="modal-overlay hidden">
+        <div class="modal-container" style="max-width: 400px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>🔑 Change Account Password</h3>
+                <button class="modal-close" id="closeClientChangePassBtn" style="background:none; border:none; font-size:1.4rem; color:var(--text-muted); cursor:pointer;">&times;</button>
+            </div>
+            <form id="clientChangePassForm">
+                <div class="modal-body" style="padding:1rem 0;">
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label>Current Password</label>
+                        <input type="password" class="input-field" id="clientCpCurrent" required placeholder="Enter current password">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label>New Password (min 6 characters)</label>
+                        <input type="password" class="input-field" id="clientCpNew" required minlength="6" placeholder="Enter new password">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label>Confirm New Password</label>
+                        <input type="password" class="input-field" id="clientCpConfirm" required minlength="6" placeholder="Confirm new password">
+                    </div>
+                </div>
+                <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+                    <button type="button" class="btn btn-secondary" id="cancelClientChangePassBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

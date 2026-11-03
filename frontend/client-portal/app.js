@@ -188,18 +188,21 @@ function setupEventListeners() {
     elements.loginForm.addEventListener('submit', handleLogin);
     elements.logoutBtn.addEventListener('click', handleLogout);
 
-    // Quick demo buttons
-    elements.demoApexBtn.addEventListener('click', () => {
-        elements.loginUsername.value = 'apex_admin';
-        elements.loginPassword.value = 'Apex@Admin2026!';
-        elements.loginForm.dispatchEvent(new Event('submit'));
-    });
-
-    elements.demoMetroBtn.addEventListener('click', () => {
-        elements.loginUsername.value = 'metro_admin';
-        elements.loginPassword.value = 'Metro@Retail2026!';
-        elements.loginForm.dispatchEvent(new Event('submit'));
-    });
+    // Quick demo buttons (safe guarded)
+    if (elements.demoApexBtn) {
+        elements.demoApexBtn.addEventListener('click', () => {
+            elements.loginUsername.value = 'apex_admin';
+            elements.loginPassword.value = 'Apex@Admin2026!';
+            elements.loginForm.dispatchEvent(new Event('submit'));
+        });
+    }
+    if (elements.demoMetroBtn) {
+        elements.demoMetroBtn.addEventListener('click', () => {
+            elements.loginUsername.value = 'metro_admin';
+            elements.loginPassword.value = 'Metro@Retail2026!';
+            elements.loginForm.dispatchEvent(new Event('submit'));
+        });
+    }
 
     // Form submissions
     elements.qrSettingsForm.addEventListener('submit', handleSaveQRSettings);
@@ -1745,3 +1748,48 @@ async function applyFleetQuickQrToDevice() {
         showToast(e.message, "danger");
     }
 }
+
+// Client Vendor Change Password Handlers
+document.getElementById('openClientChangePassBtn')?.addEventListener('click', () => {
+    document.getElementById('clientChangePassForm')?.reset();
+    document.getElementById('modalClientChangePassword')?.classList.remove('hidden');
+});
+document.getElementById('closeClientChangePassBtn')?.addEventListener('click', () => {
+    document.getElementById('modalClientChangePassword')?.classList.add('hidden');
+});
+document.getElementById('cancelClientChangePassBtn')?.addEventListener('click', () => {
+    document.getElementById('modalClientChangePassword')?.classList.add('hidden');
+});
+
+document.getElementById('clientChangePassForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cur = document.getElementById('clientCpCurrent').value;
+    const np = document.getElementById('clientCpNew').value;
+    const conf = document.getElementById('clientCpConfirm').value;
+
+    if (np !== conf) {
+        showToast('New password and confirm password do not match!', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetchWithAuth('/api/v1/auth/change-password', {
+            method: 'POST',
+            body: JSON.stringify({
+                current_password: cur,
+                new_password: np
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            document.getElementById('modalClientChangePassword')?.classList.add('hidden');
+            showToast('✓ ' + (data.message || 'Password updated successfully!'));
+        } else {
+            const errMsg = await parseApiError(res);
+            showToast('Change password failed: ' + errMsg, 'error');
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+});

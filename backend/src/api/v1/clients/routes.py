@@ -19,6 +19,7 @@ from src.api.v1.clients.schemas import (
     ClientUpdateRequest,
     ClientResponse,
     ClientListResponse,
+    ClientUserCreateRequest,
 )
 
 router = APIRouter(prefix="/clients", tags=["Client Tenant Management"])
@@ -64,6 +65,9 @@ def create_client(
         contact_phone=payload.contact_phone,
         address=payload.address,
         actor_user=context.user,
+        admin_username=payload.admin_username,
+        admin_password=payload.admin_password,
+        assign_device_id=payload.assign_device_id,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )
@@ -122,3 +126,55 @@ def get_client_by_id(
     context.assert_tenant_access(client_id)
     client = client_service.get_client_by_id(db, client_id)
     return serialize_client(client, db)
+
+
+@router.post("/{client_id}/users")
+def add_client_vendor_user(
+    client_id: str,
+    payload: ClientUserCreateRequest,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """
+    [Manufacturer Only] Create or reset login credentials for a specific vendor/client.
+    """
+    user = client_service.create_client_user(
+        db=db,
+        client_id=client_id,
+        username=payload.username,
+        email=payload.email,
+        password=payload.password,
+        full_name=payload.full_name,
+        actor_user=context.user,
+    )
+    return {
+        "status": "success",
+        "message": f"Vendor user '{user.username}' credentials set successfully",
+        "username": user.username,
+        "email": user.email,
+        "client_id": user.client_id,
+    }
+
+
+@router.get("/{client_id}/users")
+def list_client_vendor_users(
+    client_id: str,
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    """
+    [Manufacturer Only] List all user login accounts under a specific vendor/client.
+    """
+    users = db.query(User).filter(User.client_id == client_id).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "full_name": u.full_name,
+            "role": u.role,
+            "status": u.status,
+            "created_at": u.created_at,
+        }
+        for u in users
+    ]

@@ -44,3 +44,9 @@ class MessageResponse(BaseModel):
     """Generic status response."""
     message: str
     status: str = "success"
+
+
+class ChangePasswordRequest(BaseModel):
+    """Payload to change user password."""
+    current_password: str = Field(..., description="Current password for verification", min_length=1)
+    new_password: str = Field(..., description="New password", min_length=6)

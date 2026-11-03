@@ -624,6 +624,10 @@ function initModals() {
         const phone = document.getElementById("newClientPhone").value;
         const address = document.getElementById("newClientAddress").value;
 
+        const adminUsername = document.getElementById("newClientUsername")?.value?.trim() || null;
+        const adminPassword = document.getElementById("newClientPassword")?.value || null;
+        const assignDeviceId = document.getElementById("newClientAssignDevice")?.value || null;
+
         try {
             const res = await apiRequest("/clients", {
                 method: "POST",
@@ -633,13 +637,43 @@ function initModals() {
                     contact_email: email,
                     contact_phone: phone,
                     address: address,
+                    admin_username: adminUsername,
+                    admin_password: adminPassword,
+                    assign_device_id: assignDeviceId,
                 })
             });
             closeModal("modalCreateClient");
             showToast(`Client '${res.name}' onboarded successfully!`, "success");
             await loadClients();
+            await loadDevices();
             await loadStats();
             renderClientsTable();
+            renderDevicesTable();
+        } catch (err) {}
+    });
+
+    // Change Password Form Submit
+    document.getElementById("changePasswordForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const cur = document.getElementById("cpCurrentPassword").value;
+        const np = document.getElementById("cpNewPassword").value;
+        const conf = document.getElementById("cpConfirmPassword").value;
+
+        if (np !== conf) {
+            showToast("New password and confirm password do not match!", "danger");
+            return;
+        }
+
+        try {
+            const res = await apiRequest("/auth/change-password", {
+                method: "POST",
+                body: JSON.stringify({
+                    current_password: cur,
+                    new_password: np
+                })
+            });
+            closeModal("modalChangePassword");
+            showToast("✓ " + (res.message || "Password updated successfully!"), "success");
         } catch (err) {}
     });
 
@@ -918,7 +952,32 @@ function openProvisionModal() {
 }
 
 function openCreateClientModal() {
+    const devSelect = document.getElementById("newClientAssignDevice");
+    if (devSelect && state.devices) {
+        devSelect.innerHTML = `<option value="">-- No initial machine --</option>` +
+            state.devices.map(d => `<option value="${d.device_id}">${d.device_id} [${d.device_type?.code || 'VM'}] - ${d.status}</option>`).join("");
+    }
     openModal("modalCreateClient");
+}
+
+function generateVendorPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*";
+    let pass = "";
+    for (let i = 0; i < 12; i++) {
+        pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById("newClientPassword");
+    if (input) {
+        input.value = pass;
+        input.type = "text";
+        showToast("🎲 Secure vendor password generated: " + pass, "info");
+    }
+}
+
+function openChangePasswordModal() {
+    const f = document.getElementById("changePasswordForm");
+    if (f) f.reset();
+    openModal("modalChangePassword");
 }
 
 function openAssignModal(deviceId, deviceCode, currentClientId) {

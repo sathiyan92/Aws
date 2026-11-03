@@ -21,6 +21,7 @@ from src.api.v1.auth.schemas import (
     RefreshTokenRequest,
     UserProfileResponse,
     MessageResponse,
+    ChangePasswordRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -138,3 +139,29 @@ def logout(
     db.commit()
 
     return MessageResponse(message="Successfully logged out")
+
+
+@router.post("/change-password", response_model=MessageResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Securely change password for the currently authenticated user (Admin or Vendor)."""
+    from src.core.security.hashing import verify_password, hash_password
+    from src.core.exceptions.errors import BadRequestException
+
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise BadRequestException("Current password does not match.")
+
+    current_user.password_hash = hash_password(payload.new_password)
+    db.add(AuditLog(
+        client_id=current_user.client_id,
+        user_id=current_user.id,
+        action="USER_PASSWORD_CHANGED",
+        entity_type="USER",
+        entity_id=current_user.id,
+        new_state={"role": current_user.role, "username": current_user.username},
+    ))
+    db.commit()
+    return MessageResponse(message="Password changed successfully. Your account is now secured.")
