@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manufacturer Operations Portal | Multi-Tenant IoT Fleet</title>
-    <link rel="stylesheet" href="styles.css?v=2.2">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="styles.css?v=3.5">
 </head>
 <body>
     <!-- Ambient Background Glows -->
@@ -29,8 +32,8 @@
                     <span>Overview</span>
                 </a>
                 <a class="nav-item" data-tab="clients">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                    <span>Clients (Tenants)</span>
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <span>👤 Vendors & Logins</span>
                 </a>
                 <a class="nav-item" data-tab="devices">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
@@ -57,6 +60,10 @@
                 <a class="nav-item" data-tab="audit">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                     <span>Audit Trail</span>
+                </a>
+                <a class="nav-item" onclick="openChangePasswordModal()" style="cursor:pointer;" title="Change Platform Admin Password">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                    <span>🔑 Change Password</span>
                 </a>
             </nav>
 
@@ -88,17 +95,20 @@
                     <button class="btn btn-warning btn-sm" onclick="switchTab('qr-manager')" style="font-weight:700; display:flex; align-items:center; gap:0.4rem; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; box-shadow:0 2px 8px rgba(245,158,11,0.3);">
                         <span>📱</span> Add / Update QR Code & UPI
                     </button>
+                    <button class="btn btn-primary btn-sm" onclick="openCreateClientModal()" style="font-weight:700; background:linear-gradient(135deg, #6366f1, #4f46e5); color:#fff; border:none; box-shadow:0 2px 8px rgba(99,102,241,0.3); display:flex; align-items:center; gap:0.35rem;">
+                        <span>👤</span> + Create Vendor Login
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="openChangePasswordModal()" style="font-weight:600; display:flex; align-items:center; gap:0.35rem;" title="Change Account Password">
+                        <span>🔑</span> Change Password
+                    </button>
                     <button class="btn btn-secondary btn-sm" id="refreshBtn">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         Refresh
                     </button>
-                    <button class="btn btn-secondary btn-sm" onclick="openCreateClientModal()">
-                        + Onboard Client
-                    </button>
                     <button class="btn btn-secondary btn-sm" onclick="openUploadFirmwareModal()">
                         🚀 Upload & Push OTA
                     </button>
-                    <button class="btn btn-primary btn-sm" onclick="openProvisionModal()">
+                    <button class="btn btn-secondary btn-sm" onclick="openProvisionModal()">
                         ⚡ Register Hardware
                     </button>
                 </div>
@@ -202,10 +212,12 @@
                     <div class="card-panel">
                         <div class="panel-header">
                             <div>
-                                <h3>Client Organizations</h3>
-                                <p>Multi-tenant companies with segregated hardware fleets</p>
+                                <h3>🏢 Vendor Organizations & Dedicated Machine Logins</h3>
+                                <p>Manage vendors, their login credentials, and machine isolation (each vendor ONLY sees their assigned machine)</p>
                             </div>
-                            <button class="btn btn-primary btn-sm" onclick="openCreateClientModal()">+ Add Client</button>
+                            <button class="btn btn-primary btn-sm" onclick="openCreateClientModal()" style="font-weight:700; background:linear-gradient(135deg, #6366f1, #4f46e5); color:#fff; border:none; box-shadow:0 2px 8px rgba(99,102,241,0.3); display:flex; align-items:center; gap:0.35rem;">
+                                <span>👤</span> + Create Vendor Login
+                            </button>
                         </div>
                         <div class="table-responsive">
                             <table class="data-table">
@@ -721,62 +733,110 @@
         </div>
     </div>
 
-    <!-- Modal: Onboard Client -->
+    <!-- Modal: Create Vendor Organization & Login -->
     <div id="modalCreateClient" class="modal-overlay">
-        <div class="modal-container">
+        <div class="modal-container" style="max-width:540px;">
             <div class="modal-header">
-                <h3>🏢 Onboard Client Organization</h3>
+                <h3>👤 Create Vendor Organization & Portal Login</h3>
                 <button class="modal-close" onclick="closeModal('modalCreateClient')">&times;</button>
             </div>
             <form id="createClientForm">
                 <div class="modal-body">
-                    <div class="form-group">
-                        <label>Unique Tenant Code</label>
-                        <input type="text" class="input-field" id="newClientCode" placeholder="e.g. METRO_RETAIL" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Company Legal Name</label>
-                        <input type="text" class="input-field" id="newClientName" placeholder="e.g. Metro Retail Corp Pvt Ltd" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Administrative Email</label>
-                        <input type="email" class="input-field" id="newClientEmail" placeholder="admin@metro.local" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Contact Phone</label>
-                        <input type="text" class="input-field" id="newClientPhone" placeholder="+91-9876543210">
-                    </div>
-                    <div class="form-group">
-                        <label>Corporate / Site Address</label>
-                        <input type="text" class="input-field" id="newClientAddress" placeholder="Bangalore, Karnataka">
-                    </div>
-
-                    <div style="margin-top:1.25rem; padding:1rem; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); border-radius:8px;">
-                        <div style="font-weight:700; color:#818cf8; margin-bottom:0.75rem; font-size:0.9rem;">
-                            👤 Vendor Portal Login Credentials & Machine Assignment
+                    <!-- Section 1: Vendor Credentials & Machine -->
+                    <div style="background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.35); border-radius:8px; padding:1.1rem; margin-bottom:1.25rem;">
+                        <div style="font-weight:700; color:#818cf8; margin-bottom:0.75rem; font-size:0.95rem; display:flex; align-items:center; gap:0.4rem;">
+                            <span>👤</span> 1. Vendor Portal Login & Machine Assignment
                         </div>
                         <div class="form-group" style="margin-bottom:0.75rem;">
-                            <label>Vendor Login Username</label>
-                            <input type="text" class="input-field" id="newClientUsername" placeholder="e.g. gtech_vendor" autocomplete="off">
+                            <label>Vendor Login Username <span style="color:#ef4444;">*</span></label>
+                            <input type="text" class="input-field" id="newClientUsername" placeholder="e.g. gtech_vendor" required autocomplete="off">
                         </div>
                         <div class="form-group" style="margin-bottom:0.75rem;">
                             <label style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>Vendor Login Password</span>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="generateVendorPassword()" style="padding:1px 6px; font-size:0.7rem;">🎲 Generate Password</button>
+                                <span>Vendor Login Password <span style="color:#ef4444;">*</span></span>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="generateVendorPassword()" style="padding:1px 6px; font-size:0.7rem;">🎲 Auto-Generate</button>
                             </label>
-                            <input type="text" class="input-field" id="newClientPassword" placeholder="Set a secure password for this vendor" autocomplete="off">
+                            <input type="text" class="input-field" id="newClientPassword" placeholder="Set a secure password for this vendor" required minlength="6" autocomplete="off">
                         </div>
                         <div class="form-group" style="margin-bottom:0;">
-                            <label>Assign Machine to Vendor (Optional)</label>
+                            <label>Assign Machine to Vendor (Multi-Tenant Isolation)</label>
                             <select class="input-field" id="newClientAssignDevice">
                                 <option value="">-- No initial machine --</option>
                             </select>
+                            <span style="font-size:0.72rem; color:var(--text-muted); margin-top:0.3rem; display:block;">🔒 When this vendor signs in, they will ONLY see and control this assigned machine.</span>
                         </div>
+                    </div>
+
+                    <!-- Section 2: Organization Info -->
+                    <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.6rem; font-size:0.88rem;">
+                        🏢 2. Vendor Organization Details
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                        <div class="form-group" style="margin-bottom:0.75rem;">
+                            <label>Company Legal Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" class="input-field" id="newClientName" placeholder="e.g. GTech Solutions" required oninput="autoSuggestClientCode(this.value)">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0.75rem;">
+                            <label>Tenant Code <span style="color:#ef4444;">*</span></label>
+                            <input type="text" class="input-field mono-text" id="newClientCode" placeholder="e.g. GTECH" required>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                        <div class="form-group" style="margin-bottom:0.75rem;">
+                            <label>Contact / Admin Email <span style="color:#ef4444;">*</span></label>
+                            <input type="email" class="input-field" id="newClientEmail" placeholder="vendor@gtech.local" required>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0.75rem;">
+                            <label>Contact Phone</label>
+                            <input type="text" class="input-field" id="newClientPhone" placeholder="+91-9876543210">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Corporate / Site Address</label>
+                        <input type="text" class="input-field" id="newClientAddress" placeholder="Bangalore, Karnataka">
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modalCreateClient')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Onboard Client</button>
+                    <button type="submit" class="btn btn-primary">✓ Create Vendor Login & Assign Machine</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Manage Existing Vendor Login Credentials -->
+    <div id="modalManageVendorLogin" class="modal-overlay">
+        <div class="modal-container" style="max-width:440px;">
+            <div class="modal-header">
+                <h3>🔑 Manage Vendor Login Credentials</h3>
+                <button class="modal-close" onclick="closeModal('modalManageVendorLogin')">&times;</button>
+            </div>
+            <form id="manageVendorLoginForm">
+                <input type="hidden" id="manageVendorClientId">
+                <div class="modal-body">
+                    <div style="background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:0.75rem; margin-bottom:1rem;">
+                        <div style="font-size:0.75rem; color:var(--text-secondary);">Vendor Organization:</div>
+                        <div id="manageVendorClientName" style="font-weight:700; color:var(--text-primary); font-size:0.95rem;"></div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0.75rem;">
+                        <label>Vendor Login Username <span style="color:#ef4444;">*</span></label>
+                        <input type="text" class="input-field" id="manageVendorUsername" placeholder="e.g. gtech_vendor" required autocomplete="off">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0.75rem;">
+                        <label style="display:flex; justify-content:space-between; align-items:center;">
+                            <span>New Password (min 6 chars) <span style="color:#ef4444;">*</span></span>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="generateManageVendorPassword()" style="padding:1px 6px; font-size:0.7rem;">🎲 Auto-Generate</button>
+                        </label>
+                        <input type="text" class="input-field" id="manageVendorPassword" placeholder="Enter new password for vendor" required minlength="6" autocomplete="off">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Email Address (optional)</label>
+                        <input type="email" class="input-field" id="manageVendorEmail" placeholder="vendor@example.com">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalManageVendorLogin')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Vendor Credentials</button>
                 </div>
             </form>
         </div>
@@ -1253,7 +1313,7 @@
 
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
-        <div class="modal-container" style="max-width:400px;">
+        <div class="modal-container" style="max-width:420px;">
             <div class="modal-header">
                 <h3>🔐 Operations Portal Login</h3>
             </div>
@@ -1268,8 +1328,20 @@
                         <input type="password" class="input-field" id="loginPassword" placeholder="Enter admin password" required autocomplete="current-password">
                     </div>
                 </div>
-                <div class="modal-footer">
+                <div class="modal-footer" style="flex-direction:column; gap:0.75rem;">
                     <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Authenticate</button>
+                    <div style="width:100%; padding-top:0.75rem; border-top:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openChangePasswordModal()" style="font-size:0.75rem;">
+                            🔑 Change Password
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openCreateClientModal()" style="font-size:0.75rem;">
+                            👤 Create Vendor Login
+                        </button>
+                    </div>
+                    <div style="font-size:0.7rem; color:var(--text-muted); text-align:center; line-height:1.4;">
+                        Terminal admin password reset:<br>
+                        <code style="color:var(--primary); font-size:0.68rem;">python reset_admin_password.py admin &lt;new_password&gt;</code>
+                    </div>
                 </div>
             </form>
         </div>
@@ -1284,26 +1356,30 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=3.0"></script>
+    <script src="app.js?v=4.0"></script>
 
     <!-- Modal: Change Password -->
     <div id="modalChangePassword" class="modal-overlay">
-        <div class="modal-container" style="max-width:400px;">
+        <div class="modal-container" style="max-width:420px;">
             <div class="modal-header">
                 <h3>🔑 Change Account Password</h3>
                 <button class="modal-close" onclick="closeModal('modalChangePassword')">&times;</button>
             </div>
             <form id="changePasswordForm">
                 <div class="modal-body">
-                    <div class="form-group">
+                    <div class="form-group" id="cpUsernameGroup" style="margin-bottom:0.75rem;">
+                        <label>Username or Email</label>
+                        <input type="text" class="input-field" id="cpUsernameOrEmail" placeholder="Enter account username or email">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0.75rem;">
                         <label>Current Password</label>
                         <input type="password" class="input-field" id="cpCurrentPassword" required placeholder="Enter current password">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0.75rem;">
                         <label>New Password (min 6 characters)</label>
                         <input type="password" class="input-field" id="cpNewPassword" required minlength="6" placeholder="Enter new secure password">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom:0.75rem;">
                         <label>Confirm New Password</label>
                         <input type="password" class="input-field" id="cpConfirmPassword" required minlength="6" placeholder="Re-type new password">
                     </div>

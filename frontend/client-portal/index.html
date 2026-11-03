@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Apex Client Portal | IoT Fleet Management & Dynamic Visibility</title>
     <meta name="description" content="Multi-tenant client management portal with real-time dynamic hardware feature visibility and server-side policy enforcement for ESP32 vending fleets and RFID systems.">
-    <link rel="stylesheet" href="styles.css?v=2.2">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="styles.css?v=3.5">
 </head>
 <body>
     <div class="ambient-glow-1"></div>
@@ -66,6 +69,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                     <span>Security Policy Guard</span>
                 </a>
+                <a class="nav-item" id="sidebarClientChangePass" style="cursor:pointer;" title="Change Vendor Account Password">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                    <span>🔑 Change Password</span>
+                </a>
             </nav>
 
             <div class="sidebar-footer">
@@ -102,6 +109,9 @@
                         <span id="tenantNameHeader" style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">Apex Vending Solutions</span>
                         <div id="tenantIdHeader" style="font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">Tenant: apex-vending</div>
                     </div>
+                    <button class="btn btn-secondary" id="btnClientTopChangePass" style="padding: 0.4rem 0.8rem; font-size: 0.75rem; font-weight:600; display:flex; align-items:center; gap:0.35rem;" title="Change Account Password">
+                        🔑 Change Password
+                    </button>
                     <button class="btn btn-secondary" id="refreshCapabilitiesBtn" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                         Sync Fleet
@@ -753,8 +763,14 @@
                 </button>
             </form>
 
-            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle); font-size: 0.72rem; color: var(--text-muted); text-align: center;">
-                🔒 Protected Enterprise Portal. Enter your assigned vendor credentials to view and manage your fleet machines.
+            <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); display:flex; justify-content:center;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnClientLoginChangePass" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
+                    🔑 Change Password
+                </button>
+            </div>
+            <div style="margin-top: 0.75rem; font-size: 0.72rem; color: var(--text-muted); text-align: center; line-height:1.4;">
+                🔒 Protected Vendor Portal. Enter your assigned vendor credentials to view and manage your assigned vending machine.<br>
+                <span style="color:var(--text-secondary);">Need an account or machine mapping? Contact your Platform Administrator.</span>
             </div>
         </div>
     </div>
@@ -768,7 +784,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=3.0"></script>
+    <script src="app.js?v=4.0"></script>
 
     <!-- Modal: Change Password (Client Vendor) -->
     <div id="modalClientChangePassword" class="modal-overlay hidden">
@@ -779,6 +795,10 @@
             </div>
             <form id="clientChangePassForm">
                 <div class="modal-body" style="padding:1rem 0;">
+                    <div class="form-group" id="clientCpUsernameGroup" style="margin-bottom: 0.75rem;">
+                        <label>Username or Email</label>
+                        <input type="text" class="input-field" id="clientCpUsername" placeholder="Enter vendor username or email">
+                    </div>
                     <div class="form-group" style="margin-bottom: 0.75rem;">
                         <label>Current Password</label>
                         <input type="password" class="input-field" id="clientCpCurrent" required placeholder="Enter current password">

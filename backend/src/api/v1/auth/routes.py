@@ -144,24 +144,54 @@ def logout(
 @router.post("/change-password", response_model=MessageResponse)
 def change_password(
     payload: ChangePasswordRequest,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    """Securely change password for the currently authenticated user (Admin or Vendor)."""
+    """
+    Securely change password. Supports both:
+    1. Authenticated user (with JWT Bearer token)
+    2. Direct change from login screen (providing username_or_email + current_password)
+    """
     from src.core.security.hashing import verify_password, hash_password
-    from src.core.exceptions.errors import BadRequestException
+    from src.core.exceptions.errors import BadRequestException, NotFoundException
 
-    if not verify_password(payload.current_password, current_user.password_hash):
+    user = None
+    # 1. Check Bearer token if supplied
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        if token and token != "null" and token != "undefined":
+            try:
+                from src.core.security.jwt import decode_token
+                decoded = decode_token(token)
+                user_id = decoded.get("sub")
+                if user_id:
+                    user = db.query(User).filter(User.id == user_id).first()
+            except Exception:
+                pass
+
+    # 2. If no valid Bearer token, look up by username or email
+    if not user:
+        if not payload.username_or_email:
+            raise BadRequestException("Please enter your username or email address.")
+        ident = payload.username_or_email.strip()
+        user = db.query(User).filter((User.username == ident) | (User.email == ident)).first()
+        if not user:
+            raise NotFoundException(f"Account '{ident}' was not found.")
+
+    if not verify_password(payload.current_password, user.password_hash):
         raise BadRequestException("Current password does not match.")
 
-    current_user.password_hash = hash_password(payload.new_password)
+    user.password_hash = hash_password(payload.new_password)
     db.add(AuditLog(
-        client_id=current_user.client_id,
-        user_id=current_user.id,
+        client_id=user.client_id,
+        user_id=user.id,
         action="USER_PASSWORD_CHANGED",
         entity_type="USER",
-        entity_id=current_user.id,
-        new_state={"role": current_user.role, "username": current_user.username},
+        entity_id=user.id,
+        new_state={"role": user.role, "username": user.username},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     ))
     db.commit()
-    return MessageResponse(message="Password changed successfully. Your account is now secured.")
+    return MessageResponse(message=f"Password for '{user.username}' changed successfully! You can now log in.")

@@ -1750,10 +1750,25 @@ async function applyFleetQuickQrToDevice() {
 }
 
 // Client Vendor Change Password Handlers
-document.getElementById('openClientChangePassBtn')?.addEventListener('click', () => {
+function openClientChangePasswordModal() {
     document.getElementById('clientChangePassForm')?.reset();
+    const uGrp = document.getElementById('clientCpUsernameGroup');
+    const uInp = document.getElementById('clientCpUsername');
+    if (state.token && state.user) {
+        if (uGrp) uGrp.style.display = 'none';
+        if (uInp) uInp.value = state.user.username;
+    } else {
+        if (uGrp) uGrp.style.display = 'block';
+        if (uInp) uInp.value = '';
+    }
     document.getElementById('modalClientChangePassword')?.classList.remove('hidden');
-});
+}
+
+document.getElementById('openClientChangePassBtn')?.addEventListener('click', openClientChangePasswordModal);
+document.getElementById('btnClientTopChangePass')?.addEventListener('click', openClientChangePasswordModal);
+document.getElementById('sidebarClientChangePass')?.addEventListener('click', openClientChangePasswordModal);
+document.getElementById('btnClientLoginChangePass')?.addEventListener('click', openClientChangePasswordModal);
+
 document.getElementById('closeClientChangePassBtn')?.addEventListener('click', () => {
     document.getElementById('modalClientChangePassword')?.classList.add('hidden');
 });
@@ -1763,6 +1778,7 @@ document.getElementById('cancelClientChangePassBtn')?.addEventListener('click', 
 
 document.getElementById('clientChangePassForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const u = document.getElementById('clientCpUsername')?.value?.trim() || (state.user ? state.user.username : '');
     const cur = document.getElementById('clientCpCurrent').value;
     const np = document.getElementById('clientCpNew').value;
     const conf = document.getElementById('clientCpConfirm').value;
@@ -1773,9 +1789,15 @@ document.getElementById('clientChangePassForm')?.addEventListener('submit', asyn
     }
 
     try {
-        const res = await fetchWithAuth('/api/v1/auth/change-password', {
+        const headers = { 'Content-Type': 'application/json' };
+        if (state.token) {
+            headers['Authorization'] = `Bearer ${state.token}`;
+        }
+        const res = await fetch(`${API_BASE}/api/v1/auth/change-password`, {
             method: 'POST',
+            headers,
             body: JSON.stringify({
+                username_or_email: u || undefined,
                 current_password: cur,
                 new_password: np
             })

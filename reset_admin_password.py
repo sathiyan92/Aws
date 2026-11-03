@@ -77,3 +77,4 @@ if __name__ == "__main__":
     ident = sys.argv[1]
     pwd = sys.argv[2]
     reset_user_password(ident, pwd)
+

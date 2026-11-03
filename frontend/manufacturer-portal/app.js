@@ -300,23 +300,41 @@ function renderClientsTable() {
     if (!tbody) return;
 
     if (!state.clients.length) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:2rem;">No clients registered yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:2.5rem; color:var(--text-secondary);">
+            No vendors onboarded yet.<br>
+            <button class="btn btn-primary btn-sm" onclick="openCreateClientModal()" style="margin-top:0.75rem; font-weight:700;">
+                <span>👤</span> + Create First Vendor Login
+            </button>
+        </td></tr>`;
         return;
     }
 
-    tbody.innerHTML = state.clients.map(c => `
+    tbody.innerHTML = state.clients.map(c => {
+        const safeName = (c.name || '').replace(/'/g, "\\'");
+        const safeEmail = (c.contact_email || '').replace(/'/g, "\\'");
+        return `
         <tr>
-            <td class="mono-text">${c.client_code}</td>
-            <td><strong>${c.name}</strong></td>
-            <td>${c.contact_email}</td>
-            <td>${c.contact_phone || '—'}</td>
-            <td><span class="badge badge-online">${c.status}</span></td>
-            <td><span style="font-weight:700; color:var(--primary);">${c.device_count}</span> machines (${c.active_device_count} active)</td>
+            <td class="mono-text" style="font-weight:700; color:var(--primary);">${c.client_code}</td>
             <td>
-                <button class="btn btn-secondary btn-sm" onclick="filterDevicesByClient('${c.id}', '${c.name}')">View Fleet</button>
+                <strong>${c.name}</strong>
+                <div style="font-size:0.72rem; color:var(--text-muted);">ID: ${c.id.substring(0, 8)}...</div>
+            </td>
+            <td>${c.contact_email}</td>
+            <td><span class="badge badge-online">${c.status}</span></td>
+            <td><span style="font-weight:700; color:var(--primary); font-size:1rem;">${c.device_count}</span> assigned (${c.active_device_count} online)</td>
+            <td>
+                <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="openManageVendorLoginModal('${c.id}', '${safeName}', '${safeEmail}')" style="font-size:0.75rem; padding:0.25rem 0.55rem; background:linear-gradient(135deg, #6366f1, #4f46e5);" title="Set or reset portal login credentials for this vendor">
+                        🔑 Manage Login
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="filterDevicesByClient('${c.id}', '${safeName}')" style="font-size:0.75rem; padding:0.25rem 0.55rem;">
+                        View Fleet
+                    </button>
+                </div>
             </td>
         </tr>
-    `).join("");
+        `;
+    }).join("");
 }
 
 function renderDevicesTable(filterType = null) {
@@ -652,9 +670,10 @@ function initModals() {
         } catch (err) {}
     });
 
-    // Change Password Form Submit
+    // Change Password Form Submit (Supports both logged-in and direct login screen)
     document.getElementById("changePasswordForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
+        const u = document.getElementById("cpUsernameOrEmail")?.value?.trim() || (state.user ? state.user.username : "");
         const cur = document.getElementById("cpCurrentPassword").value;
         const np = document.getElementById("cpNewPassword").value;
         const conf = document.getElementById("cpConfirmPassword").value;
@@ -668,12 +687,38 @@ function initModals() {
             const res = await apiRequest("/auth/change-password", {
                 method: "POST",
                 body: JSON.stringify({
+                    username_or_email: u || undefined,
                     current_password: cur,
                     new_password: np
                 })
             });
             closeModal("modalChangePassword");
             showToast("✓ " + (res.message || "Password updated successfully!"), "success");
+        } catch (err) {}
+    });
+
+    // Manage Existing Vendor Login Credentials Form Submit
+    document.getElementById("manageVendorLoginForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const clientId = document.getElementById("manageVendorClientId").value;
+        const u = document.getElementById("manageVendorUsername").value.trim();
+        const p = document.getElementById("manageVendorPassword").value;
+        const em = document.getElementById("manageVendorEmail")?.value?.trim() || `${u}@vending.local`;
+
+        try {
+            const res = await apiRequest(`/clients/${clientId}/users`, {
+                method: "POST",
+                body: JSON.stringify({
+                    username: u,
+                    password: p,
+                    email: em,
+                    full_name: u
+                })
+            });
+            closeModal("modalManageVendorLogin");
+            showToast(`✓ Vendor login credentials updated for '${u}'! Password: ${p}`, "success");
+            await loadClients();
+            renderClientsTable();
         } catch (err) {}
     });
 
@@ -951,13 +996,35 @@ function openProvisionModal() {
     openModal("modalProvision");
 }
 
-function openCreateClientModal() {
+function openCreateClientModal(preselectDeviceId = null) {
+    const form = document.getElementById("createClientForm");
+    if (form) form.reset();
+
     const devSelect = document.getElementById("newClientAssignDevice");
-    if (devSelect && state.devices) {
+    if (devSelect) {
         devSelect.innerHTML = `<option value="">-- No initial machine --</option>` +
-            state.devices.map(d => `<option value="${d.device_id}">${d.device_id} [${d.device_type?.code || 'VM'}] - ${d.status}</option>`).join("");
+            (state.devices || []).map(d => `<option value="${d.device_id}">${d.device_id} [${d.device_type?.code || 'VM'}] - ${d.status}</option>`).join("");
+        if (preselectDeviceId) {
+            devSelect.value = preselectDeviceId;
+        }
     }
+
+    // Auto-generate fresh secure password for the vendor upfront
+    generateVendorPassword();
     openModal("modalCreateClient");
+}
+
+function autoSuggestClientCode(val) {
+    if (!val) return;
+    const clean = val.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+    const codeInput = document.getElementById("newClientCode");
+    if (codeInput && !codeInput.value) {
+        codeInput.value = clean.substring(0, 16);
+    }
+    const uInput = document.getElementById("newClientUsername");
+    if (uInput && !uInput.value) {
+        uInput.value = val.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 16) + "_admin";
+    }
 }
 
 function generateVendorPassword() {
@@ -970,13 +1037,50 @@ function generateVendorPassword() {
     if (input) {
         input.value = pass;
         input.type = "text";
-        showToast("🎲 Secure vendor password generated: " + pass, "info");
+    }
+}
+
+function openManageVendorLoginModal(clientId, clientName, contactEmail) {
+    const form = document.getElementById("manageVendorLoginForm");
+    if (form) form.reset();
+
+    document.getElementById("manageVendorClientId").value = clientId;
+    document.getElementById("manageVendorClientName").textContent = clientName;
+    document.getElementById("manageVendorEmail").value = contactEmail || "";
+    
+    const suggestedUsername = clientName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 16) + "_admin";
+    document.getElementById("manageVendorUsername").value = suggestedUsername;
+
+    generateManageVendorPassword();
+    openModal("modalManageVendorLogin");
+}
+
+function generateManageVendorPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*";
+    let pass = "";
+    for (let i = 0; i < 12; i++) {
+        pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const input = document.getElementById("manageVendorPassword");
+    if (input) {
+        input.value = pass;
+        input.type = "text";
     }
 }
 
 function openChangePasswordModal() {
     const f = document.getElementById("changePasswordForm");
     if (f) f.reset();
+
+    const uGrp = document.getElementById("cpUsernameGroup");
+    const uInp = document.getElementById("cpUsernameOrEmail");
+    if (state.user) {
+        if (uGrp) uGrp.style.display = "none";
+        if (uInp) uInp.value = state.user.username;
+    } else {
+        if (uGrp) uGrp.style.display = "block";
+        if (uInp) uInp.value = "";
+    }
     openModal("modalChangePassword");
 }
 

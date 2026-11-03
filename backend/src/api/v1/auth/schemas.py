@@ -48,5 +48,6 @@ class MessageResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     """Payload to change user password."""
+    username_or_email: Optional[str] = Field(None, description="Username or email (required if not logged in)")
     current_password: str = Field(..., description="Current password for verification", min_length=1)
     new_password: str = Field(..., description="New password", min_length=6)
