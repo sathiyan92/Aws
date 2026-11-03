@@ -184,6 +184,15 @@ enum MachineState {
 };
 MachineState current_state = STATE_STANDBY_QR;
 
+// Live Network & Internet Status Monitoring
+enum NetworkStatus {
+  NET_STATUS_ONLINE,       // Wi-Fi connected + AWS Cloud reachable (Green)
+  NET_STATUS_NO_WIFI,      // Wi-Fi disconnected from router/AP (Red)
+  NET_STATUS_NO_INTERNET   // Wi-Fi connected, but Internet / AWS Cloud unreachable (Amber)
+};
+NetworkStatus current_net_status = NET_STATUS_NO_WIFI;
+int consecutive_cloud_fails = 0;
+
 // Dispense Order Details
 String pending_order_id     = "";
 String pending_order_number = "";
@@ -223,6 +232,7 @@ void uiDrawWiFiConnectedScreen(const String& ssid, const String& ip);
 void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress);
 void uiDrawVendingScreen(int slotNumber, float amount, String productName);
 void uiDrawCompleteScreen();
+void uiUpdateNetworkStatus(NetworkStatus newStatus);
 void setMotor(int slotNumber, bool turnOn);
 void setCoinPulsePin(bool active);
 void dispenseProduct(int slotNumber, float amount, String orderId, String dispenseToken = "", String productName = "");
@@ -398,6 +408,61 @@ void drawQRCode(const char* text, int startX, int startY, int maxBoxSize) {
 // ==============================================================================
 
 /**
+ * Live Dynamic Network & Internet Status Monitor
+ * Instantly updates the LCD status badge and alert banner without redrawing or flickering the QR code!
+ */
+void uiUpdateNetworkStatus(NetworkStatus newStatus) {
+  if (current_state != STATE_STANDBY_QR) return;
+  if (newStatus == current_net_status) return;
+
+  current_net_status = newStatus;
+
+  // Clear top-right header badge area (x: 320 to 475, y: 5 to 40)
+  TFT_display.fillRect(320, 5, 155, 35, COLOR_HEADER);
+
+  if (newStatus == NET_STATUS_ONLINE) {
+    TFT_display.setCursor(375, 15);
+    TFT_display.setTextColor(COLOR_GREEN);
+    TFT_display.setTextSize(2);
+    TFT_display.print("● READY");
+
+    // Clear alert banner below QR code and restore default vendor text
+    TFT_display.fillRect(10, 292, 205, 22, COLOR_BG);
+    TFT_display.setCursor(18, 296);
+    TFT_display.setTextColor(COLOR_GRAY);
+    TFT_display.setTextSize(1);
+    TFT_display.print("Auto-Transfers to Vendor Account");
+    Serial.println("[Net Status] ● MACHINE ONLINE & READY (Cloud Connected)");
+  } else if (newStatus == NET_STATUS_NO_WIFI) {
+    TFT_display.setCursor(330, 15);
+    TFT_display.setTextColor(COLOR_RED);
+    TFT_display.setTextSize(2);
+    TFT_display.print("● NO WI-FI");
+
+    // Show high-visibility red alert banner below QR
+    TFT_display.fillRect(10, 292, 205, 22, COLOR_RED);
+    TFT_display.setCursor(16, 298);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.setTextSize(1);
+    TFT_display.print("! WI-FI DISCONNECTED !");
+    Serial.println("[Net Status] ● ALERT: WI-FI DISCONNECTED (Reconnecting...)");
+  } else if (newStatus == NET_STATUS_NO_INTERNET) {
+    TFT_display.setCursor(330, 15);
+    TFT_display.setTextColor(COLOR_AMBER);
+    TFT_display.setTextSize(2);
+    TFT_display.print("● NO CLOUD");
+
+    // Show warning amber alert banner below QR
+    TFT_display.fillRect(10, 292, 205, 22, COLOR_AMBER);
+    TFT_display.setCursor(16, 298);
+    TFT_display.setTextColor(COLOR_BLACK);
+    TFT_display.setTextSize(1);
+    TFT_display.print("! NO INTERNET / CLOUD !");
+    Serial.println("[Net Status] ● ALERT: WI-FI CONNECTED BUT NO INTERNET / AWS CLOUD OFFLINE");
+  }
+}
+
+/**
  * Screen 1: Permanent Standby QR Screen
  * Customer simply scans the QR code on screen and pays ₹10. No buttons needed!
  */
@@ -419,10 +484,24 @@ void uiDrawStandbyQRScreen() {
   TFT_display.setTextSize(2);
   TFT_display.printf("[%s]", device_id.c_str());
 
-  TFT_display.setCursor(375, 15);
-  TFT_display.setTextColor(COLOR_GREEN);
-  TFT_display.setTextSize(2);
-  TFT_display.print("● READY");
+  if (WiFi.status() != WL_CONNECTED) {
+    current_net_status = NET_STATUS_NO_WIFI;
+    TFT_display.setCursor(330, 15);
+    TFT_display.setTextColor(COLOR_RED);
+    TFT_display.setTextSize(2);
+    TFT_display.print("● NO WI-FI");
+  } else if (current_net_status == NET_STATUS_NO_INTERNET) {
+    TFT_display.setCursor(330, 15);
+    TFT_display.setTextColor(COLOR_AMBER);
+    TFT_display.setTextSize(2);
+    TFT_display.print("● NO CLOUD");
+  } else {
+    current_net_status = NET_STATUS_ONLINE;
+    TFT_display.setCursor(375, 15);
+    TFT_display.setTextColor(COLOR_GREEN);
+    TFT_display.setTextSize(2);
+    TFT_display.print("● READY");
+  }
 
   // Construct Dynamic or Static Razorpay UPI Payload or Custom Payment URL
 #if FORCE_STATIC_PROGRAM_CONFIG
@@ -458,10 +537,24 @@ void uiDrawStandbyQRScreen() {
   TFT_display.setTextSize(1);
   TFT_display.print("Powered by Razorpay Route");
 
-  TFT_display.setCursor(20, 296);
-  TFT_display.setTextColor(COLOR_GRAY);
-  TFT_display.setTextSize(1);
-  TFT_display.print("Auto-Transfers to Vendor Account");
+  if (current_net_status == NET_STATUS_NO_WIFI) {
+    TFT_display.fillRect(10, 292, 205, 22, COLOR_RED);
+    TFT_display.setCursor(16, 298);
+    TFT_display.setTextColor(COLOR_WHITE);
+    TFT_display.setTextSize(1);
+    TFT_display.print("! WI-FI DISCONNECTED !");
+  } else if (current_net_status == NET_STATUS_NO_INTERNET) {
+    TFT_display.fillRect(10, 292, 205, 22, COLOR_AMBER);
+    TFT_display.setCursor(16, 298);
+    TFT_display.setTextColor(COLOR_BLACK);
+    TFT_display.setTextSize(1);
+    TFT_display.print("! NO INTERNET / CLOUD !");
+  } else {
+    TFT_display.setCursor(18, 296);
+    TFT_display.setTextColor(COLOR_GRAY);
+    TFT_display.setTextSize(1);
+    TFT_display.print("Auto-Transfers to Vendor Account");
+  }
 
   // Right Side: Product & Price Card
   TFT_display.fillRect(225, 54, 245, 255, COLOR_CARD);
@@ -1162,7 +1255,11 @@ void confirmDispenseToCloud(String orderId, String dispenseToken) {
 // 11. BACKGROUND CLOUD POLLING (CHECKS FOR RAZORPAY PAYMENT MATCH)
 // ==============================================================================
 void pollPendingDispense() {
-  if (WiFi.status() != WL_CONNECTED || current_state != STATE_STANDBY_QR) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    uiUpdateNetworkStatus(NET_STATUS_NO_WIFI);
+    return;
+  }
+  if (current_state != STATE_STANDBY_QR) return;
 
   WiFiClient client;
   HTTPClient http;
@@ -1174,6 +1271,16 @@ void pollPendingDispense() {
   http.addHeader("X-Device-Token", "dev_token_" + device_id);
 
   int httpCode = http.GET();
+  if (httpCode > 0) {
+    consecutive_cloud_fails = 0;
+    uiUpdateNetworkStatus(NET_STATUS_ONLINE);
+  } else {
+    consecutive_cloud_fails++;
+    if (consecutive_cloud_fails >= 2) {
+      uiUpdateNetworkStatus(NET_STATUS_NO_INTERNET);
+    }
+  }
+
   if (httpCode == 200) {
     String resp = http.getString();
     StaticJsonDocument<512> doc;
@@ -1261,6 +1368,16 @@ void checkForRemoteQRConfigUpdates() {
   http.begin(client, endpoint);
 
   int httpCode = http.GET();
+  if (httpCode > 0) {
+    consecutive_cloud_fails = 0;
+    uiUpdateNetworkStatus(NET_STATUS_ONLINE);
+  } else {
+    consecutive_cloud_fails++;
+    if (consecutive_cloud_fails >= 2) {
+      uiUpdateNetworkStatus(NET_STATUS_NO_INTERNET);
+    }
+  }
+
   if (httpCode == 200) {
     String resp = http.getString();
     StaticJsonDocument<2048> doc;
@@ -1435,13 +1552,23 @@ void sendHeartbeat() {
   String reqBody;
   serializeJson(doc, reqBody);
   int code = http.POST(reqBody);
-  if (code == 200) {
-    Serial.println("[✓ Heartbeat] Sent successfully to AWS cloud (ONLINE)");
-  } else if (code == 401 || code == 403) {
-    Serial.printf("[! Heartbeat] Auth expired (HTTP %d). Re-authenticating...\n", code);
-    authenticateWithCloud();
+  if (code > 0) {
+    consecutive_cloud_fails = 0;
+    uiUpdateNetworkStatus(NET_STATUS_ONLINE);
+    if (code == 200) {
+      Serial.println("[✓ Heartbeat] Sent successfully to AWS cloud (ONLINE)");
+    } else if (code == 401 || code == 403) {
+      Serial.printf("[! Heartbeat] Auth expired (HTTP %d). Re-authenticating...\n", code);
+      authenticateWithCloud();
+    } else {
+      Serial.printf("[! Heartbeat] Failed with HTTP code: %d from %s\n", code, endpoint.c_str());
+    }
   } else {
-    Serial.printf("[! Heartbeat] Failed with HTTP code: %d from %s\n", code, endpoint.c_str());
+    consecutive_cloud_fails++;
+    if (consecutive_cloud_fails >= 2) {
+      uiUpdateNetworkStatus(NET_STATUS_NO_INTERNET);
+    }
+    Serial.printf("[! Heartbeat] Network error code %d (No Internet / AWS Unreachable)\n", code);
   }
   http.end();
 }
@@ -1587,6 +1714,16 @@ void checkForPendingOTA() {
   http.begin(client, endpoint);
 
   int httpCode = http.GET();
+  if (httpCode > 0) {
+    consecutive_cloud_fails = 0;
+    uiUpdateNetworkStatus(NET_STATUS_ONLINE);
+  } else {
+    consecutive_cloud_fails++;
+    if (consecutive_cloud_fails >= 2) {
+      uiUpdateNetworkStatus(NET_STATUS_NO_INTERNET);
+    }
+  }
+
   if (httpCode == 200) {
     String payload = http.getString();
     StaticJsonDocument<1024> doc;
@@ -1713,10 +1850,11 @@ void loop() {
     }
   }
 
-  // 2. Wi-Fi Background Auto-Reconnect (Non-blocking every 25 seconds)
+  // 2. Wi-Fi Background Auto-Reconnect & Real-Time Status Detection
   static unsigned long last_wifi_reconnect_time = 0;
   if (WiFi.status() != WL_CONNECTED) {
-    if (millis() - last_wifi_reconnect_time > 25000) {
+    uiUpdateNetworkStatus(NET_STATUS_NO_WIFI);
+    if (millis() - last_wifi_reconnect_time > 15000) {
       last_wifi_reconnect_time = millis();
       Serial.println("[Wi-Fi] Attempting background reconnection to " + wifi_ssid + "...");
       WiFi.reconnect();
