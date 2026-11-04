@@ -511,9 +511,9 @@
                                 <p>Manage up to 1,000 user cards per machine for <span class="mono-text selected-device-label">...</span></p>
                             </div>
                             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                                <button class="btn btn-primary" id="addCardBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem;">+ Add Single Card</button>
-                                <button class="btn btn-secondary" id="bulkUploadBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #60a5fa;" title="Upload up to 1,000 cards via CSV or Excel">📁 Bulk Upload (Method A)</button>
-                                <button class="btn btn-secondary" id="batchRangeBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #c084fc;" title="Auto-generate sequential cards 1 to 1000">⚡ Batch Range (Method B)</button>
+                                <button class="btn btn-primary" id="addCardBtn" onclick="openAddCardModal()" style="font-size: 0.75rem; padding: 0.45rem 0.75rem;">+ Add Single Card</button>
+                                <button class="btn btn-secondary" id="bulkUploadBtn" onclick="openBulkUploadModal()" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #60a5fa;" title="Upload up to 1,000 cards via CSV or Excel">📁 Bulk Upload (Method A)</button>
+                                <button class="btn btn-secondary" id="batchRangeBtn" onclick="openBatchRangeModal()" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #c084fc;" title="Auto-generate sequential cards 1 to 1000">⚡ Batch Range (Method B)</button>
                                 <button class="btn btn-secondary" id="liveEnrollBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24;" title="Tap card at machine to auto-capture UID">📡 Live Tap Enroll (Method C)</button>
                             </div>
                         </div>
@@ -1012,7 +1012,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=5.0"></script>
+    <script src="app.js?v=6.0"></script>
     <!-- Modal: Change Password (Client Vendor) -->
     <div id="modalClientChangePassword" class="modal-overlay hidden">
         <div class="modal-container" style="max-width: 400px;">

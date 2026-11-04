@@ -525,6 +525,7 @@
                                 <p>Manage up to 1,000 users/cards per machine across all client vendors</p>
                             </div>
                             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                <button class="btn btn-primary btn-sm" onclick="openAdminRfidAddCard()" style="font-weight:700;">+ Add Single Card</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openAdminRfidBulkUpload()" style="background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #60a5fa;">📁 Bulk Upload (Method A)</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openAdminRfidBatchRange()" style="background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #c084fc;">⚡ Batch Range (Method B)</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openAdminRfidLiveEnroll()" style="background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24;">📡 Live Tap Enroll (Method C)</button>
@@ -1532,6 +1533,203 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=5.0"></script>
+    <script src="app.js?v=6.0"></script>
+
+    <!-- Modal: Admin Add Single Card -->
+    <div class="modal-overlay" id="modalAdminRfidAddCard">
+        <div class="modal-container" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>💳 Add Authorized RFID Card</h3>
+                <button type="button" class="modal-close" onclick="closeAdminRfidAddCard()">&times;</button>
+            </div>
+            <form onsubmit="saveAdminRfidCard(event)" style="padding: 1.5rem;">
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label>Target Vendor Organization <span style="color:var(--danger);">*</span></label>
+                    <select id="adminCardVendorSelect" class="input-field" required style="width:100%;"></select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label>Assign to Specific Machine</label>
+                    <select id="adminCardDeviceSelect" class="input-field" style="width:100%;"></select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label>Card UID (Hex, e.g. A1B2C3D4) <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="adminNewCardUid" class="input-field font-mono" placeholder="A1B2C3D4" required maxlength="32">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label>Cardholder / Staff Name <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="adminNewCardName" class="input-field" placeholder="e.g. Rajesh Kumar" required maxlength="128">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.25rem;">
+                    <div class="form-group">
+                        <label>Department / Role</label>
+                        <input type="text" id="adminNewCardDept" class="input-field" placeholder="Operations">
+                    </div>
+                    <div class="form-group">
+                        <label>Daily Vend Quota</label>
+                        <input type="number" id="adminNewCardLimit" class="input-field" value="1" min="0">
+                        <small style="font-size:0.68rem; color:var(--text-secondary);">0 = unlimited</small>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAdminRfidAddCard()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">💾 Save Card</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Admin Bulk Upload (Method A) -->
+    <div class="modal-overlay" id="modalAdminRfidBulkUpload">
+        <div class="modal-container" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3>📁 Bulk Upload 1,000 Cards (Method A)</h3>
+                <button type="button" class="modal-close" onclick="closeAdminRfidBulkUpload()">&times;</button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                    Import up to 1,000+ RFID cards at once from an Excel (.xlsx) or CSV spreadsheet.
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Target Vendor:</label>
+                        <select id="adminBulkVendorSelect" class="input-field" style="width:100%;"></select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Target Machine:</label>
+                        <select id="adminBulkDeviceSelect" class="input-field" style="width:100%;"></select>
+                    </div>
+                </div>
+                <div style="background: rgba(59, 130, 246, 0.08); border: 1px dashed var(--primary); border-radius: var(--radius-md); padding: 1.5rem; text-align: center; margin-bottom: 1rem;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">📊</div>
+                    <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem;">Choose Excel or CSV File</div>
+                    <input type="file" id="adminBulkFileInput" accept=".csv, .xlsx, .xls" style="display: block; margin: 0 auto; font-size: 0.85rem;" onchange="if(this.files.length) document.getElementById('adminBulkSummary').textContent = this.files[0].name;">
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                    <a href="/api/v1/rfid-vending/template" download class="btn btn-secondary btn-sm" style="font-size: 0.75rem; color: #38bdf8; text-decoration: none;">
+                        📥 Download CSV Template
+                    </a>
+                    <span id="adminBulkSummary" style="font-size: 0.75rem; color: var(--text-secondary);">No file selected</span>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAdminRfidBulkUpload()">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnAdminSubmitBulk" onclick="submitAdminRfidBulkUpload()">🚀 Upload & Sync Cards</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Admin Batch Range (Method B) -->
+    <div class="modal-overlay" id="modalAdminRfidBatchRange">
+        <div class="modal-container" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>⚡ Sequential Range Generator (Method B)</h3>
+                <button type="button" class="modal-close" onclick="closeAdminRfidBatchRange()">&times;</button>
+            </div>
+            <form onsubmit="submitAdminRfidBatchRange(event)" style="padding: 1.5rem;">
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                    Instantly generate sequential card numbers (e.g. 1 to 1,000) for a vendor fleet.
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Target Vendor:</label>
+                        <select id="adminBatchVendorSelect" class="input-field" style="width:100%;"></select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Target Machine:</label>
+                        <select id="adminBatchDeviceSelect" class="input-field" style="width:100%;"></select>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Start Number:</label>
+                        <input type="number" id="adminBatchStartNum" class="input-field" value="1" min="1" required>
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">End Number:</label>
+                        <input type="number" id="adminBatchEndNum" class="input-field" value="1000" min="1" max="5000" required>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Name Prefix:</label>
+                        <input type="text" id="adminBatchNamePrefix" class="input-field" value="Staff-">
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">UID Prefix:</label>
+                        <input type="text" id="adminBatchUidPrefix" class="input-field" value="RFC-">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.25rem;">
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Zero Padding:</label>
+                        <input type="number" id="adminBatchPadDigits" class="input-field" value="4" min="1" max="8">
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Daily Quota:</label>
+                        <input type="number" id="adminBatchDailyLimit" class="input-field" value="1" min="0">
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAdminRfidBatchRange()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">⚡ Generate 1,000 Cards</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Admin Live Tap Enroll (Method C) -->
+    <div class="modal-overlay" id="modalAdminRfidLiveEnroll">
+        <div class="modal-container" style="max-width: 480px; text-align: center;">
+            <div class="modal-header">
+                <h3>📡 Live Bench Tap Enrollment (Method C)</h3>
+                <button type="button" class="modal-close" onclick="closeAdminRfidLiveEnroll()">&times;</button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="margin-bottom: 1rem; text-align: left;">
+                    <label style="font-size:0.75rem; display:block; margin-bottom:0.25rem;">Listening Machine:</label>
+                    <select id="adminLiveEnrollDeviceSelect" class="input-field" style="width:100%;"></select>
+                </div>
+
+                <!-- Radar Animation -->
+                <div style="margin: 1.5rem auto; position: relative; width: 90px; height: 90px; display: flex; align-items: center; justify-content: center;">
+                    <div style="position: absolute; width: 90px; height: 90px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); animation: pulseRadar 1.8s infinite ease-out;"></div>
+                    <div style="font-size: 2.2rem; z-index: 2;">💳</div>
+                </div>
+
+                <div id="adminLiveWaitingBox">
+                    <div style="font-weight: 700; color: #fbbf24; font-size: 0.95rem; margin-bottom: 0.25rem;">Listening for RFID Card Swipe...</div>
+                    <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        Swipe any RFID card at the selected reader unit now.
+                    </p>
+                </div>
+
+                <div id="adminLiveDetectedBox" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; text-align: left;">
+                    <div style="color: #34d399; font-weight: 700; font-size: 0.95rem; margin-bottom: 0.5rem;">
+                        ✓ Card Detected: <span id="adminLiveDetectedUid" class="font-mono" style="font-size: 1.1rem; color: #fbbf24;"></span>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label>Cardholder Name <span style="color:var(--danger);">*</span></label>
+                        <input type="text" id="adminLiveCardholderName" class="input-field" placeholder="e.g. Suresh Kumar" required>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <div>
+                            <label style="font-size:0.75rem;">Department:</label>
+                            <input type="text" id="adminLiveCardDept" class="input-field" placeholder="Maintenance">
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;">Daily Quota:</label>
+                            <input type="number" id="adminLiveCardLimit" class="input-field" value="1" min="0">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAdminRfidLiveEnroll()">Stop Listening</button>
+                    <button type="button" class="btn btn-primary" id="btnAdminSaveLiveCard" style="display: none;" onclick="saveAdminLiveEnrollCard()">💾 Save Card</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>

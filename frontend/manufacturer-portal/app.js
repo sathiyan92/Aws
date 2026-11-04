@@ -140,8 +140,9 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 async function apiRequest(endpoint, options = {}) {
+    const isFormData = options.body instanceof FormData;
     const headers = {
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...(state.token ? { "Authorization": `Bearer ${state.token}` } : {}),
         ...options.headers,
     };
@@ -2457,7 +2458,7 @@ function exportAdminRfidReport(format) {
 
     showToast(`Generating ${format.toUpperCase()} report...`, "info");
 
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    const token = state.token || localStorage.getItem("mfg_token");
     fetch(`/api/v1/rfid-vending/reports/export?${params.toString()}`, {
         headers: { "Authorization": `Bearer ${token}` }
     })
@@ -2480,3 +2481,301 @@ function exportAdminRfidReport(format) {
         showToast(err.message, "danger");
     });
 }
+
+
+// ==============================================================================
+// ADMIN RFID MODAL HANDLERS
+// ==============================================================================
+
+window.openAdminRfidAddCard = function() {
+    const devSelect = document.getElementById("adminCardDeviceSelect");
+    if (devSelect && state.devices) {
+        devSelect.innerHTML = '<option value="">All Machines (Vendor Fleet)</option>';
+        state.devices.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            devSelect.appendChild(opt);
+        });
+    }
+
+    const vSelect = document.getElementById("adminCardVendorSelect");
+    if (vSelect && state.clients) {
+        vSelect.innerHTML = '';
+        state.clients.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.name;
+            vSelect.appendChild(opt);
+        });
+    }
+
+    document.getElementById("modalAdminRfidAddCard")?.classList.add("open");
+};
+
+window.closeAdminRfidAddCard = function() {
+    document.getElementById("modalAdminRfidAddCard")?.classList.remove("open");
+};
+
+window.saveAdminRfidCard = async function(e) {
+    if (e) e.preventDefault();
+    const uid = document.getElementById("adminNewCardUid")?.value.trim();
+    const name = document.getElementById("adminNewCardName")?.value.trim();
+    const dept = document.getElementById("adminNewCardDept")?.value.trim();
+    const limit = parseInt(document.getElementById("adminNewCardLimit")?.value) || 1;
+    const devId = document.getElementById("adminCardDeviceSelect")?.value || undefined;
+    const clientId = document.getElementById("adminCardVendorSelect")?.value || undefined;
+
+    if (!uid || !name) {
+        showToast("Card UID and Cardholder Name are required", "danger");
+        return;
+    }
+
+    try {
+        await apiRequest("/rfid-vending/cards", {
+            method: "POST",
+            body: JSON.stringify({
+                card_uid: uid,
+                username: name,
+                department: dept || undefined,
+                device_id: devId,
+                client_id: clientId,
+                daily_limit: limit,
+                is_active: true
+            })
+        });
+
+        showToast(`✓ Card ${uid} enrolled successfully for ${name}!`, "success");
+        closeAdminRfidAddCard();
+        loadAdminRfidCards();
+    } catch (err) {
+        showToast(err.message, "danger");
+    }
+};
+
+window.openAdminRfidBulkUpload = function() {
+    const devSelect = document.getElementById("adminBulkDeviceSelect");
+    if (devSelect && state.devices) {
+        devSelect.innerHTML = '<option value="">All Machines (Vendor Fleet)</option>';
+        state.devices.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            devSelect.appendChild(opt);
+        });
+    }
+
+    const vSelect = document.getElementById("adminBulkVendorSelect");
+    if (vSelect && state.clients) {
+        vSelect.innerHTML = '';
+        state.clients.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.name;
+            vSelect.appendChild(opt);
+        });
+    }
+
+    const f = document.getElementById("adminBulkFileInput");
+    if (f) f.value = "";
+    document.getElementById("adminBulkSummary").textContent = "No file selected";
+    document.getElementById("modalAdminRfidBulkUpload")?.classList.add("open");
+};
+
+window.closeAdminRfidBulkUpload = function() {
+    document.getElementById("modalAdminRfidBulkUpload")?.classList.remove("open");
+};
+
+window.submitAdminRfidBulkUpload = async function() {
+    const fileInput = document.getElementById("adminBulkFileInput");
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showToast("Please select a CSV or Excel file to upload", "danger");
+        return;
+    }
+
+    const devId = document.getElementById("adminBulkDeviceSelect")?.value || "";
+    const clientId = document.getElementById("adminBulkVendorSelect")?.value || "";
+    const btn = document.getElementById("btnAdminSubmitBulk");
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    if (btn) { btn.disabled = true; btn.textContent = "Uploading 1,000 Cards..."; }
+
+    try {
+        const queryParams = new URLSearchParams();
+        if (devId) queryParams.append("device_id", devId);
+        if (clientId) queryParams.append("client_id", clientId);
+
+        const res = await apiRequest(`/rfid-vending/bulk-upload?${queryParams.toString()}`, {
+            method: "POST",
+            body: formData
+        });
+
+        showToast(`✓ Bulk Import Complete! Added: ${res.imported}, Updated: ${res.updated}`, "success");
+        closeAdminRfidBulkUpload();
+        loadAdminRfidCards();
+    } catch (err) {
+        showToast(err.message, "danger");
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "🚀 Upload & Sync Cards"; }
+    }
+};
+
+window.openAdminRfidBatchRange = function() {
+    const devSelect = document.getElementById("adminBatchDeviceSelect");
+    if (devSelect && state.devices) {
+        devSelect.innerHTML = '<option value="">All Machines (Vendor Fleet)</option>';
+        state.devices.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            devSelect.appendChild(opt);
+        });
+    }
+
+    const vSelect = document.getElementById("adminBatchVendorSelect");
+    if (vSelect && state.clients) {
+        vSelect.innerHTML = '';
+        state.clients.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.name;
+            vSelect.appendChild(opt);
+        });
+    }
+
+    document.getElementById("modalAdminRfidBatchRange")?.classList.add("open");
+};
+
+window.closeAdminRfidBatchRange = function() {
+    document.getElementById("modalAdminRfidBatchRange")?.classList.remove("open");
+};
+
+window.submitAdminRfidBatchRange = async function(e) {
+    if (e) e.preventDefault();
+    const devId = document.getElementById("adminBatchDeviceSelect")?.value || undefined;
+    const clientId = document.getElementById("adminBatchVendorSelect")?.value || undefined;
+    const startNum = parseInt(document.getElementById("adminBatchStartNum")?.value) || 1;
+    const endNum = parseInt(document.getElementById("adminBatchEndNum")?.value) || 1000;
+    const prefix = document.getElementById("adminBatchNamePrefix")?.value.trim() || "Staff-";
+    const uidPrefix = document.getElementById("adminBatchUidPrefix")?.value.trim() || "RFC-";
+    const padDigits = parseInt(document.getElementById("adminBatchPadDigits")?.value) || 4;
+    const dailyLimit = parseInt(document.getElementById("adminBatchDailyLimit")?.value) || 1;
+
+    try {
+        const res = await apiRequest("/rfid-vending/batch-generate", {
+            method: "POST",
+            body: JSON.stringify({
+                device_id: devId,
+                client_id: clientId,
+                start_num: startNum,
+                end_num: endNum,
+                prefix: prefix,
+                uid_prefix: uidPrefix,
+                pad_digits: padDigits,
+                daily_limit: dailyLimit
+            })
+        });
+
+        showToast(`✓ Generated ${res.created} sequential cards! (Skipped: ${res.skipped_existing})`, "success");
+        closeAdminRfidBatchRange();
+        loadAdminRfidCards();
+    } catch (err) {
+        showToast(err.message, "danger");
+    }
+};
+
+let adminEnrollTimer = null;
+window.openAdminRfidLiveEnroll = async function() {
+    const devSelect = document.getElementById("adminLiveEnrollDeviceSelect");
+    if (devSelect && state.devices) {
+        devSelect.innerHTML = '';
+        state.devices.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            devSelect.appendChild(opt);
+        });
+    }
+
+    const modal = document.getElementById("modalAdminRfidLiveEnroll");
+    modal?.classList.add("open");
+
+    document.getElementById("adminLiveWaitingBox").style.display = "block";
+    document.getElementById("adminLiveDetectedBox").style.display = "none";
+    document.getElementById("btnAdminSaveLiveCard").style.display = "none";
+
+    const devId = devSelect?.value;
+    if (devId) {
+        await apiRequest(`/rfid-vending/devices/${devId}/enroll-mode`, {
+            method: "POST",
+            body: JSON.stringify({ enabled: true })
+        });
+        showToast(`📡 Machine ${devId} is now listening for RFID card taps!`, "info");
+    }
+
+    if (adminEnrollTimer) clearInterval(adminEnrollTimer);
+    adminEnrollTimer = setInterval(async () => {
+        const currentDev = document.getElementById("adminLiveEnrollDeviceSelect")?.value;
+        if (!currentDev) return;
+        try {
+            const res = await apiRequest(`/rfid-vending/devices/${currentDev}/enroll-status`);
+            if (res && res.last_uid) {
+                document.getElementById("adminLiveDetectedUid").textContent = res.last_uid;
+                document.getElementById("adminLiveWaitingBox").style.display = "none";
+                document.getElementById("adminLiveDetectedBox").style.display = "block";
+                document.getElementById("btnAdminSaveLiveCard").style.display = "inline-block";
+                document.getElementById("adminLiveCardholderName")?.focus();
+                showToast(`💳 Card ${res.last_uid} captured! Enter cardholder name.`, "success");
+            }
+        } catch (e) {}
+    }, 1000);
+};
+
+window.closeAdminRfidLiveEnroll = async function() {
+    if (adminEnrollTimer) { clearInterval(adminEnrollTimer); adminEnrollTimer = null; }
+    const currentDev = document.getElementById("adminLiveEnrollDeviceSelect")?.value;
+    if (currentDev) {
+        try {
+            await apiRequest(`/rfid-vending/devices/${currentDev}/enroll-mode`, {
+                method: "POST",
+                body: JSON.stringify({ enabled: false })
+            });
+        } catch (e) {}
+    }
+    document.getElementById("modalAdminRfidLiveEnroll")?.classList.remove("open");
+};
+
+window.saveAdminLiveEnrollCard = async function() {
+    const uid = document.getElementById("adminLiveDetectedUid")?.textContent.trim();
+    const name = document.getElementById("adminLiveCardholderName")?.value.trim();
+    const dept = document.getElementById("adminLiveCardDept")?.value.trim();
+    const limit = parseInt(document.getElementById("adminLiveCardLimit")?.value) || 1;
+    const devId = document.getElementById("adminLiveEnrollDeviceSelect")?.value;
+
+    if (!name) {
+        showToast("Please enter a cardholder name", "danger");
+        return;
+    }
+
+    try {
+        await apiRequest("/rfid-vending/cards", {
+            method: "POST",
+            body: JSON.stringify({
+                card_uid: uid,
+                username: name,
+                department: dept || undefined,
+                device_id: devId,
+                daily_limit: limit,
+                is_active: true
+            })
+        });
+
+        showToast(`✓ Card ${uid} enrolled for ${name}!`, "success");
+        closeAdminRfidLiveEnroll();
+        loadAdminRfidCards();
+    } catch (err) {
+        showToast(err.message, "danger");
+    }
+};

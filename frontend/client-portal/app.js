@@ -1942,8 +1942,9 @@ async function handleSimulateSecurityAttack() {
 // ==============================================================================
 
 async function fetchWithAuth(url, options = {}) {
+    const isFormData = options.body instanceof FormData;
     const headers = {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(state.token ? { 'Authorization': `Bearer ${state.token}` } : {}),
         ...options.headers,
     };
@@ -2336,3 +2337,50 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 });
+
+
+// Global Modal Helpers for RFID Vending
+window.openAddCardModal = function() {
+    const title = document.getElementById('cardModalTitle');
+    if (title) title.textContent = '💳 Enroll RFID Vending Card';
+    const idEl = document.getElementById('editCardId');
+    if (idEl) idEl.value = '';
+    const uidEl = document.getElementById('newCardUid');
+    if (uidEl) { uidEl.value = ''; uidEl.readOnly = false; }
+    const nameEl = document.getElementById('newCardholderName');
+    if (nameEl) nameEl.value = '';
+    const deptEl = document.getElementById('newCardDept');
+    if (deptEl) deptEl.value = '';
+    const limEl = document.getElementById('newCardDailyLimit');
+    if (limEl) limEl.value = '1';
+    const actEl = document.getElementById('newCardIsActive');
+    if (actEl) actEl.checked = true;
+
+    const modal = document.getElementById('addCardModal');
+    if (modal) modal.classList.add('open');
+};
+
+window.closeAddCardModal = function() {
+    document.getElementById('addCardModal')?.classList.remove('open');
+};
+
+window.openBulkUploadModal = function() {
+    const modal = document.getElementById('bulkUploadModal');
+    if (modal) modal.classList.add('open');
+    const f = document.getElementById('bulkUploadFileInput');
+    if (f) f.value = '';
+    const s = document.getElementById('bulkUploadSummary');
+    if (s) s.textContent = 'No file selected';
+};
+
+window.closeBulkUploadModal = function() {
+    document.getElementById('bulkUploadModal')?.classList.remove('open');
+};
+
+window.openBatchRangeModal = function() {
+    document.getElementById('batchRangeModal')?.classList.add('open');
+};
+
+window.closeBatchRangeModal = function() {
+    document.getElementById('batchRangeModal')?.classList.remove('open');
+};
