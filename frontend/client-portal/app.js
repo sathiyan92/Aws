@@ -1261,99 +1261,620 @@ async function handleSaveCoinSettings(e) {
     }
 }
 
-// RFID MODULE
-async function loadRFIDData(deviceId) {
-    try {
-        const cardsRes = await fetchWithAuth(`${API_BASE}/rfid/${deviceId}/cards`);
-        if (cardsRes.ok) {
-            const cards = await cardsRes.json();
-            renderRFIDCards(cards);
-        }
+// ==============================================================================
+// RFID VENDING & EXCEL REPORTING MODULE (1,000 Cards Scale)
+// ==============================================================================
 
-        const eventsRes = await fetchWithAuth(`${API_BASE}/rfid/${deviceId}/attendance`);
-        if (eventsRes.ok) {
-            const events = await eventsRes.json();
-            renderRFIDLogs(events);
+let rfidCardsCache = [];
+let enrollPollingTimer = null;
+
+// Initialize Date Defaults (Today)
+function initRfidDateInputs() {
+    const startInput = document.getElementById('rfidReportStartDate');
+    const endInput = document.getElementById('rfidReportEndDate');
+    if (startInput && !startInput.value) {
+        const today = new Date().toISOString().split('T')[0];
+        startInput.value = today;
+    }
+    if (endInput && !endInput.value) {
+        const today = new Date().toISOString().split('T')[0];
+        endInput.value = today;
+    }
+}
+
+function setRfidDatePreset(preset) {
+    const startInput = document.getElementById('rfidReportStartDate');
+    const endInput = document.getElementById('rfidReportEndDate');
+    if (!startInput || !endInput) return;
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (preset === 'today') {
+        startInput.value = todayStr;
+        endInput.value = todayStr;
+    } else if (preset === 'yesterday') {
+        const yest = new Date(now);
+        yest.setDate(yest.getDate() - 1);
+        const yStr = yest.toISOString().split('T')[0];
+        startInput.value = yStr;
+        endInput.value = yStr;
+    } else if (preset === '7days') {
+        const prev = new Date(now);
+        prev.setDate(prev.getDate() - 6);
+        startInput.value = prev.toISOString().split('T')[0];
+        endInput.value = todayStr;
+    } else if (preset === 'month') {
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        startInput.value = firstDay.toISOString().split('T')[0];
+        endInput.value = todayStr;
+    }
+    if (state.selectedDeviceId) {
+        loadRfidLogsData(state.selectedDeviceId);
+    }
+}
+
+async function loadRFIDData(deviceId) {
+    initRfidDateInputs();
+    await Promise.all([
+        loadRfidCardsData(deviceId),
+        loadRfidLogsData(deviceId)
+    ]);
+}
+
+async function loadRfidCardsData(deviceId) {
+    const tbody = document.getElementById('rfidCardsBody');
+    const countBadge = document.getElementById('rfidCardCount');
+    if (!tbody) return;
+
+    try {
+        const res = await fetchWithAuth(`/api/v1/rfid-vending/cards?device_id=${deviceId}&limit=1000`);
+        if (res.ok) {
+            const data = await res.json();
+            rfidCardsCache = data.cards || [];
+            if (countBadge) countBadge.textContent = `${rfidCardsCache.length} / 1000 Cards`;
+            filterAndRenderCards();
+        } else {
+            const err = await res.json();
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--danger);">${err.detail || 'Failed to load cards'}</td></tr>`;
         }
     } catch (err) {
-        showToast(err.message, 'error');
+        console.error("Error loading RFID cards:", err);
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--danger);">${err.message}</td></tr>`;
     }
 }
 
-function renderRFIDCards(cards) {
-    elements.rfidCardsBody.innerHTML = '';
-    if (!cards || cards.length === 0) {
-        elements.rfidCardsBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No authorized RFID cards enrolled yet.</td></tr>`;
+function filterAndRenderCards() {
+    const tbody = document.getElementById('rfidCardsBody');
+    if (!tbody) return;
+
+    const searchInput = document.getElementById('rfidCardSearch');
+    const activeFilter = document.getElementById('rfidActiveFilter');
+    const searchTerm = (searchInput ? searchInput.value.trim().toLowerCase() : '');
+    const filterStatus = (activeFilter ? activeFilter.value : 'all');
+
+    let filtered = rfidCardsCache.filter(c => {
+        // Status filter
+        if (filterStatus === 'active' && !c.is_active) return false;
+        if (filterStatus === 'blocked' && c.is_active) return false;
+
+        // Search term
+        if (searchTerm) {
+            const uidMatch = c.card_uid.toLowerCase().includes(searchTerm);
+            const userMatch = (c.username || '').toLowerCase().includes(searchTerm);
+            const deptMatch = (c.department || '').toLowerCase().includes(searchTerm);
+            return uidMatch || userMatch || deptMatch;
+        }
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No matching RFID cards found.</td></tr>`;
         return;
     }
 
-    cards.forEach(c => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong class="mono-text" style="color: var(--cyan);">${c.card_uid}</strong></td>
-            <td>${c.employee_name || 'Unassigned'}</td>
-            <td>${c.employee_code || '-'}</td>
-            <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-on' : 'badge-off'}">${c.status}</span></td>
-            <td>Active</td>
+    tbody.innerHTML = filtered.map(c => `
+        <tr>
+            <td><strong class="mono-text" style="color:var(--cyan);">${c.card_uid}</strong></td>
+            <td style="font-weight:600;">${c.username || 'Cardholder'}</td>
+            <td><span style="color:var(--text-secondary); font-size:0.8rem;">${c.department || '-'}</span></td>
+            <td><span class="badge badge-on" style="font-size:0.75rem;">${c.daily_limit <= 0 ? 'Unlimited' : `${c.daily_limit} vends/day`}</span></td>
+            <td><span class="mono-text" style="color:${c.used_today >= c.daily_limit && c.daily_limit > 0 ? '#f87171' : '#34d399'}; font-weight:700;">${c.used_today} / ${c.daily_limit <= 0 ? '∞' : c.daily_limit}</span></td>
             <td>
-                <span class="badge badge-on" style="font-size: 0.65rem;">Authorized</span>
+                <span class="badge ${c.is_active ? 'badge-on' : 'badge-off'}" style="cursor:pointer;" onclick="toggleCardStatus('${c.id}', ${!c.is_active})" title="Click to toggle status">
+                    ${c.is_active ? 'ACTIVE' : 'BLOCKED'}
+                </span>
             </td>
-        `;
-        elements.rfidCardsBody.appendChild(tr);
-    });
+            <td>
+                <div style="display:flex; gap:0.4rem;">
+                    <button class="btn btn-secondary btn-sm" onclick="editRfidCard('${c.id}')" style="padding:0.25rem 0.5rem; font-size:0.72rem;">✏️ Edit</button>
+                    <button class="btn btn-secondary btn-sm" onclick="deleteRfidCard('${c.id}')" style="padding:0.25rem 0.5rem; font-size:0.72rem; color:#f87171;" title="Delete Card">🗑️</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
 }
 
-function renderRFIDLogs(events) {
-    elements.rfidLogsBody.innerHTML = '';
-    if (!events || events.length === 0) {
-        elements.rfidLogsBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No attendance check-in swipes logged yet.</td></tr>`;
+async function loadRfidLogsData(deviceId) {
+    const tbody = document.getElementById('rfidLogsBody');
+    if (!tbody) return;
+
+    const startInput = document.getElementById('rfidReportStartDate');
+    const endInput = document.getElementById('rfidReportEndDate');
+    const start = startInput ? startInput.value : '';
+    const end = endInput ? endInput.value : '';
+
+    try {
+        const queryParams = new URLSearchParams({
+            device_id: deviceId,
+            limit: 100
+        });
+        if (start) queryParams.append('start_date', start);
+        if (end) queryParams.append('end_date', end);
+
+        const res = await fetchWithAuth(`/api/v1/rfid-vending/reports?${queryParams.toString()}`);
+        if (res.ok) {
+            const data = await res.json();
+            renderRfidLogs(data.logs || []);
+        } else {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:2rem;">No logs found.</td></tr>`;
+        }
+    } catch (err) {
+        console.error("Error loading RFID logs:", err);
+    }
+}
+
+function renderRfidLogs(logs) {
+    const tbody = document.getElementById('rfidLogsBody');
+    if (!tbody) return;
+
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:2rem;">No dispense telemetry recorded for this period.</td></tr>`;
         return;
     }
 
-    events.forEach(e => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><span class="mono-text">${e.id.slice(0, 8)}</span></td>
-            <td>${new Date(e.timestamp).toLocaleTimeString()}</td>
-            <td><span class="mono-text">${e.card_uid_scanned}</span></td>
-            <td>${e.employee_name || 'Cardholder'}</td>
-            <td><span class="badge badge-on">${e.event_type}</span></td>
-            <td><strong style="color: var(--primary);">&check; GRANTED</strong></td>
+    tbody.innerHTML = logs.map(l => {
+        let badgeClass = 'badge-on';
+        let statusText = l.status;
+        if (l.status === 'DISPENSED_SUCCESS' || l.status === 'OFFLINE_SYNCED_DISPENSE') {
+            badgeClass = 'badge-on';
+        } else if (l.status === 'DAILY_LIMIT_EXCEEDED') {
+            badgeClass = 'badge-off';
+            statusText = 'QUOTA EXCEEDED';
+        } else {
+            badgeClass = 'badge-off';
+        }
+
+        return `
+            <tr>
+                <td style="font-size:0.78rem; color:var(--text-secondary); white-space:nowrap;">${l.timestamp}</td>
+                <td><span class="mono-text" style="font-size:0.8rem;">${l.device_code}</span></td>
+                <td><strong class="mono-text" style="color:var(--cyan);">${l.card_uid}</strong></td>
+                <td style="font-weight:600;">${l.username}</td>
+                <td style="font-size:0.8rem; color:var(--text-secondary);">${l.department || '-'}</td>
+                <td><span class="badge ${badgeClass}" style="font-size:0.7rem;">${statusText}</span></td>
+                <td><span class="mono-text" style="color:#a78bfa;">${l.pulse_duration_ms} ms</span></td>
+                <td style="font-size:0.78rem; color:var(--text-muted);">${l.notes || ''}</td>
+            </tr>
         `;
-        elements.rfidLogsBody.appendChild(tr);
-    });
+    }).join('');
 }
 
+// Card Mutation Actions
+async function toggleCardStatus(cardId, newStatus) {
+    try {
+        const res = await fetchWithAuth(`/api/v1/rfid-vending/cards/${cardId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: newStatus })
+        });
+        if (res.ok) {
+            showToast(`Card status updated to ${newStatus ? 'ACTIVE' : 'BLOCKED'}`);
+            if (state.selectedDeviceId) loadRfidCardsData(state.selectedDeviceId);
+        } else {
+            showToast('Failed to update status', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function deleteRfidCard(cardId) {
+    if (!confirm('Are you sure you want to remove this authorized RFID card?')) return;
+    try {
+        const res = await fetchWithAuth(`/api/v1/rfid-vending/cards/${cardId}`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            showToast('Card removed successfully');
+            if (state.selectedDeviceId) loadRfidCardsData(state.selectedDeviceId);
+        } else {
+            showToast('Failed to delete card', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function editRfidCard(cardId) {
+    const card = rfidCardsCache.find(c => c.id === cardId);
+    if (!card) return;
+
+    document.getElementById('cardModalTitle').textContent = '✏️ Edit RFID Vending Card';
+    document.getElementById('editCardId').value = card.id;
+    document.getElementById('newCardUid').value = card.card_uid;
+    document.getElementById('newCardUid').readOnly = true;
+    document.getElementById('newCardholderName').value = card.username;
+    document.getElementById('newCardDept').value = card.department || '';
+    document.getElementById('newCardDailyLimit').value = card.daily_limit;
+    document.getElementById('newCardIsActive').checked = card.is_active;
+
+    const modal = document.getElementById('addCardModal');
+    if (modal) modal.classList.add('open');
+}
+
+// Add / Edit Card Submit Handler
 async function handleAddRFIDCard(e) {
     e.preventDefault();
     if (!state.selectedDeviceId) return;
 
+    const editId = document.getElementById('editCardId')?.value;
+    const uid = document.getElementById('newCardUid').value.trim();
+    const name = document.getElementById('newCardholderName').value.trim();
+    const dept = document.getElementById('newCardDept').value.trim();
+    const limit = parseInt(document.getElementById('newCardDailyLimit').value) || 1;
+    const isActive = document.getElementById('newCardIsActive').checked;
+
     try {
-        const payload = {
-            card_uid: elements.newCardUid.value.trim(),
-            employee_name: elements.newCardholderName.value.trim(),
-            department: elements.newCardDept.value.trim(),
-        };
-
-        const res = await fetchWithAuth(`${API_BASE}/rfid/${state.selectedDeviceId}/cards`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || 'Failed to enroll RFID card');
+        if (editId) {
+            // Update existing
+            const res = await fetchWithAuth(`/api/v1/rfid-vending/cards/${editId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: name,
+                    department: dept,
+                    daily_limit: limit,
+                    is_active: isActive
+                })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to update card');
+            showToast('✓ Card details updated & synced to machine!');
+        } else {
+            // Enroll new
+            const res = await fetchWithAuth('/api/v1/rfid-vending/cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    card_uid: uid,
+                    username: name,
+                    department: dept,
+                    device_id: state.selectedDeviceId,
+                    daily_limit: limit,
+                    is_active: isActive
+                })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to enroll card');
+            showToast('✓ New RFID card authorized on machine!');
         }
 
-        elements.addCardModal.classList.remove('open');
-        elements.addCardForm.reset();
-        showToast('RFID card successfully enrolled & synced to device cache!');
-        await loadRFIDData(state.selectedDeviceId);
+        document.getElementById('addCardModal').classList.remove('open');
+        document.getElementById('addCardForm').reset();
+        document.getElementById('editCardId').value = '';
+        document.getElementById('newCardUid').readOnly = false;
+        await loadRfidCardsData(state.selectedDeviceId);
     } catch (err) {
         showToast(err.message, 'error');
     }
 }
+
+// Method A: Bulk Upload Handlers
+function initBulkUploadEvents() {
+    const bulkBtn = document.getElementById('bulkUploadBtn');
+    const modal = document.getElementById('bulkUploadModal');
+    const closeBtn = document.getElementById('closeBulkUploadModalBtn');
+    const cancelBtn = document.getElementById('cancelBulkUploadModalBtn');
+    const submitBtn = document.getElementById('btnSubmitBulkUpload');
+    const fileInput = document.getElementById('bulkUploadFileInput');
+    const summary = document.getElementById('bulkUploadSummary');
+
+    if (bulkBtn && modal) {
+        bulkBtn.addEventListener('click', () => {
+            modal.classList.add('open');
+            if (fileInput) fileInput.value = '';
+            if (summary) summary.textContent = 'No file selected';
+        });
+    }
+
+    const closeModal = () => modal?.classList.remove('open');
+    closeBtn?.addEventListener('click', closeModal);
+    cancelBtn?.addEventListener('click', closeModal);
+
+    fileInput?.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+            const f = fileInput.files[0];
+            if (summary) summary.textContent = `Selected: ${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+        }
+    });
+
+    submitBtn?.addEventListener('click', async () => {
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            showToast('Please select a CSV or Excel file to upload.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Uploading 1,000 Cards...';
+
+        try {
+            const res = await fetchWithAuth(`/api/v1/rfid-vending/bulk-upload?device_id=${state.selectedDeviceId || ''}`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`✓ Bulk Import Success! Added ${data.imported} new cards, updated ${data.updated} existing.`);
+                closeModal();
+                if (state.selectedDeviceId) loadRfidCardsData(state.selectedDeviceId);
+            } else {
+                const err = await res.json();
+                showToast(err.detail || 'Bulk upload failed', 'error');
+            }
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🚀 Upload & Sync Cards';
+        }
+    });
+}
+
+// Method B: Sequential Batch Generator Handlers
+function initBatchRangeEvents() {
+    const batchBtn = document.getElementById('batchRangeBtn');
+    const modal = document.getElementById('batchRangeModal');
+    const closeBtn = document.getElementById('closeBatchRangeModalBtn');
+    const cancelBtn = document.getElementById('cancelBatchRangeModalBtn');
+    const form = document.getElementById('batchRangeForm');
+
+    if (batchBtn && modal) {
+        batchBtn.addEventListener('click', () => modal.classList.add('open'));
+    }
+
+    const closeModal = () => modal?.classList.remove('open');
+    closeBtn?.addEventListener('click', closeModal);
+    cancelBtn?.addEventListener('click', closeModal);
+
+    form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const startNum = parseInt(document.getElementById('batchStartNum').value) || 1;
+        const endNum = parseInt(document.getElementById('batchEndNum').value) || 1000;
+        const prefix = document.getElementById('batchNamePrefix').value.trim();
+        const uidPrefix = document.getElementById('batchUidPrefix').value.trim();
+        const padDigits = parseInt(document.getElementById('batchPadDigits').value) || 4;
+        const dailyLimit = parseInt(document.getElementById('batchDailyLimit').value) || 1;
+
+        try {
+            const res = await fetchWithAuth('/api/v1/rfid-vending/batch-generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    device_id: state.selectedDeviceId,
+                    start_num: startNum,
+                    end_num: endNum,
+                    prefix: prefix,
+                    uid_prefix: uidPrefix,
+                    pad_digits: padDigits,
+                    daily_limit: dailyLimit
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`✓ Batch Complete! Generated ${data.created} cards (Skipped existing: ${data.skipped_existing})`);
+                closeModal();
+                if (state.selectedDeviceId) loadRfidCardsData(state.selectedDeviceId);
+            } else {
+                const err = await res.json();
+                showToast(err.detail || 'Batch generation failed', 'error');
+            }
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    });
+}
+
+// Method C: Live Tap Enroll Mode Handlers
+function initLiveEnrollEvents() {
+    const liveBtn = document.getElementById('liveEnrollBtn');
+    const modal = document.getElementById('liveEnrollModal');
+    const closeBtn = document.getElementById('closeLiveEnrollModalBtn');
+    const stopBtn = document.getElementById('stopLiveEnrollModalBtn');
+    const saveBtn = document.getElementById('btnSaveLiveEnrollCard');
+
+    const waitingBox = document.getElementById('liveEnrollWaitingBox');
+    const detectedBox = document.getElementById('liveEnrollDetectedBox');
+    const detectedUidSpan = document.getElementById('liveDetectedUid');
+
+    if (liveBtn && modal) {
+        liveBtn.addEventListener('click', async () => {
+            if (!state.selectedDeviceId) {
+                showToast('Please select a vending machine first.', 'warning');
+                return;
+            }
+            modal.classList.add('open');
+            waitingBox.style.display = 'block';
+            detectedBox.style.display = 'none';
+            saveBtn.style.display = 'none';
+
+            // Activate enroll mode on machine
+            await fetchWithAuth(`/api/v1/rfid-vending/devices/${state.selectedDeviceId}/enroll-mode`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: true })
+            });
+
+            showToast(`📡 Machine ${state.selectedDeviceId} is now listening for RFID card swipes!`);
+
+            // Start polling every second
+            if (enrollPollingTimer) clearInterval(enrollPollingTimer);
+            enrollPollingTimer = setInterval(async () => {
+                try {
+                    const res = await fetchWithAuth(`/api/v1/rfid-vending/devices/${state.selectedDeviceId}/enroll-status`);
+                    if (res.ok) {
+                        const status = await res.json();
+                        if (status.last_uid) {
+                            // Card detected!
+                            detectedUidSpan.textContent = status.last_uid;
+                            waitingBox.style.display = 'none';
+                            detectedBox.style.display = 'block';
+                            saveBtn.style.display = 'inline-block';
+                            document.getElementById('liveCardholderName').focus();
+                            showToast(`💳 Card ${status.last_uid} captured from machine! Enter cardholder name.`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Enroll poll notice:", e);
+                }
+            }, 1000);
+        });
+    }
+
+    const stopEnrollment = async () => {
+        if (enrollPollingTimer) {
+            clearInterval(enrollPollingTimer);
+            enrollPollingTimer = null;
+        }
+        if (state.selectedDeviceId) {
+            await fetchWithAuth(`/api/v1/rfid-vending/devices/${state.selectedDeviceId}/enroll-mode`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: false })
+            });
+        }
+        modal?.classList.remove('open');
+    };
+
+    closeBtn?.addEventListener('click', stopEnrollment);
+    stopBtn?.addEventListener('click', stopEnrollment);
+
+    saveBtn?.addEventListener('click', async () => {
+        const uid = detectedUidSpan.textContent.trim();
+        const name = document.getElementById('liveCardholderName').value.trim();
+        const dept = document.getElementById('liveCardDept').value.trim();
+        const limit = parseInt(document.getElementById('liveCardQuota').value) || 1;
+
+        if (!name) {
+            showToast('Please enter a cardholder name.', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetchWithAuth('/api/v1/rfid-vending/cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    card_uid: uid,
+                    username: name,
+                    department: dept,
+                    device_id: state.selectedDeviceId,
+                    daily_limit: limit,
+                    is_active: true
+                })
+            });
+
+            if (res.ok) {
+                showToast(`✓ Card ${uid} assigned to ${name} & active!`);
+                await stopEnrollment();
+                if (state.selectedDeviceId) loadRfidCardsData(state.selectedDeviceId);
+            } else {
+                const err = await res.json();
+                showToast(err.detail || 'Failed to save card', 'error');
+            }
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+}
+
+// Excel and CSV Report Export
+function initReportExportEvents() {
+    const excelBtn = document.getElementById('btnExportRfidExcel');
+    const csvBtn = document.getElementById('btnExportRfidCsv');
+    const filterBtn = document.getElementById('btnFilterRfidLogs');
+    const searchInput = document.getElementById('rfidCardSearch');
+    const activeFilter = document.getElementById('rfidActiveFilter');
+    const refreshBtn = document.getElementById('btnRefreshCards');
+
+    filterBtn?.addEventListener('click', () => {
+        if (state.selectedDeviceId) loadRfidLogsData(state.selectedDeviceId);
+    });
+
+    searchInput?.addEventListener('input', filterAndRenderCards);
+    activeFilter?.addEventListener('change', filterAndRenderCards);
+    refreshBtn?.addEventListener('click', () => {
+        if (state.selectedDeviceId) loadRfidCardsData(state.selectedDeviceId);
+    });
+
+    const triggerExport = (format) => {
+        if (!state.selectedDeviceId) {
+            showToast('Please select a vending machine first.', 'warning');
+            return;
+        }
+        const start = document.getElementById('rfidReportStartDate')?.value || '';
+        const end = document.getElementById('rfidReportEndDate')?.value || '';
+
+        const params = new URLSearchParams({
+            device_id: state.selectedDeviceId,
+            format: format
+        });
+        if (start) params.append('start_date', start);
+        if (end) params.append('end_date', end);
+
+        showToast(`Preparing ${format.toUpperCase()} report download...`);
+
+        // Fetch binary file with auth token and trigger browser download
+        fetchWithAuth(`/api/v1/rfid-vending/reports/export?${params.toString()}`)
+            .then(res => {
+                if (!res.ok) throw new Error('Export failed');
+                return res.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `rfid_vending_report_${state.selectedDeviceId}_${start || 'all'}_to_${end || 'today'}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                showToast(`✓ Downloaded ${format.toUpperCase()} report successfully!`);
+            })
+            .catch(err => {
+                showToast(`Export error: ${err.message}`, 'error');
+            });
+    };
+
+    excelBtn?.addEventListener('click', () => triggerExport('xlsx'));
+    csvBtn?.addEventListener('click', () => triggerExport('csv'));
+}
+
+// Global initialization hook
+document.addEventListener('DOMContentLoaded', () => {
+    initBulkUploadEvents();
+    initBatchRangeEvents();
+    initLiveEnrollEvents();
+    initReportExportEvents();
+
+    const cancelAddBtn = document.getElementById('cancelAddCardModalBtn');
+    cancelAddBtn?.addEventListener('click', () => {
+        document.getElementById('addCardModal')?.classList.remove('open');
+    });
+});
 
 // ==============================================================================
 // SECURITY ENFORCEMENT VERIFICATION (SIMULATE FORGED REQUEST)

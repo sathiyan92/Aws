@@ -498,15 +498,39 @@
                     </div>
                 </section>
 
-                <!-- TAB 4: RFID ATTENDANCE MODULE (Dynamic) -->
+                <!-- TAB 4: RFID CARD VENDING & EXCEL REPORTS MODULE -->
                 <section id="tab-rfid" class="tab-pane">
+                    <!-- Whitelist Card Management Panel (1,000 Cards Scale) -->
                     <div class="card-panel">
-                        <div class="panel-header">
+                        <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
                             <div>
-                                <h3>RFID Card Whitelist Management</h3>
-                                <p>Authorized personnel badges and smart access credentials for <span class="mono-text selected-device-label">...</span></p>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                                    <span>💳 RFID Vending Card Whitelist</span>
+                                    <span class="badge badge-on" id="rfidCardCount">0 / 1000 Cards</span>
+                                </h3>
+                                <p>Manage up to 1,000 user cards per machine for <span class="mono-text selected-device-label">...</span></p>
                             </div>
-                            <button class="btn btn-primary" id="addCardBtn" style="font-size: 0.75rem;">+ Add Authorized Card</button>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                <button class="btn btn-primary" id="addCardBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem;">+ Add Single Card</button>
+                                <button class="btn btn-secondary" id="bulkUploadBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #60a5fa;" title="Upload up to 1,000 cards via CSV or Excel">📁 Bulk Upload (Method A)</button>
+                                <button class="btn btn-secondary" id="batchRangeBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #c084fc;" title="Auto-generate sequential cards 1 to 1000">⚡ Batch Range (Method B)</button>
+                                <button class="btn btn-secondary" id="liveEnrollBtn" style="font-size: 0.75rem; padding: 0.45rem 0.75rem; background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24;" title="Tap card at machine to auto-capture UID">📡 Live Tap Enroll (Method C)</button>
+                            </div>
+                        </div>
+
+                        <!-- Search and Quick Filter Bar -->
+                        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 220px; position: relative;">
+                                <input type="text" id="rfidCardSearch" class="input-field" placeholder="🔍 Search by name, UID, or department..." style="width: 100%; font-size: 0.85rem; padding-left: 0.75rem;">
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <select id="rfidActiveFilter" class="input-field" style="font-size: 0.85rem; padding: 0.45rem 0.75rem;">
+                                    <option value="all">All Cards</option>
+                                    <option value="active" selected>Active Only</option>
+                                    <option value="blocked">Blocked Only</option>
+                                </select>
+                                <button class="btn btn-secondary btn-sm" id="btnRefreshCards" title="Refresh Cards">🔄</button>
+                            </div>
                         </div>
 
                         <div class="table-responsive">
@@ -515,42 +539,76 @@
                                     <tr>
                                         <th>Card UID</th>
                                         <th>Cardholder Name</th>
-                                        <th>Designation / Dept</th>
+                                        <th>Department / Role</th>
+                                        <th>Daily Quota</th>
+                                        <th>Used Today</th>
                                         <th>Status</th>
-                                        <th>Enrolled At</th>
-                                        <th>Action</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="rfidCardsBody">
-                                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading authorized RFID cards...</td></tr>
+                                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading authorized RFID cards...</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
-                    <!-- RFID Access Swipes Table -->
+                    <!-- Usage Reports & Calendar Filter Panel with Excel Export -->
                     <div class="card-panel">
-                        <div class="panel-header">
+                        <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
                             <div>
-                                <h3>Recent RFID Check-in / Swipes</h3>
-                                <p>Hardware swipe telemetry logged at reader unit.</p>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                                    <span>📊 RFID Dispense History & Excel Export</span>
+                                </h3>
+                                <p>Filter telemetry by calendar date range & machine, then export formatted Excel report.</p>
                             </div>
-                            <span class="badge badge-on">Access Controller</span>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                <button class="btn btn-primary" id="btnExportRfidExcel" style="font-size: 0.8rem; padding: 0.45rem 0.9rem; background: linear-gradient(135deg, #16a34a, #15803d); border: none; font-weight: 700; color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,0.3);">
+                                    📥 Download Excel Report (.xlsx)
+                                </button>
+                                <button class="btn btn-secondary btn-sm" id="btnExportRfidCsv" style="font-size: 0.8rem; padding: 0.45rem 0.75rem;">
+                                    📄 CSV
+                                </button>
+                            </div>
                         </div>
+
+                        <!-- Calendar Date Range & Filter Bar -->
+                        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Start Date (Calendar):</label>
+                                <input type="date" id="rfidReportStartDate" class="input-field" style="font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">End Date (Calendar):</label>
+                                <input type="date" id="rfidReportEndDate" class="input-field" style="font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                            </div>
+                            <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnPresetToday" style="font-size:0.72rem; padding:0.35rem 0.55rem;">Today</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnPresetYesterday" style="font-size:0.72rem; padding:0.35rem 0.55rem;">Yesterday</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnPreset7Days" style="font-size:0.72rem; padding:0.35rem 0.55rem;">Last 7 Days</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnPresetMonth" style="font-size:0.72rem; padding:0.35rem 0.55rem;">This Month</button>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; margin-left: auto;">
+                                <button class="btn btn-primary btn-sm" id="btnFilterRfidLogs" style="padding: 0.45rem 1rem; font-size: 0.825rem;">🔍 Filter Records</button>
+                            </div>
+                        </div>
+
                         <div class="table-responsive">
                             <table class="data-table">
                                 <thead>
                                     <tr>
-                                        <th>Log ID</th>
-                                        <th>Swipe Timestamp</th>
+                                        <th>Timestamp</th>
+                                        <th>Machine</th>
                                         <th>Card UID</th>
                                         <th>Cardholder</th>
-                                        <th>Direction</th>
-                                        <th>Verdict</th>
+                                        <th>Department</th>
+                                        <th>Verdict / Status</th>
+                                        <th>Motor Pulse</th>
+                                        <th>Remarks</th>
                                     </tr>
                                 </thead>
                                 <tbody id="rfidLogsBody">
-                                    <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No attendance swipe logs recorded.</td></tr>
+                                    <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No dispense telemetry recorded for this period.</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -705,31 +763,194 @@
         </div>
     </div>
 
-    <!-- Modal for Adding RFID Card -->
+    <!-- Modal for Adding / Editing Single RFID Card -->
     <div class="modal-overlay" id="addCardModal">
-        <div class="modal-container">
-            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text-primary);">Register RFID Access Card</h3>
+        <div class="modal-container" style="max-width: 480px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="font-size: 1.15rem; color: var(--text-primary); margin: 0;" id="cardModalTitle">💳 Enroll RFID Vending Card</h3>
+                <button type="button" class="btn btn-secondary btn-sm" id="closeAddCardModalBtn" style="padding: 2px 8px;">✕</button>
+            </div>
             <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem;">
-                Grant access to this RFID Attendance terminal. The UID will be synced to the device whitelist.
+                Authorize this card on <strong class="mono-text selected-device-label" style="color: var(--primary);">VM-000001</strong>.
             </p>
             <form id="addCardForm">
+                <input type="hidden" id="editCardId" value="">
                 <div class="form-group" style="margin-bottom: 1rem;">
-                    <label for="newCardUid">Card UID (HEX / Dec)</label>
-                    <input type="text" id="newCardUid" class="input-field" placeholder="E2:80:68:1A" required>
+                    <label for="newCardUid">Card UID (Hex, e.g. A1B2C3D4) <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="newCardUid" class="input-field font-mono" placeholder="A1B2C3D4" required maxlength="32">
                 </div>
                 <div class="form-group" style="margin-bottom: 1rem;">
-                    <label for="newCardholderName">Cardholder Name</label>
-                    <input type="text" id="newCardholderName" class="input-field" placeholder="Sarah Jenkins" required>
+                    <label for="newCardholderName">Cardholder / Staff Name <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="newCardholderName" class="input-field" placeholder="e.g. Rajesh Kumar" required maxlength="128">
                 </div>
-                <div class="form-group" style="margin-bottom: 1.5rem;">
-                    <label for="newCardDept">Department / Designation</label>
-                    <input type="text" id="newCardDept" class="input-field" placeholder="Operations Manager" required>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label for="newCardDept">Department / Role</label>
+                        <input type="text" id="newCardDept" class="input-field" placeholder="e.g. Operations">
+                    </div>
+                    <div class="form-group">
+                        <label for="newCardDailyLimit">Daily Vend Quota</label>
+                        <input type="number" id="newCardDailyLimit" class="input-field" value="1" min="0" max="99" title="0 or -1 for unlimited">
+                        <small style="font-size:0.68rem; color:var(--text-muted);">Max vends per day (0 = unlimited)</small>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="newCardIsActive" checked style="transform: scale(1.2);">
+                        <span style="font-size: 0.85rem; font-weight: 600;">Active (Card enabled for vending)</span>
+                    </label>
                 </div>
                 <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-                    <button type="button" class="btn btn-secondary" id="closeAddCardModalBtn">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Enroll Card</button>
+                    <button type="button" class="btn btn-secondary" id="cancelAddCardModalBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitAddCard">💾 Save Card</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal for Method A: Bulk Upload (1,000 Cards Excel / CSV) -->
+    <div class="modal-overlay" id="bulkUploadModal">
+        <div class="modal-container" style="max-width: 520px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="font-size: 1.15rem; color: var(--text-primary); margin: 0;">📁 Method A: Bulk Upload 1,000 Cards</h3>
+                <button type="button" class="btn btn-secondary btn-sm" id="closeBulkUploadModalBtn" style="padding: 2px 8px;">✕</button>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+                Upload a spreadsheet (.xlsx or .csv) to import up to 1,000+ RFID cards with usernames and daily limits in under 2 seconds.
+            </p>
+
+            <div style="background: rgba(59, 130, 246, 0.08); border: 1px dashed var(--primary); border-radius: var(--radius-md); padding: 1.5rem; text-align: center; margin-bottom: 1rem;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">📊</div>
+                <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem;">Choose or Drag & Drop Excel/CSV File</div>
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">Columns: <code>card_uid, username, department, daily_limit, is_active</code></p>
+                <input type="file" id="bulkUploadFileInput" accept=".csv, .xlsx, .xls" style="display: block; margin: 0 auto; font-size: 0.85rem;">
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <a href="/api/v1/rfid-vending/template" download class="btn btn-secondary btn-sm" style="font-size: 0.75rem; color: #38bdf8; text-decoration: none;">
+                    📥 Download CSV Template
+                </a>
+                <span id="bulkUploadSummary" style="font-size: 0.75rem; color: var(--text-muted);">No file selected</span>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                <button type="button" class="btn btn-secondary" id="cancelBulkUploadModalBtn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btnSubmitBulkUpload">🚀 Upload & Sync Cards</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Method B: Batch Range Generator (1 to 1,000 Cards) -->
+    <div class="modal-overlay" id="batchRangeModal">
+        <div class="modal-container" style="max-width: 480px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="font-size: 1.15rem; color: var(--text-primary); margin: 0;">⚡ Method B: Sequential Range Generator</h3>
+                <button type="button" class="btn btn-secondary btn-sm" id="closeBatchRangeModalBtn" style="padding: 2px 8px;">✕</button>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+                Instantly generate sequential card numbers (e.g. 1 to 1,000) for machine <strong class="mono-text selected-device-label" style="color:var(--primary);">VM-000001</strong>.
+            </p>
+
+            <form id="batchRangeForm">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label for="batchStartNum">Start Number</label>
+                        <input type="number" id="batchStartNum" class="input-field" value="1" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="batchEndNum">End Number</label>
+                        <input type="number" id="batchEndNum" class="input-field" value="1000" min="1" max="5000" required>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label for="batchNamePrefix">Name Prefix</label>
+                        <input type="text" id="batchNamePrefix" class="input-field" value="Staff-" placeholder="e.g. Staff-">
+                    </div>
+                    <div class="form-group">
+                        <label for="batchUidPrefix">UID Prefix</label>
+                        <input type="text" id="batchUidPrefix" class="input-field" value="RFC-" placeholder="e.g. RFC-">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.25rem;">
+                    <div class="form-group">
+                        <label for="batchPadDigits">Zero Padding Digits</label>
+                        <input type="number" id="batchPadDigits" class="input-field" value="4" min="1" max="8">
+                        <small style="font-size:0.68rem; color:var(--text-muted);">4 digits = RFC-0001</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="batchDailyLimit">Daily Vend Quota</label>
+                        <input type="number" id="batchDailyLimit" class="input-field" value="1" min="0" max="99">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" id="cancelBatchRangeModalBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitBatchRange">⚡ Generate 1,000 Cards</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Method C: Live Bench Tap-to-Enroll Mode -->
+    <div class="modal-overlay" id="liveEnrollModal">
+        <div class="modal-container" style="max-width: 480px; text-align: center;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="font-size: 1.15rem; color: var(--text-primary); margin: 0;">📡 Method C: Live Tap Enrollment Mode</h3>
+                <button type="button" class="btn btn-secondary btn-sm" id="closeLiveEnrollModalBtn" style="padding: 2px 8px;">✕</button>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+                Machine <strong class="mono-text selected-device-label" style="color:var(--primary);">VM-000001</strong> is listening for new RFID cards.
+            </p>
+
+            <!-- Radar Pulsing Animation -->
+            <div style="margin: 1.5rem auto; position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center;">
+                <div style="position: absolute; width: 100px; height: 100px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); animation: pulseRadar 1.8s infinite ease-out;"></div>
+                <div style="position: absolute; width: 70px; height: 70px; border-radius: 50%; background: rgba(245, 158, 11, 0.25);"></div>
+                <div style="font-size: 2.2rem; z-index: 2;">💳</div>
+            </div>
+            <style>
+                @keyframes pulseRadar {
+                    0% { transform: scale(0.6); opacity: 1; }
+                    100% { transform: scale(1.6); opacity: 0; }
+                }
+            </style>
+
+            <div id="liveEnrollWaitingBox">
+                <div style="font-weight: 700; color: #fbbf24; font-size: 1rem; margin-bottom: 0.25rem;">Waiting for Card Tap...</div>
+                <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+                    Swipe any unregistered RFID card or keyfob on the reader now. Its UID will appear here automatically!
+                </p>
+            </div>
+
+            <!-- Detected Card Box (Hidden until tapped) -->
+            <div id="liveEnrollDetectedBox" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; text-align: left;">
+                <div style="color: #34d399; font-weight: 700; font-size: 0.95rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>✓ Card Detected:</span>
+                    <span id="liveDetectedUid" class="font-mono" style="font-size: 1.1rem; color: #fbbf24;"></span>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <label for="liveCardholderName">Assign Cardholder Name <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="liveCardholderName" class="input-field" placeholder="e.g. Suresh Kumar" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <div class="form-group">
+                        <label for="liveCardDept">Department</label>
+                        <input type="text" id="liveCardDept" class="input-field" placeholder="e.g. Maintenance">
+                    </div>
+                    <div class="form-group">
+                        <label for="liveCardQuota">Daily Quota</label>
+                        <input type="number" id="liveCardQuota" class="input-field" value="1" min="0">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                <button type="button" class="btn btn-secondary" id="stopLiveEnrollModalBtn">Stop Listening</button>
+                <button type="button" class="btn btn-primary" id="btnSaveLiveEnrollCard" style="display: none;">💾 Save Card</button>
+            </div>
         </div>
     </div>
 

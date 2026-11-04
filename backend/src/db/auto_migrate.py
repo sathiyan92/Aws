@@ -57,6 +57,16 @@ def run_auto_migrations(engine) -> None:
                 "razorpay_account_id": "VARCHAR(64)",
                 "razorpay_merchant_vpa": "VARCHAR(128)",
             },
+            "rfid_vending_cards": {
+                "daily_limit": "INTEGER DEFAULT 1",
+                "used_today": "INTEGER DEFAULT 0",
+                "last_vended_at": "DATETIME",
+                "notes": "VARCHAR(256)",
+            },
+            "rfid_vending_logs": {
+                "pulse_duration_ms": "INTEGER DEFAULT 1500",
+                "notes": "TEXT",
+            },
         }
 
         with engine.begin() as conn:

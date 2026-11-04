@@ -117,7 +117,7 @@ function switchTab(tabName) {
     if (tabName === "devices") renderDevicesTable();
     if (tabName === "vending") renderDevicesTable("VENDING_MACHINE");
     if (tabName === "qr-manager") renderQrManagerTab();
-    if (tabName === "rfid") renderDevicesTable("RFID_ATTENDANCE");
+    if (tabName === "rfid") { renderDevicesTable("RFID_ATTENDANCE"); loadAdminRfidCards(); loadAdminRfidLogs(); }
     if (tabName === "firmware") renderFirmwareTab();
     if (tabName === "audit") renderAuditTable();
 }
@@ -2268,3 +2268,215 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 });
+
+
+// ==============================================================================
+// MANUFACTURER SUPER-ADMIN RFID VENDING & EXCEL REPORTS ENGINE
+// ==============================================================================
+
+let adminRfidCards = [];
+
+function initAdminRfidDateDefaults() {
+    const s = document.getElementById("adminRfidStartDate");
+    const e = document.getElementById("adminRfidEndDate");
+    if (s && !s.value) s.value = new Date().toISOString().split("T")[0];
+    if (e && !e.value) e.value = new Date().toISOString().split("T")[0];
+
+    // Populate device filter
+    const devSelect = document.getElementById("adminRfidDeviceFilter");
+    if (devSelect && state.devices && devSelect.options.length <= 1) {
+        state.devices.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            devSelect.appendChild(opt);
+        });
+    }
+
+    // Populate vendor filter
+    const vSelect = document.getElementById("adminRfidVendorFilter");
+    if (vSelect && state.clients && vSelect.options.length <= 1) {
+        state.clients.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.name;
+            vSelect.appendChild(opt);
+        });
+    }
+}
+
+function setAdminRfidPreset(preset) {
+    const s = document.getElementById("adminRfidStartDate");
+    const e = document.getElementById("adminRfidEndDate");
+    if (!s || !e) return;
+
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+
+    if (preset === "today") {
+        s.value = todayStr;
+        e.value = todayStr;
+    } else if (preset === "yesterday") {
+        const y = new Date(now);
+        y.setDate(y.getDate() - 1);
+        s.value = y.toISOString().split("T")[0];
+        e.value = y.toISOString().split("T")[0];
+    } else if (preset === "7days") {
+        const prev = new Date(now);
+        prev.setDate(prev.getDate() - 6);
+        s.value = prev.toISOString().split("T")[0];
+        e.value = todayStr;
+    } else if (preset === "month") {
+        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+        s.value = first.toISOString().split("T")[0];
+        e.value = todayStr;
+    }
+    loadAdminRfidLogs();
+}
+
+async function loadAdminRfidCards() {
+    initAdminRfidDateDefaults();
+    const tbody = document.getElementById("adminRfidCardsBody");
+    const countBadge = document.getElementById("adminRfidCardCount");
+    if (!tbody) return;
+
+    try {
+        const vendorId = document.getElementById("adminRfidVendorFilter")?.value || "";
+        const searchVal = document.getElementById("adminRfidCardSearch")?.value || "";
+
+        const params = new URLSearchParams({ limit: 1000 });
+        if (vendorId) params.append("client_id", vendorId);
+        if (searchVal) params.append("search", searchVal);
+
+        const res = await apiRequest(`/rfid-vending/cards?${params.toString()}`);
+        adminRfidCards = res.cards || [];
+        if (countBadge) countBadge.textContent = `${adminRfidCards.length} Cards in Fleet`;
+
+        if (adminRfidCards.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--text-secondary);">No authorized RFID cards registered.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = adminRfidCards.map(c => `
+            <tr>
+                <td><strong class="font-mono" style="color:var(--primary); font-size:0.9rem;">${c.card_uid}</strong></td>
+                <td style="font-weight:600;">${c.username}</td>
+                <td><span class="badge badge-outline">${c.device_code || 'All Machines'}</span></td>
+                <td style="font-size:0.825rem; color:var(--text-secondary);">${c.department || '-'}</td>
+                <td><span class="badge badge-online" style="font-size:0.75rem;">${c.daily_limit <= 0 ? 'Unlimited' : `${c.daily_limit} vends/day`}</span></td>
+                <td><span class="font-mono" style="color:${c.used_today >= c.daily_limit && c.daily_limit > 0 ? '#f87171' : '#34d399'}; font-weight:700;">${c.used_today} / ${c.daily_limit <= 0 ? '∞' : c.daily_limit}</span></td>
+                <td><span class="badge ${c.is_active ? 'badge-online' : 'badge-offline'}">${c.is_active ? 'ACTIVE' : 'BLOCKED'}</span></td>
+                <td>
+                    <button class="btn btn-secondary btn-sm" onclick="adminDeleteRfidCard('${c.id}')" style="padding:0.25rem 0.5rem; color:#f87171;" title="Delete Card">🗑️</button>
+                </td>
+            </tr>
+        `).join("");
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--danger);">${err.message}</td></tr>`;
+    }
+}
+
+async function adminDeleteRfidCard(cardId) {
+    if (!confirm("Are you sure you want to delete this authorized RFID card?")) return;
+    try {
+        await apiRequest(`/rfid-vending/cards/${cardId}`, { method: "DELETE" });
+        showToast("Card deleted successfully", "success");
+        loadAdminRfidCards();
+    } catch (e) {
+        showToast(e.message, "danger");
+    }
+}
+
+async function loadAdminRfidLogs() {
+    initAdminRfidDateDefaults();
+    const tbody = document.getElementById("adminRfidLogsBody");
+    if (!tbody) return;
+
+    const s = document.getElementById("adminRfidStartDate")?.value || "";
+    const e = document.getElementById("adminRfidEndDate")?.value || "";
+    const dev = document.getElementById("adminRfidDeviceFilter")?.value || "";
+    const v = document.getElementById("adminRfidVendorFilter")?.value || "";
+
+    try {
+        const params = new URLSearchParams({ limit: 100 });
+        if (s) params.append("start_date", s);
+        if (e) params.append("end_date", e);
+        if (dev) params.append("device_id", dev);
+        if (v) params.append("client_id", v);
+
+        const res = await apiRequest(`/rfid-vending/reports?${params.toString()}`);
+        const logs = res.logs || [];
+
+        if (logs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2rem; color:var(--text-secondary);">No telemetry logs found for selected filter criteria.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = logs.map(l => {
+            let badgeClass = "badge-online";
+            let statusText = l.status;
+            if (l.status === "DISPENSED_SUCCESS" || l.status === "OFFLINE_SYNCED_DISPENSE") {
+                badgeClass = "badge-online";
+            } else if (l.status === "DAILY_LIMIT_EXCEEDED") {
+                badgeClass = "badge-offline";
+                statusText = "QUOTA EXCEEDED";
+            } else {
+                badgeClass = "badge-offline";
+            }
+
+            return `
+                <tr>
+                    <td style="font-size:0.78rem; color:var(--text-secondary); white-space:nowrap;">${l.timestamp}</td>
+                    <td style="font-size:0.8rem; font-weight:600;">${l.vendor_name || '-'}</td>
+                    <td><span class="font-mono" style="font-size:0.8rem;">${l.device_code}</span></td>
+                    <td><strong class="font-mono" style="color:var(--primary);">${l.card_uid}</strong></td>
+                    <td style="font-weight:600;">${l.username}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary);">${l.department || '-'}</td>
+                    <td><span class="badge ${badgeClass}" style="font-size:0.7rem;">${statusText}</span></td>
+                    <td><span class="font-mono" style="color:#a78bfa;">${l.pulse_duration_ms} ms</span></td>
+                    <td style="font-size:0.78rem; color:var(--text-secondary);">${l.notes || ''}</td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--danger);">${err.message}</td></tr>`;
+    }
+}
+
+function exportAdminRfidReport(format) {
+    const s = document.getElementById("adminRfidStartDate")?.value || "";
+    const e = document.getElementById("adminRfidEndDate")?.value || "";
+    const dev = document.getElementById("adminRfidDeviceFilter")?.value || "";
+    const v = document.getElementById("adminRfidVendorFilter")?.value || "";
+
+    const params = new URLSearchParams({ format: format });
+    if (s) params.append("start_date", s);
+    if (e) params.append("end_date", e);
+    if (dev) params.append("device_id", dev);
+    if (v) params.append("client_id", v);
+
+    showToast(`Generating ${format.toUpperCase()} report...`, "info");
+
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    fetch(`/api/v1/rfid-vending/reports/export?${params.toString()}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Failed to export report");
+        return res.blob();
+    })
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `rfid_vending_fleet_report_${s || 'all'}_to_${e || 'today'}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        showToast(`✓ Downloaded ${format.toUpperCase()} fleet report!`, "success");
+    })
+    .catch(err => {
+        showToast(err.message, "danger");
+    });
+}

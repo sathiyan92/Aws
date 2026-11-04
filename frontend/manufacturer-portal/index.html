@@ -482,14 +482,15 @@
                 </section>
 
                 <!-- ==========================================
-                     TAB: RFID TERMINALS
+                     TAB: RFID TERMINALS & VENDING CARDS HUB
                      ========================================== -->
                 <section id="tab-rfid" class="tab-pane">
-                    <div class="card-panel">
+                    <!-- RFID Terminals Overview -->
+                    <div class="card-panel" style="margin-bottom: 1.5rem;">
                         <div class="panel-header">
                             <div>
-                                <h3>RFID Attendance Terminals</h3>
-                                <p>Dedicated view for corporate and institutional attendance nodes</p>
+                                <h3>RFID Terminals & Hardware Nodes</h3>
+                                <p>Dedicated view for fleet RFID vending and attendance controller nodes</p>
                             </div>
                         </div>
                         <div class="table-responsive">
@@ -508,6 +509,121 @@
                                 </thead>
                                 <tbody id="rfidTableBody">
                                     <tr><td colspan="8" style="text-align:center; padding:2rem;">Loading RFID terminals...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Global RFID Card Whitelist (1,000 Cards Scale) -->
+                    <div class="card-panel" style="margin-bottom: 1.5rem;">
+                        <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
+                            <div>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                                    <span>💳 RFID Vending Card Whitelist</span>
+                                    <span class="badge badge-on" id="adminRfidCardCount">0 Cards</span>
+                                </h3>
+                                <p>Manage up to 1,000 users/cards per machine across all client vendors</p>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                <button class="btn btn-secondary btn-sm" onclick="openAdminRfidBulkUpload()" style="background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #60a5fa;">📁 Bulk Upload (Method A)</button>
+                                <button class="btn btn-secondary btn-sm" onclick="openAdminRfidBatchRange()" style="background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #c084fc;">⚡ Batch Range (Method B)</button>
+                                <button class="btn btn-secondary btn-sm" onclick="openAdminRfidLiveEnroll()" style="background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24;">📡 Live Tap Enroll (Method C)</button>
+                            </div>
+                        </div>
+
+                        <!-- Filter bar for Admin -->
+                        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 220px;">
+                                <input type="text" id="adminRfidCardSearch" class="input-field" placeholder="🔍 Search card UID, name, or department..." style="width: 100%; font-size: 0.85rem;">
+                            </div>
+                            <select id="adminRfidVendorFilter" class="input-field" style="font-size: 0.85rem; max-width: 200px;">
+                                <option value="">All Vendors</option>
+                            </select>
+                            <button class="btn btn-secondary btn-sm" onclick="loadAdminRfidCards()">🔄 Refresh</button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Card UID</th>
+                                        <th>Cardholder Name</th>
+                                        <th>Assigned Machine</th>
+                                        <th>Department / Role</th>
+                                        <th>Daily Quota</th>
+                                        <th>Used Today</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminRfidCardsBody">
+                                    <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading authorized cards...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Usage Reports & Calendar Filter Panel with Excel Export -->
+                    <div class="card-panel">
+                        <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
+                            <div>
+                                <h3>📊 Fleet RFID Dispense Telemetry & Excel Reports</h3>
+                                <p>Filter telemetry by calendar date range, vendor organization, and vending machine.</p>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                                <button class="btn btn-primary" onclick="exportAdminRfidReport('xlsx')" style="font-size: 0.8rem; padding: 0.45rem 0.9rem; background: linear-gradient(135deg, #16a34a, #15803d); border: none; font-weight: 700; color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,0.3);">
+                                    📥 Download Excel Report (.xlsx)
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="exportAdminRfidReport('csv')">
+                                    📄 CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Calendar Date Range & Filter Bar -->
+                        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 0.85rem; align-items: flex-end;">
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Start Date (Calendar):</label>
+                                <input type="date" id="adminRfidStartDate" class="input-field" style="font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">End Date (Calendar):</label>
+                                <input type="date" id="adminRfidEndDate" class="input-field" style="font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Filter Machine:</label>
+                                <select id="adminRfidDeviceFilter" class="input-field" style="font-size: 0.85rem; padding: 0.4rem 0.6rem;">
+                                    <option value="">All Machines</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setAdminRfidPreset('today')" style="font-size:0.72rem; padding:0.35rem 0.55rem;">Today</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setAdminRfidPreset('yesterday')" style="font-size:0.72rem; padding:0.35rem 0.55rem;">Yesterday</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setAdminRfidPreset('7days')" style="font-size:0.72rem; padding:0.35rem 0.55rem;">Last 7 Days</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setAdminRfidPreset('month')" style="font-size:0.72rem; padding:0.35rem 0.55rem;">This Month</button>
+                            </div>
+                            <div style="margin-left: auto;">
+                                <button class="btn btn-primary btn-sm" onclick="loadAdminRfidLogs()" style="padding: 0.45rem 1rem;">🔍 Filter</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Vendor</th>
+                                        <th>Machine</th>
+                                        <th>Card UID</th>
+                                        <th>Cardholder</th>
+                                        <th>Department</th>
+                                        <th>Verdict / Status</th>
+                                        <th>Motor Pulse</th>
+                                        <th>Remarks</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminRfidLogsBody">
+                                    <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">No telemetry recorded for this filter.</td></tr>
                                 </tbody>
                             </table>
                         </div>

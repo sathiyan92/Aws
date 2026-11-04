@@ -30,6 +30,7 @@ from src.api.v1.configs.routes import router as config_router
 from src.api.v1.orders.routes import router as orders_router
 from src.api.v1.ota.routes import router as ota_router
 from src.api.v1.payments.routes import router as payments_router
+from src.api.v1.rfid_vending.routes import router as rfid_vending_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -70,6 +71,7 @@ app.include_router(config_router, prefix="/api/v1")
 app.include_router(orders_router, prefix="/api/v1")
 app.include_router(ota_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
+app.include_router(rfid_vending_router, prefix="/api/v1")
 
 # WebSocket Live Push Gateway for Real-Time Zero-Polling Vending
 from fastapi import WebSocket, WebSocketDisconnect
