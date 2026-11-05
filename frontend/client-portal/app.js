@@ -452,7 +452,7 @@ function onDeviceSelectionChanged() {
     }
 
     // 3. DYNAMIC TOGGLING OF RFID MODULE
-    if (currentDevice.has_rfid_access) {
+    if (currentDevice.has_rfid_access || currentDevice.product_type === 'VENDING_MACHINE' || currentDevice.product_type === 'RFID_ATTENDANCE') {
         elements.navRFID.classList.remove('dynamic-hidden');
     } else {
         elements.navRFID.classList.add('dynamic-hidden');
@@ -468,7 +468,7 @@ function onDeviceSelectionChanged() {
     } else if (state.currentTab === 'tab-coin' && !currentDevice.has_coin_payment) {
         switchTab('tab-fleet');
         showToast(`Coin Acceptor is not enabled for ${currentDevice.device_id}. Switched to Overview.`, 'warning');
-    } else if (state.currentTab === 'tab-rfid' && !currentDevice.has_rfid_access) {
+    } else if (state.currentTab === 'tab-rfid' && !currentDevice.has_rfid_access && currentDevice.product_type !== 'VENDING_MACHINE' && currentDevice.product_type !== 'RFID_ATTENDANCE') {
         switchTab('tab-fleet');
         showToast(`RFID module is not enabled for ${currentDevice.device_id}. Switched to Overview.`, 'warning');
     } else {
@@ -511,7 +511,15 @@ function switchTab(tabId) {
 }
 
 function loadActiveTabData() {
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
 
     if (state.currentTab === 'tab-qr') {
         loadQRData(state.selectedDeviceId);
@@ -635,7 +643,15 @@ function renderClientSlots(slots) {
 }
 
 async function saveClientSlotPrice(slotNumber) {
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
 
     const nameInput = document.getElementById(`cslot-name-${slotNumber}`);
     const priceInput = document.getElementById(`cslot-price-${slotNumber}`);
@@ -704,7 +720,15 @@ async function saveClientSlotPrice(slotNumber) {
 }
 
 async function initClientDefaultSlots() {
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
     try {
         await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/slots/1`, {
             method: 'PUT',
@@ -787,7 +811,15 @@ function handleClientSlotQuickQr(val) {
 }
 
 async function applyClientQuickQrToDevice() {
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
     const input = document.getElementById('clientSlotQuickQrInput');
     const clean = input ? input.value.trim() : '';
     if (!clean) {
@@ -1004,7 +1036,15 @@ function populateClientTestSlots(slots) {
 }
 
 async function generateClientTestQR() {
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
     const slotNum = parseInt(document.getElementById('clientTestSlotSelect').value) || 1;
 
     try {
@@ -1125,7 +1165,15 @@ function applyClientStandeePreset() {
 
 async function handleSaveQRSettings(e) {
     if (e && e.preventDefault) e.preventDefault();
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
 
     try {
         const qrUrlInput = document.getElementById('clientQrImageUrl');
@@ -1235,7 +1283,15 @@ function renderCoinTransactions(txs) {
 
 async function handleSaveCoinSettings(e) {
     e.preventDefault();
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
 
     try {
         const payload = {
@@ -1516,7 +1572,15 @@ function editRfidCard(cardId) {
 // Add / Edit Card Submit Handler
 async function handleAddRFIDCard(e) {
     e.preventDefault();
-    if (!state.selectedDeviceId) return;
+    if (!state.selectedDeviceId && elements.deviceSelect && elements.deviceSelect.value) {
+        state.selectedDeviceId = elements.deviceSelect.value;
+    }
+    if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
+        state.selectedDeviceId = state.fleet[0].device_id;
+    }
+    if (!state.selectedDeviceId) {
+        return;
+    }
 
     const editId = document.getElementById('editCardId')?.value;
     const uid = document.getElementById('newCardUid').value.trim();
@@ -1949,7 +2013,13 @@ async function fetchWithAuth(url, options = {}) {
         ...options.headers,
     };
     try {
-        const res = await fetch(url, { ...options, headers });
+    let fullUrl = url;
+    if (url.startsWith('/api/v1')) {
+        fullUrl = url.replace('/api/v1', API_BASE);
+    } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        fullUrl = `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+    const res = await fetch(fullUrl, { ...options, headers });
         if (res.status === 401) {
             state.token = null;
             localStorage.removeItem('iot_client_token');

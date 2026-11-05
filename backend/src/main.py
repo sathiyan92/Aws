@@ -59,6 +59,23 @@ async def platform_exception_handler(request: Request, exc: PlatformException):
     )
 
 
+@app.exception_handler(Exception)
+async def global_unhandled_exception_handler(request: Request, exc: Exception):
+    import logging
+    import traceback
+    logging.getLogger("uvicorn.error").error(
+        f"[!] Unhandled exception on {request.method} {request.url.path}: {exc}\n{traceback.format_exc()}"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_code": "INTERNAL_SERVER_ERROR",
+            "message": str(exc) or "Internal Server Error",
+            "detail": str(exc) or "Internal Server Error",
+        },
+    )
+
+
 # Mount API Routers
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(device_router, prefix="/api/v1")

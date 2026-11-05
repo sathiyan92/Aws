@@ -17,11 +17,11 @@ class UserProfileResponse(BaseModel):
     id: str
     client_id: Optional[str] = None
     username: str
-    email: str
-    full_name: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
     role: str
     status: str
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

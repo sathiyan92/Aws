@@ -3,7 +3,7 @@ Audit logging model for tracking immutable administrative, configuration, and se
 """
 from datetime import datetime
 from typing import Optional, Any, TYPE_CHECKING
-from sqlalchemy import String, DateTime, JSON, ForeignKey, Index
+from sqlalchemy import String, Text, DateTime, JSON, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.db.base import Base, generate_uuid, utc_now
 
@@ -45,7 +45,7 @@ class AuditLog(Base):
     old_state: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     new_state: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
-    user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,

@@ -2,6 +2,7 @@
 Authentication API endpoints: login, token refresh, current user profile, and logout.
 """
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from src.db.session import get_db
@@ -27,6 +28,37 @@ from src.api.v1.auth.schemas import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+def _safe_audit_log(
+    db: Session,
+    client_id: Optional[str],
+    user_id: Optional[str],
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    new_state: Optional[dict] = None,
+    request: Optional[Request] = None,
+) -> None:
+    """Safely write to AuditLog with length guards and non-fatal error handling."""
+    try:
+        ip_addr = str(request.client.host if (request and request.client) else "")[:45] if request else None
+        ua = str(request.headers.get("user-agent", "") or "")[:250] if request else None
+        db.add(AuditLog(
+            client_id=client_id,
+            user_id=user_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            new_state=new_state,
+            ip_address=ip_addr,
+            user_agent=ua,
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger("uvicorn.error").warning(f"Audit log write failed ({action}): {e}")
+
+
 @router.post("/login", response_model=TokenResponse)
 def login(
     payload: LoginRequest,
@@ -49,24 +81,23 @@ def login(
     access_token = create_access_token(
         user_id=user.id,
         username=user.username,
-        email=user.email,
+        email=user.email or "",
         role=user.role,
         client_id=user.client_id,
     )
     refresh_token = create_refresh_token(user_id=user.id)
 
-    # Log successful authentication in Audit Log
-    db.add(AuditLog(
+    # Log successful authentication in Audit Log (non-blocking)
+    _safe_audit_log(
+        db=db,
         client_id=user.client_id,
         user_id=user.id,
         action="USER_LOGIN_SUCCESS",
         entity_type="USER",
         entity_id=user.id,
         new_state={"role": user.role, "client_id": user.client_id},
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    ))
-    db.commit()
+        request=request,
+    )
 
     return TokenResponse(
         access_token=access_token,
@@ -98,7 +129,7 @@ def refresh_token(
     new_access_token = create_access_token(
         user_id=user.id,
         username=user.username,
-        email=user.email,
+        email=user.email or "",
         role=user.role,
         client_id=user.client_id,
     )
@@ -127,16 +158,15 @@ def logout(
     db: Session = Depends(get_db),
 ):
     """Logout current user session and record in audit log."""
-    db.add(AuditLog(
+    _safe_audit_log(
+        db=db,
         client_id=current_user.client_id,
         user_id=current_user.id,
         action="USER_LOGOUT",
         entity_type="USER",
         entity_id=current_user.id,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    ))
-    db.commit()
+        request=request,
+    )
 
     return MessageResponse(message="Successfully logged out")
 
@@ -162,7 +192,7 @@ def change_password(
         token = auth_header.split(" ", 1)[1].strip()
         if token and token != "null" and token != "undefined":
             try:
-                from src.core.security.jwt import decode_token
+                from src.core.security.tokens import decode_token
                 decoded = decode_token(token)
                 user_id = decoded.get("sub")
                 if user_id:
@@ -183,15 +213,14 @@ def change_password(
         raise BadRequestException("Current password does not match.")
 
     user.password_hash = hash_password(payload.new_password)
-    db.add(AuditLog(
+    _safe_audit_log(
+        db=db,
         client_id=user.client_id,
         user_id=user.id,
         action="USER_PASSWORD_CHANGED",
         entity_type="USER",
         entity_id=user.id,
         new_state={"role": user.role, "username": user.username},
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    ))
-    db.commit()
+        request=request,
+    )
     return MessageResponse(message=f"Password for '{user.username}' changed successfully! You can now log in.")

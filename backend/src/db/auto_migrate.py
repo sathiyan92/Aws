@@ -70,6 +70,13 @@ def run_auto_migrations(engine) -> None:
         }
 
         with engine.begin() as conn:
+            # Upgrade audit_logs user_agent to TEXT if on PostgreSQL
+            if "audit_logs" in existing_tables:
+                try:
+                    conn.execute(text("ALTER TABLE audit_logs ALTER COLUMN user_agent TYPE TEXT"))
+                except Exception:
+                    pass
+
             for tbl, cols in table_columns.items():
                 if tbl in existing_tables:
                     current_cols = {c["name"] for c in inspector.get_columns(tbl)}
@@ -161,7 +168,22 @@ def _ensure_fleet_defaults(engine) -> None:
             db.add(cred)
             db.flush()
 
-        # 4. Ensure Product & Slot 1
+        # 4. Ensure Hardware Modules on VM-000001 (QR Payment, RFID Vending, Coin)
+        from src.db.models.device import DeviceModule
+        for mod_code in ["QR_PAYMENT", "RFID_ACCESS", "COIN_PAYMENT"]:
+            m = db.query(DeviceModule).filter_by(device_id=device.id, module_code=mod_code).first()
+            if not m:
+                db.add(DeviceModule(
+                    id=generate_uuid(),
+                    device_id=device.id,
+                    module_code=mod_code,
+                    is_enabled=True,
+                ))
+            else:
+                m.is_enabled = True
+        db.flush()
+
+        # 5. Ensure Product & Slot 1
         prod = db.query(Product).filter_by(client_id=client.id, product_code=f"PROD-{device.device_id}-1").first()
         if not prod:
             prod = Product(

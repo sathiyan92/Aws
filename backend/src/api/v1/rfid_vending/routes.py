@@ -160,6 +160,8 @@ def create_rfid_card(
     Enroll or update a single RFID card.
     """
     target_client_id = context.client_id
+    if context.role == "MANUFACTURER_ADMIN" and payload.client_id:
+        target_client_id = payload.client_id
     clean_uid = _clean_uid(payload.card_uid)
     if not clean_uid:
         raise HTTPException(status_code=400, detail="Card UID cannot be empty.")

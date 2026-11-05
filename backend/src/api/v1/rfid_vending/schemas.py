@@ -11,6 +11,7 @@ class RFIDCardCreate(BaseModel):
     username: str = Field(..., description="Name of the cardholder")
     department: Optional[str] = None
     device_id: Optional[str] = None
+    client_id: Optional[str] = None
     daily_limit: int = Field(default=1, description="Daily vend limit (0 or -1 for unlimited)")
     is_active: bool = True
     notes: Optional[str] = None
