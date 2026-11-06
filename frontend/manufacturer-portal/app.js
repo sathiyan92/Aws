@@ -921,13 +921,17 @@ function closeModal(id) {
 }
 
 function openProvisionModal() {
-    // Generate fresh demo hardware coordinates
-    const randHex = Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0').toUpperCase();
-    document.getElementById("provMac").value = `3C:84:27:${randHex.substring(0,2)}:${randHex.substring(2,4)}:${randHex.substring(4,6)}`;
-    document.getElementById("provChip").value = `ESP32-S3-0x${randHex}`;
+    document.getElementById("provMac").value = "AUTO";
+    document.getElementById("provChip").value = "AUTO-BIND-ON-FIRST-BOOT";
     document.getElementById("provSerial").value = `MFG-2026-ESP-${Math.floor(1000 + Math.random() * 9000)}`;
     openModal("modalProvision");
 }
+
+window.resetHardwareBinding = function() {
+    document.getElementById("editHardwareMac").value = "AUTO";
+    document.getElementById("editHardwareChip").value = "AUTO-BIND-ON-FIRST-BOOT";
+    showToast("Hardware binding reset to AUTO. Click 'Save Hardware Changes' to allow next ESP32 to auto-bind.", "info");
+};
 
 function openCreateClientModal() {
     const sel = document.getElementById("newClientDeviceSelect");

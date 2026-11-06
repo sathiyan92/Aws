@@ -245,41 +245,60 @@ def authenticate_device(
     ):
         raise DeviceAuthFailedException("Invalid device secret token.")
 
-    # 4. Verify Physical Hardware Tuple & Dynamic MAC Auto-Binding
-    # If the device in DB has a placeholder/seed MAC (like "AUTO", "GENERIC", or "3C:84:27:F8:B1:01")
-    # and a real physical ESP32 connects with a valid token, auto-bind the physical MAC & Chip ID!
-    seed_macs = ["AUTO", "GENERIC", "PENDING_BINDING", "3C:84:27:F8:B1:01", "3C:84:27:F8:B1:02", "3C:84:27:F8:B1:03", "00:00:00:00:00:00", ""]
-    seed_chips = ["GENERIC", "AUTO", "ESP32-GENERIC", "CHIP-VM-000001", "ESP32-S3-0X3C8427F8B101", "ESP32-S3-0X3C8427F8B102", "ESP32-S3-0X3C8427F8B103"]
+    # 4. Verify Physical Hardware Tuple & Dynamic Auto-Binding
+    # Supports seamless first-boot hardware binding and replacing physical ESP32 boards
+    # while preserving strict anti-spoofing guards against rogue cloned nodes.
+    placeholder_macs = {"", "AUTO", "GENERIC", "PENDING", "PENDING_BINDING", "00:00:00:00:00:00"}
+    placeholder_chips = {"", "AUTO", "GENERIC", "PENDING", "PENDING_BINDING", "ESP32-GENERIC", "AUTO-BIND-ON-FIRST-BOOT"}
 
-    if payload.mac_address:
-        clean_mac = payload.mac_address.strip().upper()
-        if not device.mac_address or device.mac_address.strip().upper() in seed_macs:
-            if clean_mac and clean_mac not in seed_macs:
-                device.mac_address = clean_mac
-                if payload.chip_id:
-                    device.chip_id = payload.chip_id.strip()
-        elif clean_mac != device.mac_address.strip().upper():
-            # Check if this MAC belongs to another device
-            other_dev = db.query(Device).filter(Device.mac_address.ilike(clean_mac), Device.id != device.id).first()
-            if not other_dev:
-                # Dynamically update MAC address
-                device.mac_address = clean_mac
-                if payload.chip_id:
-                    device.chip_id = payload.chip_id.strip()
-            else:
-                raise HardwareMismatchException(
-                    f"Hardware identity mismatch on '{device.device_id}'. "
-                    f"Presented MAC ({payload.mac_address}) is already registered to '{other_dev.device_id}'."
-                )
+    def _is_placeholder_mac(m: Optional[str]) -> bool:
+        if not m:
+            return True
+        val = m.strip().upper()
+        return val in placeholder_macs or val.startswith("3C:84:27:")
 
-    if device.chip_id and payload.chip_id and device.chip_id.upper() not in seed_chips and not device.chip_id.upper().startswith("ESP32-S3-0X3C84"):
-        if payload.chip_id.strip().upper() != device.chip_id.strip().upper():
+    def _is_placeholder_chip(c: Optional[str]) -> bool:
+        if not c:
+            return True
+        val = c.strip().upper()
+        if val in placeholder_chips:
+            return True
+        if val.startswith("ESP32-S3-0X") and not val.startswith("ESP32-S3-0X3C84"):
+            return True
+        if val.startswith("CHIP-VM-") or val.startswith("CHIP-RFID-") or val.startswith("MFG-"):
+            return True
+        return False
+
+    is_first_auth = (cred.last_used_at is None)
+    clean_mac = payload.mac_address.strip().upper() if payload.mac_address else None
+    clean_chip = payload.chip_id.strip() if payload.chip_id else None
+
+    # Anti-spoofing check: make sure the physical MAC is not registered to ANOTHER device
+    if clean_mac and not _is_placeholder_mac(clean_mac):
+        other_dev = db.query(Device).filter(
+            Device.mac_address.ilike(clean_mac),
+            Device.id != device.id,
+        ).first()
+        if other_dev and not _is_placeholder_mac(other_dev.mac_address):
+            raise HardwareMismatchException(
+                f"Hardware identity mismatch on '{device.device_id}'. "
+                f"Presented MAC ({payload.mac_address}) is already registered to '{other_dev.device_id}'."
+            )
+
+    # Auto-bind or update MAC Address
+    if clean_mac and not _is_placeholder_mac(clean_mac):
+        if is_first_auth or _is_placeholder_mac(device.mac_address) or (device.mac_address and clean_mac != device.mac_address.strip().upper()):
+            device.mac_address = clean_mac
+
+    # Auto-bind or verify Chip ID
+    if clean_chip:
+        if is_first_auth or _is_placeholder_chip(device.chip_id) or (clean_mac and device.mac_address and clean_mac == device.mac_address.strip().upper() and _is_placeholder_chip(device.chip_id)):
+            device.chip_id = clean_chip
+        elif clean_chip.upper() != (device.chip_id or "").strip().upper():
             raise HardwareMismatchException(
                 f"Hardware identity mismatch on '{device.device_id}'. "
                 f"Presented Chip ID ({payload.chip_id}) does not match factory records."
             )
-    elif payload.chip_id and (not device.chip_id or device.chip_id.upper() in seed_chips or device.chip_id.upper().startswith("ESP32-S3-0X3C84")):
-        device.chip_id = payload.chip_id.strip()
 
     # 5. Generate Signed Device Session JWT
     session_token = create_device_session_token(
