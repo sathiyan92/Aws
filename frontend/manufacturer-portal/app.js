@@ -225,6 +225,15 @@ async function loadDevices() {
     state.devices = res.devices || [];
 }
 
+async function loadFleet() {
+    await loadDevices();
+    await loadStats();
+    renderOverview();
+    if (state.activeTab === "devices") renderDevicesTable();
+    if (state.activeTab === "vending") renderDevicesTable("VENDING_MACHINE");
+}
+window.loadFleet = loadFleet;
+
 async function loadAuditLogs() {
     const res = await apiRequest("/audit-logs?limit=50");
     state.auditLogs = res.logs || [];

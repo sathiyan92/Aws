@@ -548,18 +548,18 @@ void uiDrawStandbyQRScreen() {
     TFT_display.setCursor(185, 14);
     TFT_display.setTextColor(COLOR_RED);
     TFT_display.setTextSize(2);
-    TFT_display.print("● NO WI-FI");
+    TFT_display.print("NO WI-FI");
   } else if (current_net_status == NET_STATUS_NO_INTERNET) {
     TFT_display.setCursor(175, 14);
     TFT_display.setTextColor(COLOR_AMBER);
     TFT_display.setTextSize(2);
-    TFT_display.print("● NO CLOUD");
+    TFT_display.print("NO CLOUD");
   } else {
     current_net_status = NET_STATUS_ONLINE;
     TFT_display.setCursor(200, 14);
     TFT_display.setTextColor(COLOR_GREEN);
     TFT_display.setTextSize(2);
-    TFT_display.print("● READY");
+    TFT_display.print("READY");
   }
 
   // 2. Product & Price Card (y: 52 - 138, width: 300, height: 86)
