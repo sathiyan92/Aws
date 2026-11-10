@@ -1428,19 +1428,16 @@
                 <h3>🔐 Operations Portal Login</h3>
                 <button class="modal-close" onclick="closeModal('modalLogin')">&times;</button>
             </div>
-            <form id="loginForm">
+            <form id="loginForm" autocomplete="off">
                 <div class="modal-body">
                     <div class="form-group">
                         <label>Username or Email</label>
-                        <input type="text" class="input-field" id="loginUsername" value="gtech_admin" required autocomplete="username">
+                        <input type="text" class="input-field" id="loginUsername" placeholder="Enter username or email" required autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label>Password</label>
-                        <input type="password" class="input-field" id="loginPassword" value="Gtech042814516!" required autocomplete="current-password">
+                        <input type="password" class="input-field" id="loginPassword" placeholder="Enter password" required autocomplete="current-password">
                     </div>
-                    <button type="button" class="btn btn-secondary btn-sm" id="btnQuickDemoLogin" style="width:100%; justify-content:center; margin-top:0.5rem; font-weight:700;">
-                        ⚡ Quick Demo Login (Super-Admin)
-                    </button>
                 </div>
                 <div class="modal-footer" style="flex-direction:column; gap:0.75rem;">
                     <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Authenticate</button>
@@ -1549,7 +1546,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=7.2"></script>
+    <script src="app.js?v=7.3"></script>
 
     <!-- Modal: Admin Add Single Card -->
     <div class="modal-overlay" id="modalAdminRfidAddCard">

@@ -972,11 +972,11 @@
             <form id="loginForm" style="text-align: left;">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label for="loginUsername">Username / Email</label>
-                    <input type="text" id="loginUsername" class="input-field" value="apex_admin" required>
+                    <input type="text" id="loginUsername" class="input-field" placeholder="Enter username or email" autocomplete="off" required>
                 </div>
                 <div class="form-group" style="margin-bottom: 1.25rem;">
                     <label for="loginPassword">Password</label>
-                    <input type="password" id="loginPassword" class="input-field" value="Apex@Admin2026!" required>
+                    <input type="password" id="loginPassword" class="input-field" placeholder="Enter password" autocomplete="current-password" required>
                 </div>
 
                 <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem;">
@@ -1012,7 +1012,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=7.1"></script>
+    <script src="app.js?v=7.2"></script>
     <!-- Modal: Change Password (Client Vendor) -->
     <div id="modalClientChangePassword" class="modal-overlay hidden">
         <div class="modal-container" style="max-width: 400px;">

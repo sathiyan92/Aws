@@ -557,10 +557,8 @@ function filterDevicesByClient(clientId, clientName) {
 // MODALS LOGIC
 // ==============================================================================
 function initModals() {
-    // Quick Demo Login Button
+    // Quick Demo Login Button (Disabled in production)
     document.getElementById("btnQuickDemoLogin")?.addEventListener("click", async () => {
-        document.getElementById("loginUsername").value = "gtech_admin";
-        document.getElementById("loginPassword").value = "Gtech042814516!";
         await handleLoginSubmit();
     });
 
@@ -909,6 +907,10 @@ function handleLogout() {
 }
 
 function showLoginModal() {
+    const u = document.getElementById("loginUsername");
+    const p = document.getElementById("loginPassword");
+    if (u) u.value = "";
+    if (p) p.value = "";
     openModal("modalLogin");
 }
 
