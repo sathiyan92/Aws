@@ -559,8 +559,8 @@ function filterDevicesByClient(clientId, clientName) {
 function initModals() {
     // Quick Demo Login Button
     document.getElementById("btnQuickDemoLogin")?.addEventListener("click", async () => {
-        document.getElementById("loginUsername").value = "admin";
-        document.getElementById("loginPassword").value = "Admin@SecurePlatform2026!";
+        document.getElementById("loginUsername").value = "gtech_admin";
+        document.getElementById("loginPassword").value = "Gtech042814516!";
         await handleLoginSubmit();
     });
 
