@@ -103,6 +103,10 @@ run_auto_migrations(engine)
 print('>>> Database auto-migration completed successfully!')
 ") || true
 
+# 5b. Update Platform Admin Credentials
+echo ">>> Updating Administrator Credentials (gtech_admin)..."
+(cd "$INSTALL_DIR" && "$PYTHON_BIN" "$INSTALL_DIR/update_admin.py" --username gtech_admin --password Gtech042814516!) || true
+
 # Test running backend import directly to catch any import errors
 echo ">>> Verifying backend application imports..."
 (cd "$INSTALL_DIR" && "$PYTHON_BIN" -c "
