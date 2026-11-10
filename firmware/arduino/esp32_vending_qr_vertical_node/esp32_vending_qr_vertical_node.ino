@@ -808,17 +808,23 @@ void loadPersistentConfig() {
   String saved_vpa      = prefs.getString("rzp_vpa", "");
   String saved_qr       = prefs.getString("cust_qr", "");
   String last_code_ssid = prefs.getString("code_ssid", "");
+  bool has_remote_wifi  = prefs.getBool("wifi_remote", false);
 
   // --- SMART WI-FI SELECTION ---
-  // If the developer changed wifi_ssid in Arduino code lines 156-157:
-  // wifi_ssid != last_code_ssid -> ALWAYS take precedence and save directly to Flash NVS!
-  if (wifi_ssid.length() > 0 && wifi_ssid != last_code_ssid) {
+  // 1. If user configured Wi-Fi via Cloud Web Portal or Captive Portal, always honor it:
+  if (has_remote_wifi && saved_ssid.length() > 0) {
+    wifi_ssid = saved_ssid;
+    wifi_pass = saved_pass;
+    Serial.printf("[Config] 📶 Cloud/Saved Wi-Fi active: %s\n", wifi_ssid.c_str());
+  } else if (wifi_ssid.length() > 0 && wifi_ssid != last_code_ssid) {
+    // 2. If the developer changed wifi_ssid in Arduino code:
+    // wifi_ssid != last_code_ssid -> ALWAYS take precedence and save directly to Flash NVS!
     prefs.putString("ssid", wifi_ssid);
     prefs.putString("pass", wifi_pass);
     prefs.putString("code_ssid", wifi_ssid);
     Serial.printf("[Config] ⭐ New Wi-Fi from sketch code detected & applied: %s\n", wifi_ssid.c_str());
   } else if (saved_ssid.length() > 0) {
-    // If not modified in code, use credentials saved via Captive Portal or previous save
+    // 3. Fallback to saved credentials
     wifi_ssid = saved_ssid;
     wifi_pass = saved_pass;
   }
@@ -872,6 +878,7 @@ void savePersistentConfig(String ssid, String pass, String dev_id, String srv_ur
   prefs.begin("vending_cfg", false);
   prefs.putString("ssid", ssid);
   prefs.putString("pass", pass);
+  prefs.putBool("wifi_remote", true);
   prefs.putString("dev_id", dev_id);
   prefs.putString("token", "dev_token_" + dev_id);
   prefs.putString("srv_url", srv_url);
@@ -1485,6 +1492,8 @@ void checkForRemoteQRConfigUpdates() {
       String newName     = doc["product_name"].as<String>();
       String newQrString = doc.containsKey("qr_payload") ? doc["qr_payload"].as<String>() : "";
       String newTrId     = doc.containsKey("tr_id") ? doc["tr_id"].as<String>() : "";
+      String newWifiSsid = doc.containsKey("wifi_ssid") ? doc["wifi_ssid"].as<String>() : "";
+      String newWifiPass = doc.containsKey("wifi_password") ? doc["wifi_password"].as<String>() : "";
 
 #if FORCE_STATIC_PROGRAM_CONFIG
       // In Static Program Mode, protect local code overrides from cloud revert
@@ -1493,7 +1502,79 @@ void checkForRemoteQRConfigUpdates() {
       newAmount   = STATIC_PRICE_RUPEES;
 #endif
 
-      if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id)) {
+      bool wifiChanged = (newWifiSsid.length() > 0 && (newWifiSsid != wifi_ssid || newWifiPass != wifi_pass));
+
+      if (wifiChanged) {
+        Serial.println("\n==================================================================");
+        Serial.println(">>> 📶 REMOTE WI-FI CREDENTIALS RECEIVED FROM CLOUD! <<<");
+        Serial.printf("  New SSID     : %s\n", newWifiSsid.c_str());
+        Serial.printf("  New Password : %s\n", newWifiPass.length() > 0 ? "********" : "(None)");
+        Serial.printf("  New Version  : %d (Old: %d)\n", newVersion, current_config_version);
+        Serial.println("  Saving to Flash NVS & Rebooting to Connect...");
+        Serial.println("==================================================================\n");
+
+        current_config_version = newVersion;
+        wifi_ssid              = newWifiSsid;
+        wifi_pass              = newWifiPass;
+        if (newVpa.length() > 0) razorpay_upi_vpa = newVpa;
+        if (newAmount > 0) pending_amount_rupee = newAmount;
+        if (newName.length() > 0) pending_product_name = newName;
+        if (!newQrString.startsWith("data:") && newQrString.length() > 0 && newQrString.length() <= 250) {
+          custom_qr_code = newQrString;
+        }
+        if (newTrId.length() > 0) {
+          dynamic_tr_id = newTrId;
+        }
+
+        // Persist all configuration to Flash NVS
+        prefs.begin("vending_cfg", false);
+        prefs.putString("ssid", wifi_ssid);
+        prefs.putString("pass", wifi_pass);
+        prefs.putBool("wifi_remote", true);
+        prefs.putString("code_ssid", wifi_ssid);
+        prefs.putString("rzp_vpa", razorpay_upi_vpa);
+        prefs.putFloat("price", pending_amount_rupee);
+        prefs.putString("p_name", pending_product_name);
+        prefs.putString("cust_qr", custom_qr_code);
+        prefs.putString("tr_id", dynamic_tr_id);
+        prefs.putInt("cfg_ver", current_config_version);
+        prefs.end();
+
+        // Display update notice on ILI9488 LCD Screen (Vertical 320x480)
+        TFT_display.fillScreen(COLOR_BG);
+        TFT_display.fillRect(0, 0, 320, 45, COLOR_HEADER);
+        TFT_display.drawFastHLine(0, 45, 320, COLOR_CYAN);
+        TFT_display.setCursor(15, 14);
+        TFT_display.setTextColor(COLOR_CYAN);
+        TFT_display.setTextSize(2);
+        TFT_display.print("WI-FI CREDENTIALS");
+
+        TFT_display.fillRect(15, 65, 290, 380, COLOR_CARD);
+        TFT_display.drawRect(15, 65, 290, 380, COLOR_CARD_BORDER);
+
+        TFT_display.setCursor(30, 95);
+        TFT_display.setTextColor(COLOR_WHITE);
+        TFT_display.setTextSize(2);
+        TFT_display.print("New Network Config:");
+
+        TFT_display.setCursor(30, 135);
+        TFT_display.setTextColor(COLOR_YELLOW);
+        TFT_display.setTextSize(2);
+        TFT_display.printf("SSID: %s", wifi_ssid.c_str());
+
+        TFT_display.setCursor(30, 185);
+        TFT_display.setTextColor(COLOR_GREEN);
+        TFT_display.setTextSize(2);
+        TFT_display.print("Saved to Flash NVS!");
+
+        TFT_display.setCursor(30, 240);
+        TFT_display.setTextColor(COLOR_CYAN);
+        TFT_display.setTextSize(2);
+        TFT_display.print("Rebooting to connect...");
+
+        delay(2000);
+        ESP.restart();
+      } else if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id)) {
         Serial.println("\n==================================================================");
         Serial.println(">>> 📶 REMOTE QR / PRICE UPDATE RECEIVED FROM VENDOR / CLOUD! <<<");
         Serial.printf("  New VPA    : %s\n", newVpa.c_str());

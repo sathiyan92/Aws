@@ -632,6 +632,8 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
             "amount_rupees": 10.0,
             "product_name": "Cold Drink",
             "config_version": 1,
+            "wifi_ssid": "",
+            "wifi_password": "",
         }
 
     device.is_online = True
@@ -731,6 +733,8 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         "amount_rupees": amount_rupees,
         "product_name": product_name,
         "config_version": device.current_config_version,
+        "wifi_ssid": settings.get("wifi_ssid", ""),
+        "wifi_password": settings.get("wifi_password", ""),
     }
 
 
@@ -862,6 +866,10 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
 
     if payload_data.get("razorpay_upi_vpa"):
         payload["settings"]["razorpay_upi_vpa"] = payload_data["razorpay_upi_vpa"]
+    if "wifi_ssid" in payload_data and payload_data["wifi_ssid"] is not None:
+        payload["settings"]["wifi_ssid"] = str(payload_data["wifi_ssid"]).strip()
+    if "wifi_password" in payload_data and payload_data["wifi_password"] is not None:
+        payload["settings"]["wifi_password"] = str(payload_data["wifi_password"])
     target_slot = None
     for s in (device.slots or []):
         if s.slot_number == 1:

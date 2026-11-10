@@ -393,6 +393,8 @@ def report_device_heartbeat(
 
     # Check configuration version alignment
     config_in_sync = (device.current_config_version == payload.current_config_version)
+    if config_in_sync and device.config and not device.config.is_synced:
+        device.config.is_synced = True
 
     # Insert time-series heartbeat record
     heartbeat = DeviceHeartbeat(
