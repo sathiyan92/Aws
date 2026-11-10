@@ -178,7 +178,7 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     """
-    Securely change password. Supports both:
+    Securely change password and/or username. Supports both:
     1. Authenticated user (with JWT Bearer token)
     2. Direct change from login screen (providing username_or_email + current_password)
     """
@@ -203,7 +203,7 @@ def change_password(
     # 2. If no valid Bearer token, look up by username or email
     if not user:
         if not payload.username_or_email:
-            raise BadRequestException("Please enter your username or email address.")
+            raise BadRequestException("Please enter your current username or email address.")
         ident = payload.username_or_email.strip()
         user = db.query(User).filter((User.username == ident) | (User.email == ident)).first()
         if not user:
@@ -212,15 +212,48 @@ def change_password(
     if not verify_password(payload.current_password, user.password_hash):
         raise BadRequestException("Current password does not match.")
 
-    user.password_hash = hash_password(payload.new_password)
+    changes = []
+
+    # Update Username if requested
+    if payload.new_username and payload.new_username.strip():
+        new_u = payload.new_username.strip()
+        if new_u != user.username:
+            existing = db.query(User).filter(User.username == new_u, User.id != user.id).first()
+            if existing:
+                raise BadRequestException(f"Username '{new_u}' is already taken by another account.")
+            old_u = user.username
+            user.username = new_u
+            changes.append(f"username to '{new_u}'")
+
+    # Update Email if requested
+    if payload.new_email and payload.new_email.strip():
+        new_e = payload.new_email.strip()
+        if new_e != user.email:
+            existing_e = db.query(User).filter(User.email == new_e, User.id != user.id).first()
+            if existing_e:
+                raise BadRequestException(f"Email '{new_e}' is already registered to another account.")
+            user.email = new_e
+            changes.append(f"email to '{new_e}'")
+
+    # Update Password if requested
+    if payload.new_password and payload.new_password.strip():
+        user.password_hash = hash_password(payload.new_password.strip())
+        changes.append("password")
+
+    if not changes:
+        raise BadRequestException("No new credentials provided. Please enter a new username or password.")
+
+    db.commit()
+
     _safe_audit_log(
         db=db,
         client_id=user.client_id,
         user_id=user.id,
-        action="USER_PASSWORD_CHANGED",
+        action="USER_CREDENTIALS_CHANGED",
         entity_type="USER",
         entity_id=user.id,
-        new_state={"role": user.role, "username": user.username},
+        new_state={"role": user.role, "username": user.username, "updated": changes},
         request=request,
     )
-    return MessageResponse(message=f"Password for '{user.username}' changed successfully! You can now log in.")
+    change_desc = " and ".join(changes)
+    return MessageResponse(message=f"Successfully updated {change_desc} for account '{user.username}'!")

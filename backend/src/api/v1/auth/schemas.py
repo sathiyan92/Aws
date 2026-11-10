@@ -47,7 +47,9 @@ class MessageResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    """Payload to change user password."""
+    """Payload to change user password or credentials."""
     username_or_email: Optional[str] = Field(None, description="Username or email (if changing before login)")
     current_password: str = Field(..., min_length=1, description="Current password")
-    new_password: str = Field(..., min_length=6, description="New password (minimum 6 characters)")
+    new_password: Optional[str] = Field(None, min_length=6, description="New password (minimum 6 characters)")
+    new_username: Optional[str] = Field(None, min_length=3, description="New username (minimum 3 characters)")
+    new_email: Optional[str] = Field(None, description="New email address")

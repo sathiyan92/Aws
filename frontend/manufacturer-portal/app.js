@@ -2180,6 +2180,8 @@ function openChangePasswordModal(userPrefill) {
     }
     const curr = document.getElementById("cpCurrentPassword");
     if (curr) curr.value = "";
+    const nu = document.getElementById("cpNewUsername");
+    if (nu) nu.value = "";
     const np = document.getElementById("cpNewPassword");
     if (np) np.value = "";
     const cp = document.getElementById("cpConfirmPassword");
@@ -2224,11 +2226,22 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         const username_or_email = document.getElementById("cpUsernameOrEmail")?.value.trim();
         const current_password = document.getElementById("cpCurrentPassword")?.value.trim();
+        const new_username = document.getElementById("cpNewUsername")?.value.trim();
         const new_password = document.getElementById("cpNewPassword")?.value.trim();
         const confirm_password = document.getElementById("cpConfirmPassword")?.value.trim();
 
-        if (new_password !== confirm_password) {
+        if (new_password && new_password !== confirm_password) {
             showToast("New passwords do not match!", "danger");
+            return;
+        }
+
+        if (new_password && new_password.length < 6) {
+            showToast("New password must be at least 6 characters long!", "danger");
+            return;
+        }
+
+        if (!new_username && !new_password) {
+            showToast("Please enter a new username or new password to update.", "warning");
             return;
         }
 
@@ -2238,11 +2251,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({
                     username_or_email: username_or_email || undefined,
                     current_password: current_password,
-                    new_password: new_password
+                    new_username: new_username || undefined,
+                    new_password: new_password || undefined,
                 })
             });
-            showToast(res.message || "Password updated successfully!", "success");
+            showToast(res.message || "Account credentials updated successfully!", "success");
             closeModal("modalChangePassword");
+
+            // If user updated their own username while logged in, update local state & top-bar
+            if (new_username && state.user && (state.user.username === username_or_email || !username_or_email)) {
+                state.user.username = new_username;
+                localStorage.setItem("mfg_user", JSON.stringify(state.user));
+                const nameEl = document.getElementById("userName");
+                if (nameEl) nameEl.textContent = state.user.full_name || state.user.username;
+                const avatarEl = document.getElementById("userAvatar");
+                if (avatarEl) avatarEl.textContent = state.user.username.substring(0, 2).toUpperCase();
+            }
         } catch (err) {
             showToast(err.message, "danger");
         }

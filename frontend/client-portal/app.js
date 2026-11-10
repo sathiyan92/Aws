@@ -2376,11 +2376,22 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         const username = document.getElementById("clientCpUsername")?.value.trim();
         const current = document.getElementById("clientCpCurrent")?.value.trim();
+        const newUsername = document.getElementById("clientCpNewUsername")?.value.trim();
         const newPwd = document.getElementById("clientCpNew")?.value.trim();
         const confirmPwd = document.getElementById("clientCpConfirm")?.value.trim();
 
-        if (newPwd !== confirmPwd) {
+        if (newPwd && newPwd !== confirmPwd) {
             showToast("New passwords do not match!", "danger");
+            return;
+        }
+
+        if (newPwd && newPwd.length < 6) {
+            showToast("New password must be at least 6 characters long!", "danger");
+            return;
+        }
+
+        if (!newUsername && !newPwd) {
+            showToast("Please enter a new username or new password to update.", "warning");
             return;
         }
 
@@ -2391,16 +2402,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({
                     username_or_email: username || undefined,
                     current_password: current,
-                    new_password: newPwd,
+                    new_username: newUsername || undefined,
+                    new_password: newPwd || undefined,
                 })
             });
             if (res.ok) {
                 const data = await res.json();
-                showToast(data.message || "Vendor password updated successfully!", "success");
+                showToast(data.message || "Credentials updated successfully!", "success");
                 closeClientChangePasswordModal();
+                if (newUsername && state.user) {
+                    state.user.username = newUsername;
+                    localStorage.setItem("client_user", JSON.stringify(state.user));
+                    const nameEl = document.getElementById("userName");
+                    if (nameEl) nameEl.textContent = newUsername;
+                }
             } else {
                 const err = await parseApiError(res);
-                showToast(`Password error: ${err}`, "danger");
+                showToast(`Update error: ${err}`, "danger");
             }
         } catch (err) {
             showToast(err.message, "danger");

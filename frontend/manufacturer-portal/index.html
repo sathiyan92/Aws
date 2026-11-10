@@ -1462,31 +1462,42 @@
     <div id="modalChangePassword" class="modal-overlay">
         <div class="modal-container" style="max-width:420px;">
             <div class="modal-header">
-                <h3>🔑 Change Account Password</h3>
+                <h3>🔑 Change Username & Password</h3>
                 <button class="modal-close" onclick="closeModal('modalChangePassword')">&times;</button>
             </div>
             <form id="changePasswordForm">
                 <div class="modal-body">
                     <div class="form-group" id="cpUsernameGroup" style="margin-bottom:0.75rem;">
-                        <label>Username or Email</label>
-                        <input type="text" class="input-field" id="cpUsernameOrEmail" placeholder="Enter account username or email">
+                        <label>Current Username or Email <span style="color:#ef4444;">*</span></label>
+                        <input type="text" class="input-field" id="cpUsernameOrEmail" placeholder="Enter current username or email">
                     </div>
                     <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label>Current Password</label>
+                        <label>Current Password <span style="color:#ef4444;">*</span></label>
                         <input type="password" class="input-field" id="cpCurrentPassword" required placeholder="Enter current password">
                     </div>
+
+                    <div style="border-top:1px dashed rgba(255,255,255,0.15); margin:1rem 0; padding-top:0.75rem;">
+                        <div style="font-size:0.75rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:0.5rem;">
+                            ✨ New Credentials (fill what you want to change)
+                        </div>
+                    </div>
+
                     <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label>New Password (min 6 characters)</label>
-                        <input type="password" class="input-field" id="cpNewPassword" required minlength="6" placeholder="Enter new secure password">
+                        <label>New Username (Optional)</label>
+                        <input type="text" class="input-field" id="cpNewUsername" placeholder="Enter new username (leave blank to keep current)">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0.75rem;">
+                        <label>New Password (Optional, min 6 characters)</label>
+                        <input type="password" class="input-field" id="cpNewPassword" minlength="6" placeholder="Enter new secure password">
                     </div>
                     <div class="form-group" style="margin-bottom:0.75rem;">
                         <label>Confirm New Password</label>
-                        <input type="password" class="input-field" id="cpConfirmPassword" required minlength="6" placeholder="Re-type new password">
+                        <input type="password" class="input-field" id="cpConfirmPassword" minlength="6" placeholder="Re-type new password">
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modalChangePassword')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update Password</button>
+                    <button type="submit" class="btn btn-primary">Update Credentials</button>
                 </div>
             </form>
         </div>
