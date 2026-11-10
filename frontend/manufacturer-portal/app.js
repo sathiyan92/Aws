@@ -770,6 +770,9 @@ function initModals() {
             });
 
             if (!response.ok) {
+                if (response.status === 413) {
+                    throw new Error("Upload failed: File is too large (HTTP 413). Server Nginx client_max_body_size limit exceeded.");
+                }
                 const errData = await response.json().catch(() => ({}));
                 throw new Error(errData.detail || `Upload failed with status ${response.status}`);
             }

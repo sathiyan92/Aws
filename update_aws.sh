@@ -161,10 +161,30 @@ systemctl daemon-reload
 systemctl enable iot-fleet-platform.service
 systemctl restart iot-fleet-platform.service
 
+# Configure Nginx for large firmware binary uploads (up to 100MB)
+echo ">>> Ensuring Nginx client_max_body_size is 100M for firmware OTA binary uploads..."
+if [ -d "/etc/nginx" ]; then
+    mkdir -p /etc/nginx/conf.d
+    cat << 'NGINX_CONF' > /etc/nginx/conf.d/iot-firmware-size.conf
+# IoT Fleet Platform - Enable large firmware binary uploads over OTA
+client_max_body_size 100M;
+NGINX_CONF
+    if [ -f "/etc/nginx/nginx.conf" ]; then
+        if grep -q "client_max_body_size" /etc/nginx/nginx.conf; then
+            sed -i 's/client_max_body_size[^;]*;/client_max_body_size 100M;/g' /etc/nginx/nginx.conf 2>/dev/null || true
+        else
+            sed -i '/http {/a \    client_max_body_size 100M;' /etc/nginx/nginx.conf 2>/dev/null || true
+        fi
+    fi
+    find /etc/nginx/sites-available /etc/nginx/sites-enabled -type f -exec sed -i 's/client_max_body_size[^;]*;/client_max_body_size 100M;/g' {} + 2>/dev/null || true
+fi
+
 # Reload Nginx if present and clear cache
 echo ">>> Refreshing Nginx web server..."
 rm -rf /var/cache/nginx/* 2>/dev/null || true
-systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+if which nginx >/dev/null 2>&1; then
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+fi
 
 # 7. Wait and Verify Health & Features
 echo "=========================================================================="
