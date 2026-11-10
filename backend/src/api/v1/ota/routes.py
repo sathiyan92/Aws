@@ -336,6 +336,7 @@ def download_firmware_binary(filename: str):
 @router.get("/check/{device_id}", response_model=DeviceOTACheckResponse)
 def check_for_pending_ota(
     device_id: str,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """
@@ -363,11 +364,18 @@ def check_for_pending_ota(
         return DeviceOTACheckResponse(has_update=False)
 
     fw = deployment.firmware_version
+
+    # Ensure binary URL matches the protocol, host, and port the ESP32 is using to reach this server.
+    # This prevents HTTPS/HTTP port mismatches (e.g. ESP32 plain HTTP to HTTPS port -> HTTP 400).
+    binary_name = os.path.basename(fw.binary_url)
+    req_base = str(request.base_url).rstrip("/")
+    download_url = f"{req_base}/api/v1/ota/binaries/{binary_name}"
+
     return DeviceOTACheckResponse(
         has_update=True,
         deployment_id=deployment.id,
         version=fw.version_string,
-        binary_url=fw.binary_url,
+        binary_url=download_url,
         sha256=fw.sha256_checksum,
         file_size_bytes=fw.file_size_bytes,
     )

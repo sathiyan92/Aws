@@ -113,6 +113,24 @@ chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
 chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 
+# 5c. Fix OTA Firmware URLs and Reset Failed 400 Deployments
+echo ">>> Ensuring OTA firmware URLs use direct HTTP to avoid SSL/HTTPS port 400 rejection..."
+(cd "$INSTALL_DIR" && "$PYTHON_BIN" -c "
+import os, sqlite3
+for db_f in ['$INSTALL_DIR/iot_platform_dev.db', '$INSTALL_DIR/backend/iot_platform_dev.db']:
+    if os.path.exists(db_f):
+        try:
+            conn = sqlite3.connect(db_f)
+            cur = conn.cursor()
+            cur.execute(\"UPDATE firmware_versions SET binary_url = REPLACE(binary_url, 'https://gtechinfo.in', 'http://35.154.219.82:8000')\")
+            cur.execute(\"UPDATE ota_deployments SET deployment_status = 'PENDING', error_message = NULL WHERE deployment_status = 'FAILED' AND error_message LIKE '%400%'\")
+            conn.commit()
+            conn.close()
+            print(f'  [✓] Updated OTA URLs and reset failed 400 deployments in {db_f}')
+        except Exception as e:
+            print(f'  [!] Note: {e}')
+") || true
+
 # Test running backend import directly to catch any import errors
 echo ">>> Verifying backend application imports..."
 (cd "$INSTALL_DIR" && "$PYTHON_BIN" -c "

@@ -1729,6 +1729,16 @@ bool performOTA(String downloadUrl, String deploymentId, size_t binarySize, Stri
   // Notify Cloud Gateway: OTA in Progress
   reportOTAStatus(deploymentId, "DOWNLOADING");
 
+  // Safeguard: If the cloud binary URL is https://, rewrite to server_base_url (plain HTTP)
+  // to avoid Nginx "HTTP 400 Plain HTTP request sent to HTTPS port" error on WiFiClient.
+  if (downloadUrl.startsWith("https://")) {
+    int binIdx = downloadUrl.indexOf("/api/v1/ota/binaries/");
+    if (binIdx != -1) {
+      downloadUrl = server_base_url + downloadUrl.substring(binIdx);
+      Serial.printf("[OTA] Rewrote HTTPS binary URL to plain HTTP endpoint: %s\n", downloadUrl.c_str());
+    }
+  }
+
   WiFiClient client;
   HTTPClient http;
   http.setConnectTimeout(15000);
