@@ -109,7 +109,7 @@ print('>>> Database auto-migration completed successfully!')
 echo ">>> Updating Administrator Credentials (gtech_admin)..."
 chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
 chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
-(cd "$INSTALL_DIR" && "$PYTHON_BIN" "$INSTALL_DIR/update_admin.py" --username gtech_admin --password Gtech042814516!) || true
+(cd "$INSTALL_DIR" && "$PYTHON_BIN" "$INSTALL_DIR/update_admin.py" --username gtech_admin --password GtechAdmin@2026) || true
 chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
 chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 

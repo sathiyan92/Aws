@@ -153,7 +153,7 @@ async function apiRequest(endpoint, options = {}) {
             headers,
         });
 
-        if (response.status === 401) {
+        if (response.status === 401 && endpoint !== "/auth/login") {
             handleLogout();
             throw new Error("Session expired. Please log in again.");
         }
@@ -877,9 +877,35 @@ function initModals() {
 }
 
 
+window.togglePasswordVisibility = function(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === "password") {
+        input.type = "text";
+        if (btn) btn.textContent = "🙈";
+    } else {
+        input.type = "password";
+        if (btn) btn.textContent = "👁️";
+    }
+};
+
 async function handleLoginSubmit() {
-    const u = document.getElementById("loginUsername").value;
-    const p = document.getElementById("loginPassword").value;
+    const uInput = document.getElementById("loginUsername");
+    const pInput = document.getElementById("loginPassword");
+    const u = uInput ? uInput.value.trim() : "";
+    const p = pInput ? pInput.value.trim() : "";
+
+    if (!u || !p) {
+        showToast("Please enter both username and password.", "warning");
+        return;
+    }
+
+    const btnSubmit = document.querySelector("#loginForm button[type='submit']");
+    const originalText = btnSubmit ? btnSubmit.textContent : "";
+    if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = "Authenticating...";
+    }
 
     try {
         const res = await apiRequest("/auth/login", {
@@ -892,9 +918,16 @@ async function handleLoginSubmit() {
         localStorage.setItem("mfg_user", JSON.stringify(res.user));
 
         closeModal("modalLogin");
-        showToast(`Welcome back, ${res.user.full_name}!`, "success");
+        showToast(`Welcome back, ${res.user.full_name || res.user.username}!`, "success");
         bootstrapPortal();
-    } catch (err) {}
+    } catch (err) {
+        showToast(err.message || "Invalid credentials. Please check your username and password.", "danger");
+    } finally {
+        if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = originalText;
+        }
+    }
 }
 
 function handleLogout() {

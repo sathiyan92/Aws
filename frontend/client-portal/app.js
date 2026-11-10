@@ -240,6 +240,18 @@ function hideLoginModal() {
     elements.loginModal.classList.remove('open');
 }
 
+window.togglePasswordVisibility = function(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === "password") {
+        input.type = "text";
+        if (btn) btn.textContent = "🙈";
+    } else {
+        input.type = "password";
+        if (btn) btn.textContent = "👁️";
+    }
+};
+
 async function handleLogin(e) {
     e.preventDefault();
     const username = elements.loginUsername.value.trim();
