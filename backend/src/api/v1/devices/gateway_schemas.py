@@ -59,6 +59,8 @@ class HeartbeatRequest(BaseModel):
     wifi_rssi: Optional[int] = Field(None, description="Signal strength in dBm (-30 to -100)")
     ip_address: Optional[str] = Field(None, description="Current local IPv4 address")
     active_errors: Optional[List[str]] = Field(None, description="Active hardware fault codes")
+    current_stock: Optional[int] = Field(None, description="Current stock level reported by machine (0-50)")
+    stock_enabled: Optional[bool] = Field(None, description="Whether machine is in stock-based mode")
 
 
 class HeartbeatResponse(BaseModel):

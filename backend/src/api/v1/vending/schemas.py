@@ -16,6 +16,8 @@ class QRSettingsResponse(BaseModel):
     dynamic_pricing_enabled: bool
     custom_qr_image_url: Optional[str] = None
     is_active: bool
+    stock_management_enabled: Optional[bool] = True
+    current_stock: Optional[int] = 50
 
 
 class QRSettingsUpdateRequest(BaseModel):
@@ -25,6 +27,8 @@ class QRSettingsUpdateRequest(BaseModel):
     qr_timeout_seconds: Optional[int] = Field(None, ge=30, le=600, description="Display countdown timer in seconds")
     dynamic_pricing_enabled: Optional[bool] = None
     custom_qr_image_url: Optional[str] = Field(None, description="Custom QR image URL or base64 data URI")
+    stock_management_enabled: Optional[bool] = Field(None, description="Toggle between Stock-Based Mode (true) and Without-Stock Mode (false)")
+    current_stock: Optional[int] = Field(None, ge=0, le=50, description="Current machine inventory count (0-50 units)")
 
 
 class CoinSettingsResponse(BaseModel):

@@ -620,15 +620,15 @@ void uiDrawStockRefillScreen(int count) {
 
   TFT_display.setCursor(25, 358);
   TFT_display.setTextColor(COLOR_WHITE);
-  TFT_display.print("🔘 SW 1 (GPIO 32): Change Number (+1)");
+  TFT_display.print("🔘 SW 1 (GPIO 32): Update Stock (+1)");
 
   TFT_display.setCursor(25, 378);
   TFT_display.setTextColor(COLOR_GREEN);
-  TFT_display.print("💾 SW 2 (GPIO 33): SAVE STOCK TO MACHINE");
+  TFT_display.print("💾 SW 2 (GPIO 33): SELECT & SAVE STOCK");
 
   TFT_display.setCursor(25, 402);
   TFT_display.setTextColor(COLOR_CYAN);
-  TFT_display.print("⚙️ Hold SW 2 (4s): Toggle Stock Mode");
+  TFT_display.print("🌐 Web Portal / SW2 (4s): Mode Toggle");
 
   TFT_display.setCursor(25, 424);
   TFT_display.setTextColor(COLOR_YELLOW);
@@ -1666,6 +1666,7 @@ void dispenseProduct(int slotNumber, float amount, String orderId, String dispen
 
   int pulsesFired = 0;
   bool pulseActive = false;
+  bool materialDropDetected = false;
 
   while (millis() - startTime < totalDispenseDuration) {
     unsigned long elapsed = millis() - startTime;
@@ -1695,6 +1696,17 @@ void dispenseProduct(int slotNumber, float amount, String orderId, String dispen
       }
     }
 
+    // --- DISPENSE DROP SENSOR (PIN_DISPENSE_SENSOR, GPIO 14) ---
+    if (DISPENSE_SENSOR_ENABLED && !materialDropDetected) {
+      int sVal = digitalRead(PIN_DISPENSE_SENSOR);
+      bool detected = DISPENSE_SENSOR_ACTIVE_LOW ? (sVal == LOW) : (sVal == HIGH);
+      if (detected) {
+        materialDropDetected = true;
+        setMotor(slotNumber, false);
+        Serial.printf("[\U0001f4e6 Drop Sensor] MATERIAL DETECTED AT CHUTE (GPIO %d)! Motor turned OFF.\n", PIN_DISPENSE_SENSOR);
+      }
+    }
+
     // --- MOTOR DISPENSE CUTOFF (if totalDispenseDuration > default motor runtime) ---
     if (elapsed >= MOTOR_DISPENSE_TIME_MS && elapsed < totalDispenseDuration) {
       setMotor(slotNumber, false);
@@ -1712,7 +1724,22 @@ void dispenseProduct(int slotNumber, float amount, String orderId, String dispen
   setCoinPulsePin(false);
   setMotor(slotNumber, false);
   TFT_display.fillRect(barX, barY, barMaxW, barH, COLOR_GREEN);
-  Serial.printf("[✓] Slot %d Motor Cycle Complete & %d Coin Pulses Delivered!\n", slotNumber, coinPulses);
+  Serial.printf("[✓] Slot %d Motor Cycle Complete & %d Coin Pulses Delivered! (Sensor: %s)\n",
+                slotNumber, coinPulses, materialDropDetected ? "Material Confirmed Dropped" : "Timer Complete");
+
+  // Decrement inventory if in Stock-Based Mode
+  if (stock_management_enabled) {
+    if (current_stock > 0) {
+      current_stock--;
+      prefs.begin("vending_cfg", false);
+      prefs.putInt("stock", current_stock);
+      prefs.end();
+      Serial.printf("[\U0001f4e6 Stock Decremented] Remaining Stock: %d Units\n", current_stock);
+      sendHeartbeat();
+    } else {
+      Serial.println("[\u26a0\ufe0f Stock Warning] Machine was already at 0 stock.");
+    }
+  }
 
   // 5. Display "PLEASE COLLECT MATERIAL FROM TRAY"
   uiDrawCompleteScreen();
@@ -1969,50 +1996,59 @@ void checkForRemoteQRConfigUpdates() {
 
         delay(2000);
         ESP.restart();
-      } else if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id)) {
-        Serial.println("\n==================================================================");
-        Serial.println(">>> 📶 REMOTE QR / PRICE UPDATE RECEIVED FROM VENDOR / CLOUD! <<<");
-        Serial.printf("  New VPA    : %s\n", newVpa.c_str());
-        Serial.printf("  New Price  : Rs %.2f\n", newAmount);
-        Serial.printf("  New Product: %s\n", newName.c_str());
-        Serial.printf("  New Version: %d (Old: %d)\n", newVersion, current_config_version);
-        Serial.printf("  New QR Pay : %s\n", newQrString.c_str());
-        Serial.println("  Updating Flash NVS & Refreshing ILI9488 LCD Screen...");
-        Serial.println("==================================================================\n");
+      } else {
+        bool hasStockModeInCloud = doc.containsKey("stock_management_enabled");
+        bool newStockMode = hasStockModeInCloud ? doc["stock_management_enabled"].as<bool>() : stock_management_enabled;
 
-        current_config_version = newVersion;
-        razorpay_upi_vpa       = newVpa;
-        pending_amount_rupee   = newAmount;
-        pending_product_name   = newName;
-        if (!newQrString.startsWith("data:") && newQrString.length() <= 250) {
-          custom_qr_code = newQrString;
-        }
+        bool hasStockQtyInCloud = doc.containsKey("current_stock");
+        int newStockQty = hasStockQtyInCloud ? doc["current_stock"].as<int>() : current_stock;
 
-        if (newTrId.length() > 0) {
-          dynamic_tr_id = newTrId;
-        }
+        bool stockModeChanged = (hasStockModeInCloud && newStockMode != stock_management_enabled);
+        bool stockQtyChanged  = (hasStockQtyInCloud && newStockQty >= 0 && newStockQty != current_stock);
 
-        if (doc.containsKey("current_stock")) {
-          int cloudStock = doc["current_stock"].as<int>();
-          if (cloudStock >= 0 && cloudStock != current_stock) {
-            current_stock = cloudStock;
-            Serial.printf("[Cloud Sync] Remote stock level updated to: %d units\n", current_stock);
+        if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id) || stockModeChanged || stockQtyChanged) {
+          Serial.println("\n==================================================================");
+          Serial.println(">>> \U0001f4f6 REMOTE CONFIG UPDATE RECEIVED FROM PORTAL / CLOUD! <<<     ");
+          Serial.printf("  New VPA        : %s\n", newVpa.c_str());
+          Serial.printf("  New Price      : Rs %.2f\n", newAmount);
+          Serial.printf("  New Product    : %s\n", newName.c_str());
+          Serial.printf("  New Version    : %d (Old: %d)\n", newVersion, current_config_version);
+          Serial.printf("  New QR Pay     : %s\n", newQrString.c_str());
+          Serial.printf("  Stock Mode     : %s (Website Toggle Switch)\n", newStockMode ? "STOCK-BASED" : "WITHOUT-STOCK (Unlimited)");
+          Serial.printf("  Stock Quantity : %d Units\n", newStockQty);
+          Serial.println("  Updating Flash NVS & Refreshing ILI9488 LCD Screen...");
+          Serial.println("==================================================================\n");
+
+          current_config_version   = newVersion;
+          razorpay_upi_vpa         = newVpa;
+          pending_amount_rupee     = newAmount;
+          pending_product_name     = newName;
+          stock_management_enabled = newStockMode;
+          current_stock            = newStockQty;
+
+          if (!newQrString.startsWith("data:") && newQrString.length() <= 250) {
+            custom_qr_code = newQrString;
           }
+
+          if (newTrId.length() > 0) {
+            dynamic_tr_id = newTrId;
+          }
+
+          // Persist to Flash NVS
+          prefs.begin("vending_cfg", false);
+          prefs.putString("rzp_vpa", razorpay_upi_vpa);
+          prefs.putFloat("price", pending_amount_rupee);
+          prefs.putString("p_name", pending_product_name);
+          prefs.putString("cust_qr", custom_qr_code);
+          prefs.putString("tr_id", dynamic_tr_id);
+          prefs.putInt("cfg_ver", current_config_version);
+          prefs.putBool("stock_en", stock_management_enabled);
+          prefs.putInt("stock", current_stock);
+          prefs.end();
+
+          // Immediately Refresh LCD Screen with updated mode & QR!
+          uiDrawStandbyQRScreen();
         }
-
-        // Persist to Flash NVS
-        prefs.begin("vending_cfg", false);
-        prefs.putString("rzp_vpa", razorpay_upi_vpa);
-        prefs.putFloat("price", pending_amount_rupee);
-        prefs.putString("p_name", pending_product_name);
-        prefs.putString("cust_qr", custom_qr_code);
-        prefs.putString("tr_id", dynamic_tr_id);
-        prefs.putInt("cfg_ver", current_config_version);
-        prefs.putInt("stock", current_stock);
-        prefs.end();
-
-        // Immediately Refresh LCD Screen with brand new QR code!
-        uiDrawStandbyQRScreen();
       }
     }
   }

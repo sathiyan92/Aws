@@ -560,6 +560,12 @@ async function loadQRData(deviceId) {
             elements.qrVpa.value = data.upi_merchant_vpa || '';
             elements.qrTimeout.value = data.qr_timeout_seconds || 120;
             elements.qrMerchantName.value = data.merchant_name || 'Apex Vending Solutions';
+
+            const stockToggle = document.getElementById('clientStockModeToggle');
+            const stockInput = document.getElementById('clientStockQtyInput');
+            if (stockToggle) stockToggle.checked = data.stock_management_enabled !== false;
+            if (stockInput) stockInput.value = (data.current_stock !== undefined && data.current_stock !== null) ? data.current_stock : 50;
+            if (typeof handleClientStockModeToggleChange === 'function') handleClientStockModeToggleChange();
             
             const qrUrlInput = document.getElementById('clientQrImageUrl');
             const quickInput = document.getElementById('clientSlotQuickQrInput');
@@ -1212,12 +1218,17 @@ async function handleSaveQRSettings(e) {
         if (!vpaVal) vpaVal = `pay.${state.selectedDeviceId.toLowerCase()}@icici`;
         if (!nameVal) nameVal = "Smart Vending";
 
+        const stockModeEnabled = document.getElementById('clientStockModeToggle') ? document.getElementById('clientStockModeToggle').checked : true;
+        const stockQtyVal = document.getElementById('clientStockQtyInput') ? (parseInt(document.getElementById('clientStockQtyInput').value) || 0) : 50;
+
         const payload = {
             upi_merchant_vpa: vpaVal,
             merchant_name: nameVal,
             qr_timeout_seconds: parseInt(elements.qrTimeout.value) || 120,
             dynamic_pricing_enabled: true,
-            custom_qr_image_url: rawQr || null
+            custom_qr_image_url: rawQr || null,
+            stock_management_enabled: stockModeEnabled,
+            current_stock: stockQtyVal
         };
 
         const res = await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/qr/settings`, {
@@ -1233,7 +1244,9 @@ async function handleSaveQRSettings(e) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     custom_qr_payload: rawQr || undefined,
-                    razorpay_upi_vpa: vpaVal
+                    razorpay_upi_vpa: vpaVal,
+                    stock_management_enabled: stockModeEnabled,
+                    current_stock: stockQtyVal
                 })
             });
         } catch (edgeErr) {
@@ -2484,3 +2497,19 @@ window.openBatchRangeModal = function() {
 window.closeBatchRangeModal = function() {
     document.getElementById('batchRangeModal')?.classList.remove('open');
 };
+
+
+function handleClientStockModeToggleChange() {
+    const toggle = document.getElementById("clientStockModeToggle");
+    const badge = document.getElementById("clientStockModeStatusBadge");
+    if (!toggle || !badge) return;
+    if (toggle.checked) {
+        badge.textContent = "Stock-Based Mode";
+        badge.style.background = "rgba(16,185,129,0.2)";
+        badge.style.color = "#34d399";
+    } else {
+        badge.textContent = "Without-Stock Mode (Unlimited)";
+        badge.style.background = "rgba(245,158,11,0.2)";
+        badge.style.color = "#fbbf24";
+    }
+}

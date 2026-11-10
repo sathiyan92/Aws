@@ -253,6 +253,42 @@
                                 </div>
                             </div>
 
+                            <!-- Machine Stock Mode & Inventory Settings (Stock vs Without Stock) -->
+                            <div style="margin-top: 1rem; padding: 1rem; background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.25); border-radius: var(--radius-md);">
+                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+                                    <div>
+                                        <label style="font-size:0.88rem; font-weight:700; color:#34d399; display:flex; align-items:center; gap:0.4rem; margin-bottom:0.2rem;">
+                                            📦 Machine Stock Operating Mode
+                                        </label>
+                                        <p style="font-size:0.75rem; color:var(--text-secondary); margin:0;">
+                                            Toggle between inventory tracking (stops when empty) or continuous without-stock vending.
+                                        </p>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                                        <label class="switch">
+                                            <input type="checkbox" id="clientStockModeToggle" checked onchange="handleClientStockModeToggleChange()">
+                                            <span class="slider"></span>
+                                        </label>
+                                        <span id="clientStockModeStatusBadge" class="badge" style="background:rgba(16,185,129,0.2); color:#34d399; font-weight:700;">Stock-Based Mode</span>
+                                    </div>
+                                </div>
+
+                                <div id="clientStockInputContainer" style="display:grid; grid-template-columns:1fr 2fr; gap:1rem; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid rgba(255,255,255,0.06); align-items:center;">
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label style="font-size:0.75rem; color:var(--text-secondary);">Current Stock Units (1 - 50)</label>
+                                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                                            <input type="number" id="clientStockQtyInput" class="input-field mono-text" min="0" max="50" value="50" style="width:100px; font-weight:700; color:#34d399;">
+                                            <span style="font-size:0.75rem; color:var(--text-muted);">Units</span>
+                                        </div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,0.25); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.72rem; color:var(--text-secondary); border-left:3px solid #38bdf8;">
+                                        <div style="color:#e2e8f0; font-weight:600; margin-bottom:0.2rem;">🎛️ Physical Push Switch Controls at Machine:</div>
+                                        <div>🔘 <strong style="color:#f59e0b;">Push Switch 1 (GPIO 32):</strong> Update stock count (cycles 1 &rarr; 50 &rarr; 1)</div>
+                                        <div>💾 <strong style="color:#10b981;">Push Switch 2 (GPIO 33):</strong> Select and save stock to machine Flash NVS</div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Custom QR Code Upload & Preview -->
                             <div style="margin-top: 1.25rem; padding: 1.25rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
                                 <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.4rem;">

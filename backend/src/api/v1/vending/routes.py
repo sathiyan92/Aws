@@ -155,6 +155,15 @@ def get_qr_settings(
             custom_qr = None
     upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
+    stock_mode = dev_settings.get("stock_management_enabled", True)
+    slot1_stock = 50
+    if device.slots:
+        target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
+        if target_slot.current_stock is not None:
+            slot1_stock = target_slot.current_stock
+    else:
+        slot1_stock = dev_settings.get("current_stock", 50)
+
     return QRSettingsResponse(
         device_id=device.device_id,
         provider=cfg.get("provider", "UPI_DYNAMIC"),
@@ -164,6 +173,8 @@ def get_qr_settings(
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
         custom_qr_image_url=custom_qr,
         is_active=qr_mod.is_enabled,
+        stock_management_enabled=stock_mode,
+        current_stock=slot1_stock,
     )
 
 
@@ -190,6 +201,12 @@ def update_qr_settings(
         cfg["qr_timeout_seconds"] = payload.qr_timeout_seconds
     if payload.dynamic_pricing_enabled is not None:
         cfg["dynamic_pricing_enabled"] = payload.dynamic_pricing_enabled
+    if payload.stock_management_enabled is not None:
+        cfg["stock_management_enabled"] = payload.stock_management_enabled
+        update_data["stock_management_enabled"] = payload.stock_management_enabled
+    if payload.current_stock is not None:
+        cfg["current_stock"] = payload.current_stock
+        update_data["current_stock"] = payload.current_stock
     if payload.custom_qr_image_url is not None:
         raw_val = payload.custom_qr_image_url.strip() if payload.custom_qr_image_url else ""
         if raw_val.startswith("data:image/") or ("base64," in raw_val) or len(raw_val) > 300:
@@ -239,6 +256,15 @@ def update_qr_settings(
             custom_qr = None
     upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
+    stock_mode = dev_settings.get("stock_management_enabled", cfg.get("stock_management_enabled", True))
+    slot1_stock = 50
+    if device.slots:
+        target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
+        if target_slot.current_stock is not None:
+            slot1_stock = target_slot.current_stock
+    else:
+        slot1_stock = dev_settings.get("current_stock", cfg.get("current_stock", 50))
+
     return QRSettingsResponse(
         device_id=device.device_id,
         provider=cfg.get("provider", "UPI_DYNAMIC"),
@@ -248,6 +274,8 @@ def update_qr_settings(
         dynamic_pricing_enabled=cfg.get("dynamic_pricing_enabled", True),
         custom_qr_image_url=custom_qr,
         is_active=qr_mod.is_enabled,
+        stock_management_enabled=stock_mode,
+        current_stock=slot1_stock,
     )
 
 

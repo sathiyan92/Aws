@@ -396,6 +396,23 @@ def report_device_heartbeat(
     if config_in_sync and device.config and not device.config.is_synced:
         device.config.is_synced = True
 
+    # Synchronize reported stock level & mode from physical push buttons if provided
+    if payload.current_stock is not None or payload.stock_enabled is not None:
+        if device.config and device.config.config_payload:
+            dev_cfg = dict(device.config.config_payload)
+            dev_settings = dict(dev_cfg.get("settings", {}))
+            if payload.current_stock is not None:
+                dev_settings["current_stock"] = payload.current_stock
+                if device.slots:
+                    target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
+                    target_slot.current_stock = payload.current_stock
+            if payload.stock_enabled is not None:
+                dev_settings["stock_management_enabled"] = payload.stock_enabled
+            dev_cfg["settings"] = dev_settings
+            device.config.config_payload = dev_cfg
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(device.config, "config_payload")
+
     # Insert time-series heartbeat record
     heartbeat = DeviceHeartbeat(
         device_id=device.id,

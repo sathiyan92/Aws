@@ -1349,6 +1349,12 @@ async function loadDeviceQRSettings(deviceId) {
             document.getElementById('pricingQrMerchantName').value = cfg.merchant_name || 'Smart Vending';
             document.getElementById('pricingQrTimeout').value = cfg.qr_timeout_seconds || 180;
             document.getElementById('pricingQrDynamicToggle').checked = cfg.dynamic_pricing_enabled !== false;
+
+            const stockToggle = document.getElementById('pricingStockModeToggle');
+            const stockInput = document.getElementById('pricingStockQtyInput');
+            if (stockToggle) stockToggle.checked = cfg.stock_management_enabled !== false;
+            if (stockInput) stockInput.value = (cfg.current_stock !== undefined && cfg.current_stock !== null) ? cfg.current_stock : 50;
+            if (typeof handleStockModeToggleChange === 'function') handleStockModeToggleChange();
             
             const qrInput = document.getElementById('pricingQrImageUrl');
             const quickInput = document.getElementById('slotQuickQrInput');
@@ -1675,12 +1681,17 @@ async function handleSaveDeviceQRSettings(e) {
     if (!vpaVal) vpaVal = `pay.${activePricingDeviceId.toLowerCase()}@icici`;
     if (!nameVal) nameVal = "Smart Vending";
 
+    const stockModeEnabled = document.getElementById('pricingStockModeToggle') ? document.getElementById('pricingStockModeToggle').checked : true;
+    const stockQtyVal = document.getElementById('pricingStockQtyInput') ? (parseInt(document.getElementById('pricingStockQtyInput').value) || 0) : 50;
+
     const payload = {
         upi_merchant_vpa: vpaVal,
         merchant_name: nameVal,
         qr_timeout_seconds: parseInt(document.getElementById('pricingQrTimeout').value) || 180,
         dynamic_pricing_enabled: document.getElementById('pricingQrDynamicToggle').checked,
-        custom_qr_image_url: rawQrInput || null
+        custom_qr_image_url: rawQrInput || null,
+        stock_management_enabled: stockModeEnabled,
+        current_stock: stockQtyVal
     };
 
     try {
@@ -1699,7 +1710,9 @@ async function handleSaveDeviceQRSettings(e) {
                     custom_qr_payload: rawQrInput || undefined,
                     razorpay_upi_vpa: vpaVal,
                     product_name: s1Name ? s1Name.value.trim() : undefined,
-                    amount_rupees: s1Price ? parseFloat(s1Price.value) : undefined
+                    amount_rupees: s1Price ? parseFloat(s1Price.value) : undefined,
+                    stock_management_enabled: stockModeEnabled,
+                    current_stock: stockQtyVal
                 })
             });
         } catch (edgeErr) {
@@ -2859,3 +2872,19 @@ window.saveAdminLiveEnrollCard = async function() {
         showToast(err.message, "danger");
     }
 };
+
+
+function handleStockModeToggleChange() {
+    const toggle = document.getElementById("pricingStockModeToggle");
+    const badge = document.getElementById("pricingStockModeStatusBadge");
+    if (!toggle || !badge) return;
+    if (toggle.checked) {
+        badge.textContent = "Stock-Based Mode";
+        badge.style.background = "rgba(16,185,129,0.2)";
+        badge.style.color = "#34d399";
+    } else {
+        badge.textContent = "Without-Stock Mode (Unlimited)";
+        badge.style.background = "rgba(245,158,11,0.2)";
+        badge.style.color = "#fbbf24";
+    }
+}

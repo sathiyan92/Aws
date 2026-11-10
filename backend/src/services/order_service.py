@@ -725,6 +725,9 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         if tr_m:
             active_tr = tr_m.group(1).removeprefix("qr_").removesuffix("qrv2").removesuffix("v2").strip()
 
+    stock_enabled = settings.get("stock_management_enabled", True)
+    stock_qty = target_slot.current_stock if (target_slot and target_slot.current_stock is not None) else settings.get("current_stock", 50)
+
     return {
         "device_id": device.device_id,
         "razorpay_upi_vpa": vpa,
@@ -735,6 +738,8 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         "config_version": device.current_config_version,
         "wifi_ssid": settings.get("wifi_ssid", ""),
         "wifi_password": settings.get("wifi_password", ""),
+        "stock_management_enabled": stock_enabled,
+        "current_stock": stock_qty,
     }
 
 
@@ -870,6 +875,13 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
         payload["settings"]["wifi_ssid"] = str(payload_data["wifi_ssid"]).strip()
     if "wifi_password" in payload_data and payload_data["wifi_password"] is not None:
         payload["settings"]["wifi_password"] = str(payload_data["wifi_password"])
+    if "stock_management_enabled" in payload_data and payload_data["stock_management_enabled"] is not None:
+        payload["settings"]["stock_management_enabled"] = bool(payload_data["stock_management_enabled"])
+    if "current_stock" in payload_data and payload_data["current_stock"] is not None:
+        try:
+            payload["settings"]["current_stock"] = int(payload_data["current_stock"])
+        except (ValueError, TypeError):
+            pass
     target_slot = None
     for s in (device.slots or []):
         if s.slot_number == 1:
@@ -911,6 +923,12 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
     if payload_data.get("amount_rupees") is not None and target_slot:
         amount_paise = int(payload_data["amount_rupees"] * 100)
         target_slot.override_price = amount_paise
+
+    if "current_stock" in payload_data and payload_data["current_stock"] is not None and target_slot:
+        try:
+            target_slot.current_stock = int(payload_data["current_stock"])
+        except (ValueError, TypeError):
+            pass
 
     if payload_data.get("product_name") and target_slot:
         prod_name = payload_data["product_name"].strip()
