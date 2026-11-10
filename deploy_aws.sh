@@ -115,19 +115,15 @@ systemctl restart iot-fleet-platform.service
 # Configure Nginx for large firmware binary uploads (up to 100MB)
 if [ -d "/etc/nginx" ]; then
     echo ">>> Configuring Nginx client_max_body_size to 100M for firmware OTA uploads..."
+    rm -f /etc/nginx/conf.d/iot-firmware-size.conf /etc/nginx/conf.d/iot-upload.conf 2>/dev/null || true
+    sed -i '/client_max_body_size/d' /etc/nginx/nginx.conf 2>/dev/null || true
+    find /etc/nginx/sites-available /etc/nginx/sites-enabled -type f -exec sed -i '/client_max_body_size/d' {} + 2>/dev/null || true
+
     mkdir -p /etc/nginx/conf.d
-    cat << 'NGINX_CONF' > /etc/nginx/conf.d/iot-firmware-size.conf
-client_max_body_size 100M;
-NGINX_CONF
-    if [ -f "/etc/nginx/nginx.conf" ]; then
-        if grep -q "client_max_body_size" /etc/nginx/nginx.conf; then
-            sed -i 's/client_max_body_size[^;]*;/client_max_body_size 100M;/g' /etc/nginx/nginx.conf 2>/dev/null || true
-        else
-            sed -i '/http {/a \    client_max_body_size 100M;' /etc/nginx/nginx.conf 2>/dev/null || true
-        fi
+    echo "client_max_body_size 100M;" > /etc/nginx/conf.d/iot-upload.conf
+    if which nginx >/dev/null 2>&1; then
+        nginx -t >/dev/null 2>&1 && systemctl restart nginx 2>/dev/null || true
     fi
-    find /etc/nginx/sites-available /etc/nginx/sites-enabled -type f -exec sed -i 's/client_max_body_size[^;]*;/client_max_body_size 100M;/g' {} + 2>/dev/null || true
-    nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
 fi
 
 # 9. Configure UFW Firewall rules
