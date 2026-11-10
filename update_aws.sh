@@ -58,9 +58,11 @@ done
 
 rm -rf "$TMP_DIR"
 
-# Ensure permissions
+# Ensure permissions and writable database access
 mkdir -p "$INSTALL_DIR/backend/uploads/firmware"
-chmod -R 775 "$INSTALL_DIR/backend/uploads" 2>/dev/null || true
+chmod -R 777 "$INSTALL_DIR/backend/uploads" 2>/dev/null || true
+chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
+chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 
 # 4. Clear all Python bytecode caches and install Python dependencies
 echo ">>> [4/7] Installing / updating Python dependencies..."
@@ -105,7 +107,11 @@ print('>>> Database auto-migration completed successfully!')
 
 # 5b. Update Platform Admin Credentials
 echo ">>> Updating Administrator Credentials (gtech_admin)..."
+chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
+chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 (cd "$INSTALL_DIR" && "$PYTHON_BIN" "$INSTALL_DIR/update_admin.py" --username gtech_admin --password Gtech042814516!) || true
+chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
+chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 
 # Test running backend import directly to catch any import errors
 echo ">>> Verifying backend application imports..."

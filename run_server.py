@@ -65,6 +65,18 @@ import uvicorn
 def init_cloud_database():
     """Ensure database tables and initial seed data exist upon fresh cloud deploy."""
     try:
+        # Ensure database files and directories have write permissions
+        for f in [
+            os.path.join(project_root, "iot_platform_dev.db"),
+            os.path.join(backend_dir, "iot_platform_dev.db"),
+        ]:
+            if os.path.exists(f):
+                try:
+                    os.chmod(f, 0o666)
+                    os.chmod(os.path.dirname(os.path.abspath(f)), 0o777)
+                except Exception:
+                    pass
+
         from src.db.session import engine, SessionLocal
         from src.db.base import Base
         from src.db.seed import seed_database
@@ -74,7 +86,9 @@ def init_cloud_database():
         Base.metadata.create_all(bind=engine)
 
         session = SessionLocal()
-        admin_user = session.query(User).filter_by(username="admin").first()
+        admin_user = session.query(User).filter(
+            (User.username == "admin") | (User.username == "gtech_admin") | (User.role == "MANUFACTURER_ADMIN")
+        ).first()
         if not admin_user:
             print(">>> Fresh cloud deployment detected: Seeding initial devices & admin...")
             seed_database(session)

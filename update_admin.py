@@ -77,12 +77,21 @@ def update_sqlite_db(db_path: str, current_identifier: str, new_username: str = 
     if not os.path.exists(db_path):
         return False
     try:
+        # Guarantee Linux read/write permissions on database file and directory
+        try:
+            os.chmod(db_path, 0o666)
+            db_dir = os.path.dirname(os.path.abspath(db_path))
+            if db_dir:
+                os.chmod(db_dir, 0o777)
+        except Exception:
+            pass
+
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
         # Find admin user by username, email, or role
         cur.execute(
-            "SELECT id, username, email, role FROM users WHERE username = ? OR email = ? OR role = 'MANUFACTURER_ADMIN' LIMIT 1",
+            "SELECT id, username, email, role FROM users WHERE username = ? OR email = ? OR username = 'admin' OR username = 'gtech_admin' OR role = 'MANUFACTURER_ADMIN' LIMIT 1",
             (current_identifier, current_identifier)
         )
         row = cur.fetchone()
@@ -166,6 +175,8 @@ def main():
     sqlite_paths = [
         "iot_platform_dev.db",
         os.path.join("backend", "iot_platform_dev.db"),
+        "/opt/iot-fleet-platform/iot_platform_dev.db",
+        "/opt/iot-fleet-platform/backend/iot_platform_dev.db",
     ]
     updated_db_count = 0
     for p in sqlite_paths:
@@ -175,7 +186,9 @@ def main():
     # 2. Update .env files
     env_paths = [
         ".env",
-        os.path.join("backend", ".env")
+        os.path.join("backend", ".env"),
+        "/opt/iot-fleet-platform/.env",
+        "/opt/iot-fleet-platform/backend/.env",
     ]
     for ep in env_paths:
         if update_env_file(ep, new_username=new_user, new_password=new_pass):
