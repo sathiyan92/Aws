@@ -1,3 +1,8 @@
+function setElText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text != null ? text : "";
+}
+
 
 async function parseApiError(res) {
     try {
@@ -111,7 +116,7 @@ function switchTab(tabName) {
         firmware: "Firmware Artifacts & OTA Distribution Hub",
         audit: "System Security & Audit Trail",
     };
-    document.getElementById("pageTitle").textContent = titleMap[tabName] || "Manufacturer Portal";
+    setElText("pageTitle", titleMap[tabName] || "Manufacturer Portal");
 
     if (tabName === "clients") renderClientsTable();
     if (tabName === "devices") renderDevicesTable();
@@ -279,16 +284,16 @@ function renderOverview() {
     if (!state.stats) return;
     const s = state.stats;
 
-    document.getElementById("statTotalDevices").textContent = s.devices_count || 0;
-    document.getElementById("statOnlineDevices").textContent = s.online_devices_count || 0;
-    document.getElementById("statClients").textContent = s.clients_count || 0;
-    document.getElementById("statVending").textContent = s.product_type_breakdown?.VENDING_MACHINE || 0;
-    document.getElementById("statRFID").textContent = s.product_type_breakdown?.RFID_ATTENDANCE || 0;
+    setElText("statTotalDevices", s.devices_count || 0);
+    setElText("statOnlineDevices", s.online_devices_count || 0);
+    setElText("statClients", s.clients_count || 0);
+    setElText("statVending", s.product_type_breakdown?.VENDING_MACHINE || 0);
+    setElText("statRFID", s.product_type_breakdown?.RFID_ATTENDANCE || 0);
 
     // Module badges
-    document.getElementById("statQRCount").textContent = s.module_breakdown?.QR_PAYMENT || 0;
-    document.getElementById("statCoinCount").textContent = s.module_breakdown?.COIN_PAYMENT || 0;
-    document.getElementById("statRFIDCount").textContent = s.module_breakdown?.RFID_ACCESS || 0;
+    setElText("statQRCount", s.module_breakdown?.QR_PAYMENT || 0);
+    setElText("statCoinCount", s.module_breakdown?.COIN_PAYMENT || 0);
+    setElText("statRFIDCount", s.module_breakdown?.RFID_ACCESS || 0);
 
     // Recent activity list
     const actBody = document.getElementById("recentActivityList");
@@ -996,7 +1001,7 @@ function openCreateClientModal() {
 
 function openAssignModal(deviceId, deviceCode, currentClientId) {
     document.getElementById("assignDeviceId").value = deviceId;
-    document.getElementById("assignDeviceCodeLabel").textContent = deviceCode;
+    setElText("assignDeviceCodeLabel", deviceCode);
 
     const select = document.getElementById("assignClientId");
     select.innerHTML = `<option value="">-- Unassign (Return to Inventory) --</option>` +
@@ -1030,7 +1035,7 @@ function openEditHardwareModal(deviceId) {
 
 function openDeleteDeviceModal(deviceId, deviceCode) {
     document.getElementById("deleteTargetDeviceId").value = deviceId;
-    document.getElementById("deleteTargetDeviceLabel").textContent = deviceCode;
+    setElText("deleteTargetDeviceLabel", deviceCode);
     openModal("modalDeleteDevice");
 }
 
@@ -1058,8 +1063,8 @@ function openUploadFirmwareModal(targetDeviceId = null) {
 function openPushOTAModal(deviceId, deviceCode) {
     const d = state.devices.find(item => item.id === deviceId || item.device_id === deviceId);
     document.getElementById("pushTargetDeviceId").value = deviceId;
-    document.getElementById("pushTargetDeviceCodeDisplay").textContent = deviceCode || d?.device_id || "ESP32";
-    document.getElementById("pushTargetDeviceNameDisplay").textContent = d ? `${d.client_name || 'Inventory Node'} | Current: ${d.current_firmware_version || 'v1.0.0'}` : "";
+    setElText("pushTargetDeviceCodeDisplay", deviceCode || d?.device_id || "ESP32");
+    setElText("pushTargetDeviceNameDisplay", d ? `${d.client_name || 'Inventory Node'} | Current: ${d.current_firmware_version || 'v1.0.0'}` : "");
 
     const select = document.getElementById("pushFirmwareVersionSelect");
     if (!state.firmwares.length) {
@@ -1104,9 +1109,9 @@ function formatBytes(bytes) {
 
 function updateUserUI() {
     if (state.user) {
-        document.getElementById("userName").textContent = state.user.full_name || state.user.username;
-        document.getElementById("userRole").textContent = state.user.role;
-        document.getElementById("userAvatar").textContent = state.user.username.substring(0, 2).toUpperCase();
+        setElText("userName", state.user.full_name || state.user.username);
+        setElText("userRole", state.user.role);
+        setElText("userAvatar", state.user.username.substring(0, 2).toUpperCase());
     }
 }
 
@@ -1168,9 +1173,9 @@ async function openDevicePricingModal(deviceId) {
     activePricingDeviceId = deviceId;
     const dev = state.devices.find(d => d.device_id === deviceId);
     
-    document.getElementById('pricingModalDeviceId').textContent = deviceId;
-    document.getElementById('pricingModalMac').textContent = dev?.mac_address || 'Unregistered MAC';
-    document.getElementById('pricingModalClient').textContent = dev?.client_name || 'Unassigned (Inventory)';
+    setElText('pricingModalDeviceId', deviceId);
+    setElText('pricingModalMac', dev?.mac_address || 'Unregistered MAC');
+    setElText('pricingModalClient', dev?.client_name || 'Unassigned (Inventory)');
 
     switchPricingModalTab('slots');
     openModal('modalDevicePricing');
@@ -1803,9 +1808,9 @@ async function openWiFiModal(deviceId) {
     if (!dev) return;
 
     currentWiFiDeviceId = dev.device_id;
-    document.getElementById("wifiModalDeviceId").textContent = dev.device_id;
-    document.getElementById("wifiModalClientName").textContent = dev.client_name || "Unassigned (Inventory)";
-    document.getElementById("wifiModalConfigVer").textContent = `v${dev.current_config_version}`;
+    setElText("wifiModalDeviceId", dev.device_id);
+    setElText("wifiModalClientName", dev.client_name || "Unassigned (Inventory)");
+    setElText("wifiModalConfigVer", `v${dev.current_config_version}`);
     
     const ssidInput = document.getElementById("wifiInputSsid");
     const passInput = document.getElementById("wifiInputPassword");
@@ -2248,7 +2253,7 @@ function generateManageVendorPassword() {
 
 async function openManageVendorLoginModal(clientId, clientName) {
     document.getElementById("manageVendorClientId").value = clientId;
-    document.getElementById("manageVendorClientName").textContent = clientName;
+    setElText("manageVendorClientName", clientName);
     document.getElementById("manageVendorUsername").value = "";
     document.getElementById("manageVendorPassword").value = "";
     document.getElementById("manageVendorEmail").value = "";
@@ -2653,7 +2658,7 @@ window.openAdminRfidBulkUpload = function() {
 
     const f = document.getElementById("adminBulkFileInput");
     if (f) f.value = "";
-    document.getElementById("adminBulkSummary").textContent = "No file selected";
+    setElText("adminBulkSummary", "No file selected");
     document.getElementById("modalAdminRfidBulkUpload")?.classList.add("open");
 };
 
@@ -2797,7 +2802,7 @@ window.openAdminRfidLiveEnroll = async function() {
         try {
             const res = await apiRequest(`/rfid-vending/devices/${currentDev}/enroll-status`);
             if (res && res.last_uid) {
-                document.getElementById("adminLiveDetectedUid").textContent = res.last_uid;
+                setElText("adminLiveDetectedUid", res.last_uid);
                 document.getElementById("adminLiveWaitingBox").style.display = "none";
                 document.getElementById("adminLiveDetectedBox").style.display = "block";
                 document.getElementById("btnAdminSaveLiveCard").style.display = "inline-block";
