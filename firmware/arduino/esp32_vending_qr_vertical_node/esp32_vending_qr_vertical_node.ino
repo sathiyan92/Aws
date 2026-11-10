@@ -171,8 +171,8 @@ const float STATIC_PRICE_RUPEES = 1.00;
 // Set to true if you want to bypass QR string encoding and draw the raw 2D pixel bitmap:
 #define USE_CUSTOM_STATIC_BITMAP      false
 
-String wifi_ssid        = "Airtel_Sathiyan-Tamil";
-String wifi_pass        = "Sraja@92@";
+String wifi_ssid        = "IOTHUB";
+String wifi_pass        = "IOTHUB07";
 String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
 String device_token     = "dev_token_VM-000001";
 String server_base_url  = "http://35.154.219.82:8000";
@@ -556,7 +556,7 @@ void uiDrawStandbyQRScreen() {
     TFT_display.print("● NO CLOUD");
   } else {
     current_net_status = NET_STATUS_ONLINE;
-    TFT_display.setCursor(215, 14);
+    TFT_display.setCursor(200, 14);
     TFT_display.setTextColor(COLOR_GREEN);
     TFT_display.setTextSize(2);
     TFT_display.print("● READY");
@@ -573,7 +573,7 @@ void uiDrawStandbyQRScreen() {
   TFT_display.setTextSize(1);
   TFT_display.print("PRODUCT 1");
 
-  TFT_display.setCursor(205, 62);
+  TFT_display.setCursor(180, 62);
   TFT_display.setTextColor(COLOR_CYAN);
   TFT_display.setTextSize(2);
   TFT_display.printf("[%s]", device_id.c_str());

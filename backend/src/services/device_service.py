@@ -9,7 +9,7 @@ from datetime import timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from src.db.base import utc_now
+from src.db.base import utc_now, ensure_utc
 from src.db.models.device import Device, DeviceType, DeviceModule, DeviceCredential
 from src.db.models.config import DeviceConfig, ConfigurationVersion
 from src.db.models.client import Client
@@ -398,7 +398,8 @@ def get_device_by_id_or_device_id(
 
     # Check if online device timed out
     if device.is_online and device.last_heartbeat_at:
-        if (utc_now() - device.last_heartbeat_at).total_seconds() > 120:
+        hb_utc = ensure_utc(device.last_heartbeat_at)
+        if (utc_now() - hb_utc).total_seconds() > 120:
             device.is_online = False
             db.commit()
 

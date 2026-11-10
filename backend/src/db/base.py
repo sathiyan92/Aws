@@ -2,6 +2,7 @@
 Database base classes, common mixins, and UUID utilities for SQLAlchemy 2.0.
 """
 import uuid
+from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import DateTime, String, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -10,6 +11,15 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 def utc_now() -> datetime:
     """Return timezone-aware current UTC datetime."""
     return datetime.now(timezone.utc)
+
+
+def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensure datetime is timezone-aware UTC for robust comparisons across DB dialects (SQLite/PostgreSQL)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def generate_uuid() -> str:
