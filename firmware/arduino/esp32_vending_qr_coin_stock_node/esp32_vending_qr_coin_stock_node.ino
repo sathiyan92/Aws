@@ -2669,7 +2669,7 @@ void processCoinAcceptorInput() {
     // Guard: Check Out of Stock
     if (stock_management_enabled && current_stock <= 0) {
       Serial.println("[! COIN REJECTED] Machine is OUT OF STOCK. Cannot dispense.");
-      uiDrawOutOfStockScreen();
+      uiDrawOutOfStockNotice();
       delay(2500);
       uiDrawStandbyQRScreen();
       return;
