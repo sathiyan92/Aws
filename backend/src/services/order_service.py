@@ -740,6 +740,7 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         "wifi_password": settings.get("wifi_password", ""),
         "stock_management_enabled": stock_enabled,
         "current_stock": stock_qty,
+        "payment_mode": settings.get("payment_mode", "BOTH"),
     }
 
 
@@ -882,6 +883,10 @@ def update_device_qr_config(db: Session, device_id: str, payload_data: Dict[str,
             payload["settings"]["current_stock"] = int(payload_data["current_stock"])
         except (ValueError, TypeError):
             pass
+    if "payment_mode" in payload_data and payload_data["payment_mode"] is not None:
+        p_mode = str(payload_data["payment_mode"]).upper().strip()
+        if p_mode in ("QR_ONLY", "COIN_ONLY", "BOTH"):
+            payload["settings"]["payment_mode"] = p_mode
     target_slot = None
     for s in (device.slots or []):
         if s.slot_number == 1:

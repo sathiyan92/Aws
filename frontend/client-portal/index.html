@@ -289,6 +289,47 @@
                                 </div>
                             </div>
 
+                            <!-- Machine Payment Acceptance Mode (QR / Coin / Both) -->
+                            <div style="margin-top:1rem; padding:1rem; background:rgba(99,102,241,0.05); border:1px solid rgba(99,102,241,0.3); border-radius:var(--radius-md);">
+                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.6rem;">
+                                    <div>
+                                        <label style="font-size:0.88rem; font-weight:700; color:#818cf8; display:flex; align-items:center; gap:0.4rem; margin-bottom:0.2rem;">
+                                            💳 Payment Acceptance Mode
+                                        </label>
+                                        <p style="font-size:0.75rem; color:var(--text-secondary); margin:0;">
+                                            Select whether machine accepts UPI QR only, Physical Coin Acceptor only, or Both payment methods simultaneously.
+                                        </p>
+                                    </div>
+                                    <span id="clientPaymentModeBadge" class="badge" style="background:rgba(99,102,241,0.25); color:#a5b4fc; font-weight:700;">BOTH (QR + COIN)</span>
+                                </div>
+
+                                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-top:0.5rem;">
+                                    <label style="display:flex; align-items:center; gap:0.6rem; padding:0.6rem 0.8rem; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;" id="labelClientPayModeBoth">
+                                        <input type="radio" name="clientPaymentMode" id="clientPayModeBoth" value="BOTH" checked onchange="handleClientPaymentModeChange()">
+                                        <div>
+                                            <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">⚡ Both (QR + Coin)</div>
+                                            <div style="font-size:0.7rem; color:var(--text-muted);">Accept UPI QR & physical coins</div>
+                                        </div>
+                                    </label>
+
+                                    <label style="display:flex; align-items:center; gap:0.6rem; padding:0.6rem 0.8rem; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;" id="labelClientPayModeQR">
+                                        <input type="radio" name="clientPaymentMode" id="clientPayModeQR" value="QR_ONLY" onchange="handleClientPaymentModeChange()">
+                                        <div>
+                                            <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">📱 QR Code Only</div>
+                                            <div style="font-size:0.7rem; color:var(--text-muted);">Accept UPI QR payments only</div>
+                                        </div>
+                                    </label>
+
+                                    <label style="display:flex; align-items:center; gap:0.6rem; padding:0.6rem 0.8rem; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;" id="labelClientPayModeCoin">
+                                        <input type="radio" name="clientPaymentMode" id="clientPayModeCoin" value="COIN_ONLY" onchange="handleClientPaymentModeChange()">
+                                        <div>
+                                            <div style="font-size:0.82rem; font-weight:700; color:#e2e8f0;">🪙 Coin Only</div>
+                                            <div style="font-size:0.7rem; color:var(--text-muted);">Accept electronic coins only</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
                             <!-- Custom QR Code Upload & Preview -->
                             <div style="margin-top: 1.25rem; padding: 1.25rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);">
                                 <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.4rem;">

@@ -18,6 +18,7 @@ class QRSettingsResponse(BaseModel):
     is_active: bool
     stock_management_enabled: Optional[bool] = True
     current_stock: Optional[int] = 50
+    payment_mode: Optional[str] = "BOTH"
 
 
 class QRSettingsUpdateRequest(BaseModel):
@@ -29,6 +30,7 @@ class QRSettingsUpdateRequest(BaseModel):
     custom_qr_image_url: Optional[str] = Field(None, description="Custom QR image URL or base64 data URI")
     stock_management_enabled: Optional[bool] = Field(None, description="Toggle between Stock-Based Mode (true) and Without-Stock Mode (false)")
     current_stock: Optional[int] = Field(None, ge=0, le=50, description="Current machine inventory count (0-50 units)")
+    payment_mode: Optional[str] = Field(None, description="Payment acceptance mode: QR_ONLY, COIN_ONLY, or BOTH")
 
 
 class CoinSettingsResponse(BaseModel):

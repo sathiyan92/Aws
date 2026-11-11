@@ -156,6 +156,7 @@ def get_qr_settings(
     upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
     stock_mode = dev_settings.get("stock_management_enabled", True)
+    pay_mode = dev_settings.get("payment_mode", cfg.get("payment_mode", "BOTH"))
     slot1_stock = 50
     if device.slots:
         target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
@@ -175,6 +176,7 @@ def get_qr_settings(
         is_active=qr_mod.is_enabled,
         stock_management_enabled=stock_mode,
         current_stock=slot1_stock,
+        payment_mode=pay_mode,
     )
 
 
@@ -207,6 +209,11 @@ def update_qr_settings(
     if payload.current_stock is not None:
         cfg["current_stock"] = payload.current_stock
         update_data["current_stock"] = payload.current_stock
+    if payload.payment_mode is not None:
+        pm_val = str(payload.payment_mode).upper().strip()
+        if pm_val in ("QR_ONLY", "COIN_ONLY", "BOTH"):
+            cfg["payment_mode"] = pm_val
+            update_data["payment_mode"] = pm_val
     if payload.custom_qr_image_url is not None:
         raw_val = payload.custom_qr_image_url.strip() if payload.custom_qr_image_url else ""
         if raw_val.startswith("data:image/") or ("base64," in raw_val) or len(raw_val) > 300:
@@ -257,6 +264,7 @@ def update_qr_settings(
     upi_vpa = dev_settings.get("razorpay_upi_vpa") or cfg.get("upi_merchant_vpa", f"pay.{device.device_id.lower()}@icici")
 
     stock_mode = dev_settings.get("stock_management_enabled", cfg.get("stock_management_enabled", True))
+    pay_mode = dev_settings.get("payment_mode", cfg.get("payment_mode", "BOTH"))
     slot1_stock = 50
     if device.slots:
         target_slot = sorted(device.slots, key=lambda s: s.slot_number)[0]
@@ -276,6 +284,7 @@ def update_qr_settings(
         is_active=qr_mod.is_enabled,
         stock_management_enabled=stock_mode,
         current_stock=slot1_stock,
+        payment_mode=pay_mode,
     )
 
 

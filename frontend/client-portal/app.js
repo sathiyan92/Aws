@@ -566,6 +566,16 @@ async function loadQRData(deviceId) {
             if (stockToggle) stockToggle.checked = data.stock_management_enabled !== false;
             if (stockInput) stockInput.value = (data.current_stock !== undefined && data.current_stock !== null) ? data.current_stock : 50;
             if (typeof handleClientStockModeToggleChange === 'function') handleClientStockModeToggleChange();
+
+            const pMode = data.payment_mode || "BOTH";
+            if (pMode === "QR_ONLY") {
+                const r = document.getElementById("clientPayModeQR"); if (r) r.checked = true;
+            } else if (pMode === "COIN_ONLY") {
+                const r = document.getElementById("clientPayModeCoin"); if (r) r.checked = true;
+            } else {
+                const r = document.getElementById("clientPayModeBoth"); if (r) r.checked = true;
+            }
+            if (typeof handleClientPaymentModeChange === "function") handleClientPaymentModeChange();
             
             const qrUrlInput = document.getElementById('clientQrImageUrl');
             const quickInput = document.getElementById('clientSlotQuickQrInput');
@@ -1220,6 +1230,7 @@ async function handleSaveQRSettings(e) {
 
         const stockModeEnabled = document.getElementById('clientStockModeToggle') ? document.getElementById('clientStockModeToggle').checked : true;
         const stockQtyVal = document.getElementById('clientStockQtyInput') ? (parseInt(document.getElementById('clientStockQtyInput').value) || 0) : 50;
+        const selectedPayMode = document.querySelector('input[name="clientPaymentMode"]:checked')?.value || "BOTH";
 
         const payload = {
             upi_merchant_vpa: vpaVal,
@@ -1228,7 +1239,8 @@ async function handleSaveQRSettings(e) {
             dynamic_pricing_enabled: true,
             custom_qr_image_url: rawQr || null,
             stock_management_enabled: stockModeEnabled,
-            current_stock: stockQtyVal
+            current_stock: stockQtyVal,
+            payment_mode: selectedPayMode
         };
 
         const res = await fetchWithAuth(`${API_BASE}/vending/${state.selectedDeviceId}/qr/settings`, {
@@ -1246,7 +1258,8 @@ async function handleSaveQRSettings(e) {
                     custom_qr_payload: rawQr || undefined,
                     razorpay_upi_vpa: vpaVal,
                     stock_management_enabled: stockModeEnabled,
-                    current_stock: stockQtyVal
+                    current_stock: stockQtyVal,
+                    payment_mode: selectedPayMode
                 })
             });
         } catch (edgeErr) {
@@ -2511,5 +2524,25 @@ function handleClientStockModeToggleChange() {
         badge.textContent = "Without-Stock Mode (Unlimited)";
         badge.style.background = "rgba(245,158,11,0.2)";
         badge.style.color = "#fbbf24";
+    }
+}
+
+
+function handleClientPaymentModeChange() {
+    const val = document.querySelector('input[name="clientPaymentMode"]:checked')?.value || "BOTH";
+    const badge = document.getElementById("clientPaymentModeBadge");
+    if (!badge) return;
+    if (val === "QR_ONLY") {
+        badge.textContent = "QR CODE ONLY";
+        badge.style.background = "rgba(14,165,233,0.25)";
+        badge.style.color = "#38bdf8";
+    } else if (val === "COIN_ONLY") {
+        badge.textContent = "COIN ONLY";
+        badge.style.background = "rgba(245,158,11,0.25)";
+        badge.style.color = "#fbbf24";
+    } else {
+        badge.textContent = "BOTH (QR + COIN)";
+        badge.style.background = "rgba(99,102,241,0.25)";
+        badge.style.color = "#a5b4fc";
     }
 }
