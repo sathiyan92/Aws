@@ -362,7 +362,10 @@ function renderDevicesTable(filterType = null) {
 
         return `
             <tr>
-                <td class="mono-text" style="font-weight:700; font-size:0.9rem;">${d.device_id}</td>
+                <td class="mono-text" style="font-weight:700; font-size:0.9rem;">
+                    <div>${d.device_id}</div>
+                    <div style="font-size:0.72rem; color:var(--text-muted); font-weight:400; letter-spacing:0.5px;">MAC: ${d.mac_address || 'Unassigned'}</div>
+                </td>
                 <td>
                     <span class="badge ${d.device_type_code === 'VENDING_MACHINE' ? 'badge-module on' : 'badge-online'}">
                         ${d.device_type_code}

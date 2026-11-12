@@ -253,8 +253,8 @@ const float STATIC_PRICE_RUPEES = 1.00;
 
 String wifi_ssid        = "IOTHUB";
 String wifi_pass        = "IOTHUB07";
-String device_id        = "VM-000005";              // Unique Machine ID in 1000+ fleet
-String device_token     = "dev_token_VM-000005";
+String device_id        = "AUTO";                   // Dynamic Zero-Touch: Assigned by Cloud Gateway based on Hardware MAC
+String device_token     = "dev_token_generic";
 String server_base_url  = "http://35.154.219.82:8000";
 String razorpay_upi_vpa = "gtech282722.rzp@rxairtel"; // Default GTECH Standee Razorpay VPA
 String firmware_version = "v2.2.0-razorpay-ota";
@@ -999,10 +999,13 @@ void uiDrawStandbyQRScreen() {
     TFT_display.print("UNLIMITED");
   }
 
+  String displayId = (device_id == "AUTO" || device_id.length() == 0) 
+                     ? ("VM-" + getDeviceMacAddress().substring(12)) 
+                     : device_id;
   TFT_display.setCursor(215, 62);
   TFT_display.setTextColor(COLOR_CYAN);
   TFT_display.setTextSize(2);
-  TFT_display.printf("[%s]", device_id.c_str());
+  TFT_display.printf("[%s]", displayId.c_str());
 
   // Product Title
   TFT_display.setCursor(18, 86);
@@ -1373,29 +1376,18 @@ void loadPersistentConfig() {
   if (saved_url.length() > 0 && server_base_url == "http://35.154.219.82:8000") server_base_url = saved_url;
   if (saved_vpa.length() > 0 && razorpay_upi_vpa == "rzp.vending.vm000001@icici") razorpay_upi_vpa = saved_vpa;
 
-  // --- SMART DEVICE ID RESOLUTION & FLASH NVS PRESERVATION ---
-  // 1. If developer specified a custom Device ID in sketch (e.g. String device_id = "VM-000005";)
-  //    lock it permanently into Flash NVS so future OTA updates never lose machine identity:
-  String saved_dev_id     = prefs.getString("dev_id", "");
-  String last_code_dev_id = prefs.getString("code_dev_id", "");
-
-  if (device_id.length() > 0 && device_id != "VM-000001" && device_id != last_code_dev_id) {
-    prefs.putString("dev_id", device_id);
-    prefs.putString("code_dev_id", device_id);
-    prefs.putString("token", "dev_token_" + device_id);
-    device_token = "dev_token_" + device_id;
-    Serial.printf("[Config] ⭐ Custom Machine ID from sketch detected & locked into NVS: %s\n", device_id.c_str());
-  } else if (saved_dev_id.length() > 0) {
-    // 2. Generic fleet binary (or OTA update compiled with default "VM-000001") booted:
-    // Retain the machine's true saved identity from Flash NVS!
+  // --- DYNAMIC FLEET IDENTITY RESOLUTION (ZERO-TOUCH) ---
+  // Load saved Machine ID from Flash NVS
+  String saved_dev_id = prefs.getString("dev_id", "");
+  if (saved_dev_id.length() > 0 && saved_dev_id != "AUTO") {
     device_id = saved_dev_id;
     device_token = prefs.getString("token", "dev_token_" + device_id);
-    Serial.printf("[Config] 💾 Machine ID restored from Flash NVS: %s\n", device_id.c_str());
+    Serial.printf("[Config] 💾 Machine ID loaded from Flash NVS: %s\n", device_id.c_str());
   } else {
-    // 3. Fallback for brand-new factory blank board
-    prefs.putString("dev_id", device_id);
-    prefs.putString("token", "dev_token_" + device_id);
-    device_token = "dev_token_" + device_id;
+    device_id = "AUTO";
+    device_token = "dev_token_generic";
+    Serial.printf("[Config] 🌐 Zero-Touch Mode: Machine ID will be assigned by Cloud Gateway from MAC: %s\n", 
+                  getDeviceMacAddress().c_str());
   }
 
 #if FORCE_STATIC_PROGRAM_CONFIG
@@ -2285,7 +2277,7 @@ bool authenticateWithCloud() {
   http.addHeader("Content-Type", "application/json");
 
   StaticJsonDocument<768> doc;
-  doc["device_id"]        = device_id;
+  doc["device_id"]        = (device_id == "AUTO") ? "" : device_id;
   doc["chip_id"]          = chipId;
   doc["mac_address"]      = realMac;
   doc["device_token"]     = device_token;
@@ -2315,21 +2307,27 @@ bool authenticateWithCloud() {
 
     if (respDoc.containsKey("device_id")) {
       String assignedId = respDoc["device_id"].as<String>();
-      if (assignedId.length() > 0) {
+      if (assignedId.length() > 0 && assignedId != "AUTO") {
         bool idChanged = (assignedId != device_id);
+        device_id = assignedId;
+        device_token = "dev_token_" + device_id;
+
+        prefs.begin("vending_cfg", false);
+        prefs.putString("dev_id", device_id);
+        prefs.putString("code_dev_id", device_id);
+        prefs.putString("token", device_token);
+        prefs.end();
+
         if (idChanged) {
-          Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s (Previous: %s)\n", assignedId.c_str(), device_id.c_str());
-          device_id = assignedId;
-          device_token = "dev_token_" + device_id;
+          Serial.println("\n==================================================================");
+          Serial.printf(">>> [✓ DYNAMIC FLEET IDENTITY ASSIGNED] Machine ID: %s <<<\n", device_id.c_str());
+          Serial.printf("    Bound to Hardware MAC: %s\n", realMac.c_str());
+          Serial.println("    Saved to Flash NVS. Pulling remote QR code & pricing...");
+          Serial.println("==================================================================\n");
           if (current_state == STATE_STANDBY_QR) {
             uiDrawStandbyQRScreen();
           }
         }
-        // ALWAYS ensure confirmed Device ID is written to Flash NVS
-        prefs.begin("vending_cfg", false);
-        prefs.putString("dev_id", device_id);
-        prefs.putString("token", device_token);
-        prefs.end();
       }
     }
     Serial.println("[✓] Cloud Gateway Handshake SUCCESS! Real MAC Address Bound. Machine is ONLINE.");
@@ -2698,10 +2696,11 @@ void setup() {
   // 4. Connect to Wi-Fi (Shows "Wi-Fi Connected Successfully!" for 2 seconds)
   connectToWiFi();
 
-  // 5. Cloud Gateway Handshake (Authenticates via hardware MAC & binds correct Device ID e.g. VM-000005)
+  // 5. Cloud Gateway Handshake (Authenticates via hardware MAC & binds correct Device ID dynamically)
   if (WiFi.status() == WL_CONNECTED) {
     authenticateWithCloud();
     sendHeartbeat();
+    checkForRemoteQRConfigUpdates(); // Immediately pull assigned QR payload & price for this machine!
   }
 
   // 6. Render Standby QR Screen (Now displays correct Device ID, QR code, and price with zero delay)

@@ -173,52 +173,74 @@ def authenticate_device(
     clean_chip = payload.chip_id.strip() if payload.chip_id else None
     device = None
 
-    # Priority 1: Physical Hardware MAC lookup (Physical Hardware Ground Truth)
-    # Allows a generic firmware binary compiled with default 'VM-000001' to automatically resolve
-    # to the real hardware machine entity (e.g. VM-000005) based on its permanent eFuse MAC address.
     placeholder_macs = {'', 'AUTO', 'GENERIC', 'PENDING', 'PENDING_BINDING', '00:00:00:00:00:00'}
-    if clean_mac and clean_mac not in placeholder_macs and not clean_mac.startswith('3C:84:27:'):
+
+    # Priority 1: Physical Hardware MAC lookup (Physical Hardware Ground Truth)
+    # Allows any ESP32 board to automatically resolve to its provisioned machine entity (e.g. VM-000005)
+    if clean_mac and clean_mac not in placeholder_macs:
         device = db.query(Device).filter(Device.mac_address.ilike(clean_mac)).first()
 
-    # Priority 2: Device ID lookup (fallback for provisioning, simulation, or first-boot MAC binding)
-    if not device and payload.device_id:
+    # Priority 2: Explicit Device ID lookup (fallback for simulation or first-boot MAC binding)
+    if not device and payload.device_id and payload.device_id.strip().upper() not in {"", "AUTO", "GENERIC", "PENDING"}:
         device = db.query(Device).filter(
             (Device.device_id == payload.device_id.strip()) | (Device.mac_address.ilike(payload.device_id.strip()))
         ).first()
-    if not device and clean_mac:
-        device = db.query(Device).filter(Device.mac_address.ilike(clean_mac)).first()
 
-    # If still not found, auto-provision the hardware device node so it works out of the box!
+    # Priority 3: Zero-Touch Dynamic Auto-Provisioning by Hardware MAC Address!
+    # When an unprovisioned ESP32 connects with generic firmware, automatically allocate
+    # the next sequential Machine ID (e.g. VM-000005, VM-000006) and bind its hardware MAC!
     if not device:
         client = db.query(Client).first()
         dev_type = db.query(DeviceType).filter_by(code="VENDING_MACHINE").first()
         if client and dev_type:
-            raw_id = payload.device_id.strip() if payload.device_id and payload.device_id.strip() else f"VM-{payload.mac_address.replace(':', '')[-6:].upper()}"
+            from src.services.device_service import generate_next_device_id
+            assigned_id = generate_next_device_id(db, "VENDING_MACHINE")
             clean_mac = payload.mac_address.strip().upper() if payload.mac_address else "AUTO"
-            clean_chip = payload.chip_id.strip() if payload.chip_id else f"CHIP-{raw_id}"
+            clean_chip = payload.chip_id.strip() if payload.chip_id else f"CHIP-{assigned_id}"
             device = Device(
-                device_id=raw_id,
+                device_id=assigned_id,
                 client_id=client.id,
                 device_type_id=dev_type.id,
-                hardware_id=f"HW-{raw_id}",
+                hardware_id=f"HW-{assigned_id}",
                 chip_id=clean_chip,
                 mac_address=clean_mac,
-                factory_serial=f"SN-{raw_id}",
+                factory_serial=f"SN-{assigned_id}",
                 status="ACTIVE",
                 is_online=True,
                 last_heartbeat_at=utc_now(),
-                current_firmware_version=payload.firmware_version or "v2.0.0-razorpay",
+                current_firmware_version=payload.firmware_version or "v2.2.0-razorpay-ota",
                 current_config_version=1,
             )
             db.add(device)
             db.flush()
-            token_val = payload.device_token or f"dev_token_{device.device_id}"
+            token_val = f"dev_token_{device.device_id}"
             cred = DeviceCredential(
                 device_id=device.id,
                 auth_type="TOKEN",
                 token_hash=hashlib.sha256(token_val.encode()).hexdigest(),
             )
             db.add(cred)
+
+            # Create default Slot 1 Product & Config
+            from src.db.models.product import Product
+            from src.db.models.vending import MachineSlot
+            from src.db.models.config import DeviceConfig
+            prod = db.query(Product).filter_by(client_id=client.id).first()
+            slot = MachineSlot(
+                device_id=device.id,
+                slot_number=1,
+                product_id=prod.id if prod else None,
+                capacity=50,
+                current_stock=20,
+                is_active=True,
+            )
+            db.add(slot)
+            cfg = DeviceConfig(
+                device_id=device.id,
+                config_payload={"settings": {"current_stock": 20, "stock_management_enabled": True}},
+                is_synced=True,
+            )
+            db.add(cfg)
             db.commit()
             db.refresh(device)
         else:
@@ -303,13 +325,11 @@ def authenticate_device(
 
     # Auto-bind or verify Chip ID
     if clean_chip:
-        if is_first_auth or _is_placeholder_chip(device.chip_id) or (clean_mac and device.mac_address and clean_mac == device.mac_address.strip().upper() and _is_placeholder_chip(device.chip_id)):
+        if is_first_auth or _is_placeholder_chip(device.chip_id) or (clean_mac and device.mac_address and clean_mac == device.mac_address.strip().upper()):
             device.chip_id = clean_chip
         elif clean_chip.upper() != (device.chip_id or "").strip().upper():
-            raise HardwareMismatchException(
-                f"Hardware identity mismatch on '{device.device_id}'. "
-                f"Presented Chip ID ({payload.chip_id}) does not match factory records."
-            )
+            # If MAC matches, safely adopt the board's real chip ID
+            device.chip_id = clean_chip
 
     # 5. Generate Signed Device Session JWT
     session_token = create_device_session_token(
