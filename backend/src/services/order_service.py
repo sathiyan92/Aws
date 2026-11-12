@@ -798,6 +798,19 @@ def get_device_qr_config(db: Session, device_id: str, mac: Optional[str] = None)
     stock_enabled = settings.get("stock_management_enabled", True)
     stock_qty = target_slot.current_stock if (target_slot and target_slot.current_stock is not None) else settings.get("current_stock", 50)
 
+    # Effective payment mode honors physical module enablement
+    coin_mod = db.query(DeviceModule).filter_by(device_id=device.id, module_code="COIN_PAYMENT").first()
+    coin_enabled = coin_mod.is_enabled if coin_mod else True
+    qr_enabled = qr_mod.is_enabled if qr_mod else True
+
+    configured_pay_mode = settings.get("payment_mode", "BOTH")
+    if not coin_enabled:
+        effective_pay_mode = "QR_ONLY"
+    elif not qr_enabled:
+        effective_pay_mode = "COIN_ONLY"
+    else:
+        effective_pay_mode = configured_pay_mode
+
     return {
         "device_id": device.device_id,
         "razorpay_upi_vpa": vpa,
@@ -810,7 +823,9 @@ def get_device_qr_config(db: Session, device_id: str, mac: Optional[str] = None)
         "wifi_password": settings.get("wifi_password", ""),
         "stock_management_enabled": stock_enabled,
         "current_stock": stock_qty,
-        "payment_mode": settings.get("payment_mode", "BOTH"),
+        "payment_mode": effective_pay_mode,
+        "has_coin_payment": coin_enabled,
+        "has_qr_payment": qr_enabled,
     }
 
 

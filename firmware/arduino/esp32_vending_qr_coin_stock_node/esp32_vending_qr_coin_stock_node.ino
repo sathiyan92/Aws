@@ -2845,6 +2845,16 @@ void setup() {
 void processCoinAcceptorInput() {
   if (current_state == STATE_DISPENSING || is_refill_mode) return;
 
+  // 0. GUARD: If machine is set to QR_ONLY mode (Coin acceptance toggled OFF)
+  if (payment_mode.equalsIgnoreCase("QR_ONLY")) {
+    if (isr_new_coin_pulse) {
+      isr_new_coin_pulse = false;
+      Serial.printf("[! COIN IGNORED] Pulse on GPIO %d rejected: Machine is in QR_ONLY mode (Coin Acceptance Disabled).\n", PIN_COIN_INPUT);
+    }
+    isr_coin_pulses_received = 0; // Clear any pending pulses
+    return;
+  }
+
   // 1. When a new pulse arrives from coin acceptor, mirror it immediately to PIN_COIN_PULSE_OUT!
   if (isr_new_coin_pulse) {
     isr_new_coin_pulse = false;
@@ -2867,12 +2877,6 @@ void processCoinAcceptorInput() {
     Serial.printf(">>> 🪙 COIN TRANSACTION RECEIVED! %d Pulse(s) on GPIO %d <<<\n", totalPulses, PIN_COIN_INPUT);
     Serial.printf("    Payment Acceptance Mode: %s\n", payment_mode.c_str());
     Serial.println("******************************************************************");
-
-    // Guard: Check if machine is set to QR_ONLY mode
-    if (payment_mode.equalsIgnoreCase("QR_ONLY")) {
-      Serial.println("[! COIN IGNORED] Machine is currently in QR_ONLY mode. Coin payment rejected.");
-      return;
-    }
 
     // Guard: Check Out of Stock
     if (stock_management_enabled && current_stock <= 0) {

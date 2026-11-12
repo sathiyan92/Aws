@@ -292,6 +292,19 @@ def toggle_device_module(
         cfg_dict["modules"] = modules_map
         cfg_dict["config_version"] = new_version
 
+        settings_map = cfg_dict.get("settings", {})
+        if module_code == "COIN_PAYMENT":
+            if not is_enabled:
+                settings_map["payment_mode"] = "QR_ONLY"
+            elif settings_map.get("payment_mode") == "QR_ONLY":
+                settings_map["payment_mode"] = "BOTH"
+        elif module_code == "QR_PAYMENT":
+            if not is_enabled:
+                settings_map["payment_mode"] = "COIN_ONLY"
+            elif settings_map.get("payment_mode") == "COIN_ONLY":
+                settings_map["payment_mode"] = "BOTH"
+        cfg_dict["settings"] = settings_map
+
         payload_str = json.dumps(cfg_dict, sort_keys=True)
         checksum = hashlib.sha256(payload_str.encode()).hexdigest()
 
