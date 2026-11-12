@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>G-TECH Client Portal | IoT Fleet Management & Dynamic Visibility</title>
-    <link rel="icon" type="image/png" href="gtech-logo.png">
+    <link rel="icon" type="image/png" href="gtech-icon.png">
     <meta name="description" content="Multi-tenant client management portal with real-time dynamic hardware feature visibility and server-side policy enforcement for ESP32 vending fleets and RFID systems.">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="stylesheet" href="styles.css?v=5.0">
+    <link rel="stylesheet" href="styles.css?v=6.1">
 </head>
 <body>
     <div class="ambient-glow-1"></div>
@@ -19,12 +19,12 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="brand-icon logo-badge">
-                    <img src="gtech-logo.png" alt="G-TECH Logo">
+                <div class="brand-icon logo-badge" style="width: 42px; height: 42px; min-width: 42px; background: #ffffff; padding: 4px; border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.3); overflow: hidden;">
+                    <img src="gtech-icon.png" alt="G-TECH" style="width: 34px; height: 34px; object-fit: contain; display: block;">
                 </div>
                 <div class="brand-text">
-                    <h1 id="clientBrandTitle">G-TECH</h1>
-                    <p id="tenantSubTitle">Automations & Vending</p>
+                    <h1 id="clientBrandTitle" style="font-size: 1.15rem; font-weight: 800; letter-spacing: 0.5px; margin: 0; color: #ffffff;">G-TECH</h1>
+                    <p id="tenantSubTitle" style="font-size: 0.68rem; font-weight: 600; color: #38bdf8; text-transform: uppercase; margin: 0; letter-spacing: 0.5px;">Automations & Vending</p>
                 </div>
             </div>
 
@@ -1030,14 +1030,16 @@
 
     <!-- Login Overlay for Client User -->
     <div class="modal-overlay" id="loginModal">
-        <div class="modal-container" style="max-width: 420px; text-align: center;">
-            <div class="brand-icon logo-badge" style="margin: 0 auto 1rem auto; width: 68px; height: 68px; padding: 6px; border-radius: 14px;">
-                <img src="gtech-logo.png" alt="G-TECH Logo">
+        <div class="modal-container" style="max-width: 400px; text-align: center; position: relative; padding: 2rem 1.75rem 1.5rem 1.75rem;">
+            <!-- G-TECH Brand Showcase Card -->
+            <div style="background: #ffffff; border-radius: 14px; padding: 12px 18px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.35); margin-bottom: 1.25rem;">
+                <img src="gtech-logo.png" alt="G-TECH Automations / Robotics / Vending" style="width: 170px; height: auto; max-height: 135px; object-fit: contain; display: block; margin: 0 auto;">
             </div>
-            <h3 style="font-size: 1.35rem; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; margin-bottom: 0.25rem; color:#fff;">G-TECH Client Login</h3>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem;">
-                G-TECH Automations / Robotics / Vending Platform
-            </p>
+
+            <div style="margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800; color: #ffffff; letter-spacing: -0.01em;">Client Tenant Login</h3>
+                <p style="margin: 4px 0 0 0; font-size: 0.78rem; color: var(--text-muted);">Vending & Commercial Fleet Workspace</p>
+            </div>
 
             <form id="loginForm" style="text-align: left;">
                 <div class="form-group" style="margin-bottom: 1rem;">

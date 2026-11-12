@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>G-TECH Operations Portal | Multi-Tenant IoT Fleet</title>
-    <link rel="icon" type="image/png" href="gtech-logo.png">
+    <link rel="icon" type="image/png" href="gtech-icon.png">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="stylesheet" href="styles.css?v=5.0">
+    <link rel="stylesheet" href="styles.css?v=6.1">
 </head>
 <body>
     <!-- Ambient Background Glows -->
@@ -19,12 +19,12 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="brand-icon logo-badge">
-                    <img src="gtech-logo.png" alt="G-TECH Logo">
+                <div class="brand-icon logo-badge" style="width: 42px; height: 42px; min-width: 42px; background: #ffffff; padding: 4px; border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.3); overflow: hidden;">
+                    <img src="gtech-icon.png" alt="G-TECH" style="width: 34px; height: 34px; object-fit: contain; display: block;">
                 </div>
                 <div class="brand-text">
-                    <h1>G-TECH</h1>
-                    <p>Automations & Vending</p>
+                    <h1 style="font-size: 1.15rem; font-weight: 800; letter-spacing: 0.5px; margin: 0; color: #ffffff;">G-TECH</h1>
+                    <p style="font-size: 0.68rem; font-weight: 600; color: #38bdf8; text-transform: uppercase; margin: 0; letter-spacing: 0.5px;">Automations & Vending</p>
                 </div>
             </div>
 
@@ -1503,20 +1503,20 @@
 
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
-        <div class="modal-container" style="max-width:420px; position:relative;">
-            <div style="text-align:center; padding-top:0.5rem;">
-                <div class="brand-icon logo-badge" style="margin: 0 auto 0.75rem auto; width:58px; height:58px; padding:5px; border-radius:12px;">
-                    <img src="gtech-logo.png" alt="G-TECH Logo">
-                </div>
+        <div class="modal-container" style="max-width: 400px; position: relative; padding: 2rem 1.75rem 1.5rem 1.75rem; text-align: center;">
+            <button class="modal-close" onclick="closeModal('modalLogin')" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; line-height: 1;">&times;</button>
+            
+            <!-- G-TECH Brand Showcase Card -->
+            <div style="background: #ffffff; border-radius: 14px; padding: 12px 18px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.35); margin-bottom: 1.25rem;">
+                <img src="gtech-logo.png" alt="G-TECH Automations / Robotics / Vending" style="width: 170px; height: auto; max-height: 135px; object-fit: contain; display: block; margin: 0 auto;">
             </div>
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border:none; padding:0 0 0.5rem 0;">
-                <div>
-                    <h3 style="margin:0; font-size:1.2rem; font-weight:800; color:#fff;">G-TECH Operations Login</h3>
-                    <p style="margin:2px 0 0 0; font-size:0.75rem; color:var(--text-muted);">Automations / Robotics / Vending Platform</p>
-                </div>
-                <button class="modal-close" onclick="closeModal('modalLogin')">&times;</button>
+
+            <div style="margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; font-size: 1.25rem; font-weight: 800; color: #ffffff; letter-spacing: -0.01em;">Operations Portal Login</h3>
+                <p style="margin: 4px 0 0 0; font-size: 0.78rem; color: var(--text-muted);">IoT Commercial Fleet Management</p>
             </div>
-            <form id="loginForm" autocomplete="off">
+
+            <form id="loginForm" autocomplete="off" style="text-align: left;">
                 <div class="modal-body">
                     <div class="form-group">
                         <label>Username or Email</label>
