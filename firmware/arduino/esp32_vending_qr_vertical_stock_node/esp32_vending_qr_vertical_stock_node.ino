@@ -1232,9 +1232,30 @@ void loadPersistentConfig() {
   if (saved_url.length() > 0 && server_base_url == "http://35.154.219.82:8000") server_base_url = saved_url;
   if (saved_vpa.length() > 0 && razorpay_upi_vpa == "rzp.vending.vm000001@icici") razorpay_upi_vpa = saved_vpa;
 
-  // Always load machine Device ID and Token from Flash NVS
-  device_id    = prefs.getString("dev_id", device_id);
-  device_token = prefs.getString("token", "dev_token_" + device_id);
+  // --- SMART DEVICE ID RESOLUTION & FLASH NVS PRESERVATION ---
+  // 1. If developer specified a custom Device ID in sketch (e.g. String device_id = "VM-000005";)
+  //    lock it permanently into Flash NVS so future OTA updates never lose machine identity:
+  String saved_dev_id     = prefs.getString("dev_id", "");
+  String last_code_dev_id = prefs.getString("code_dev_id", "");
+
+  if (device_id.length() > 0 && device_id != "VM-000001" && device_id != last_code_dev_id) {
+    prefs.putString("dev_id", device_id);
+    prefs.putString("code_dev_id", device_id);
+    prefs.putString("token", "dev_token_" + device_id);
+    device_token = "dev_token_" + device_id;
+    Serial.printf("[Config] ⭐ Custom Machine ID from sketch detected & locked into NVS: %s\n", device_id.c_str());
+  } else if (saved_dev_id.length() > 0) {
+    // 2. Generic fleet binary (or OTA update compiled with default "VM-000001") booted:
+    // Retain the machine's true saved identity from Flash NVS!
+    device_id = saved_dev_id;
+    device_token = prefs.getString("token", "dev_token_" + device_id);
+    Serial.printf("[Config] 💾 Machine ID restored from Flash NVS: %s\n", device_id.c_str());
+  } else {
+    // 3. Fallback for brand-new factory blank board
+    prefs.putString("dev_id", device_id);
+    prefs.putString("token", "dev_token_" + device_id);
+    device_token = "dev_token_" + device_id;
+  }
 
 #if FORCE_STATIC_PROGRAM_CONFIG
   // Enforce Static Program QR, Name, and Price from Arduino IDE code!
@@ -1907,7 +1928,9 @@ void checkForRemoteQRConfigUpdates() {
 
   WiFiClient client;
   HTTPClient http;
-  String endpoint = server_base_url + "/api/v1/orders/qr-config/" + device_id;
+  // If machine has not yet loaded its assigned ID, query by hardware MAC address
+  String queryIdentifier = (device_id == "VM-000001") ? getDeviceMacAddress() : device_id;
+  String endpoint = server_base_url + "/api/v1/orders/qr-config/" + queryIdentifier;
 
   http.setConnectTimeout(2500);
   http.setTimeout(2500);
@@ -1938,6 +1961,20 @@ void checkForRemoteQRConfigUpdates() {
       String newTrId     = doc.containsKey("tr_id") ? doc["tr_id"].as<String>() : "";
       String newWifiSsid = doc.containsKey("wifi_ssid") ? doc["wifi_ssid"].as<String>() : "";
       String newWifiPass = doc.containsKey("wifi_password") ? doc["wifi_password"].as<String>() : "";
+      bool deviceIdChanged = false;
+      if (doc.containsKey("device_id")) {
+        String cloudDevId = doc["device_id"].as<String>();
+        if (cloudDevId.length() > 0 && cloudDevId != device_id) {
+          Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDevId.c_str());
+          device_id = cloudDevId;
+          device_token = "dev_token_" + device_id;
+          deviceIdChanged = true;
+          prefs.begin("vending_cfg", false);
+          prefs.putString("dev_id", device_id);
+          prefs.putString("token", device_token);
+          prefs.end();
+        }
+      }
 
 #if FORCE_STATIC_PROGRAM_CONFIG
       // In Static Program Mode, protect local code overrides from cloud revert
@@ -2028,7 +2065,7 @@ void checkForRemoteQRConfigUpdates() {
         bool stockModeChanged = (hasStockModeInCloud && newStockMode != stock_management_enabled);
         bool stockQtyChanged  = (hasStockQtyInCloud && newStockQty >= 0 && newStockQty != current_stock);
 
-        if (newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id) || stockModeChanged || stockQtyChanged) {
+        if (deviceIdChanged || newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id) || stockModeChanged || stockQtyChanged) {
           Serial.println("\n==================================================================");
           Serial.println(">>> \U0001f4f6 REMOTE CONFIG UPDATE RECEIVED FROM PORTAL / CLOUD! <<<     ");
           Serial.printf("  New VPA        : %s\n", newVpa.c_str());
@@ -2131,18 +2168,21 @@ bool authenticateWithCloud() {
 
     if (respDoc.containsKey("device_id")) {
       String assignedId = respDoc["device_id"].as<String>();
-      if (assignedId.length() > 0 && assignedId != device_id) {
-        Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s (Previous: %s)\n", assignedId.c_str(), device_id.c_str());
-        device_id = assignedId;
-        device_token = "dev_token_" + device_id;
+      if (assignedId.length() > 0) {
+        bool idChanged = (assignedId != device_id);
+        if (idChanged) {
+          Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s (Previous: %s)\n", assignedId.c_str(), device_id.c_str());
+          device_id = assignedId;
+          device_token = "dev_token_" + device_id;
+          if (current_state == STATE_STANDBY_QR) {
+            uiDrawStandbyQRScreen();
+          }
+        }
+        // ALWAYS ensure confirmed Device ID is written to Flash NVS
         prefs.begin("vending_cfg", false);
         prefs.putString("dev_id", device_id);
         prefs.putString("token", device_token);
         prefs.end();
-        // Immediately refresh LCD Screen so it shows the new cloud-assigned Device ID!
-        if (current_state == STATE_STANDBY_QR) {
-          uiDrawStandbyQRScreen();
-        }
       }
     }
     Serial.println("[✓] Cloud Gateway Handshake SUCCESS! Real MAC Address Bound. Machine is ONLINE.");
@@ -2363,7 +2403,8 @@ void checkForPendingOTA() {
 
   WiFiClient client;
   HTTPClient http;
-  String endpoint = server_base_url + "/api/v1/ota/check/" + device_id;
+  String queryOtaId = (device_id == "VM-000001") ? getDeviceMacAddress() : device_id;
+  String endpoint = server_base_url + "/api/v1/ota/check/" + queryOtaId;
 
   http.setConnectTimeout(6000);
   http.setTimeout(6000);

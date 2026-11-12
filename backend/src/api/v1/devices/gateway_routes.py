@@ -168,14 +168,25 @@ def authenticate_device(
     - 24-hour device session token (JWT with role DEVICE_CLIENT).
     - Device-scoped MQTT broker topics and connection parameters.
     """
-    # 1. Lookup Device (By Device ID, or fallback to factory-registered MAC address)
+    # 1. Lookup Device (Physical Hardware MAC address first, or fallback to Device ID)
+    clean_mac = payload.mac_address.strip().upper() if payload.mac_address else None
+    clean_chip = payload.chip_id.strip() if payload.chip_id else None
     device = None
-    if payload.device_id:
+
+    # Priority 1: Physical Hardware MAC lookup (Physical Hardware Ground Truth)
+    # Allows a generic firmware binary compiled with default 'VM-000001' to automatically resolve
+    # to the real hardware machine entity (e.g. VM-000005) based on its permanent eFuse MAC address.
+    placeholder_macs = {'', 'AUTO', 'GENERIC', 'PENDING', 'PENDING_BINDING', '00:00:00:00:00:00'}
+    if clean_mac and clean_mac not in placeholder_macs and not clean_mac.startswith('3C:84:27:'):
+        device = db.query(Device).filter(Device.mac_address.ilike(clean_mac)).first()
+
+    # Priority 2: Device ID lookup (fallback for provisioning, simulation, or first-boot MAC binding)
+    if not device and payload.device_id:
         device = db.query(Device).filter(
             (Device.device_id == payload.device_id.strip()) | (Device.mac_address.ilike(payload.device_id.strip()))
         ).first()
-    if not device and payload.mac_address:
-        device = db.query(Device).filter(Device.mac_address.ilike(payload.mac_address.strip())).first()
+    if not device and clean_mac:
+        device = db.query(Device).filter(Device.mac_address.ilike(clean_mac)).first()
 
     # If still not found, auto-provision the hardware device node so it works out of the box!
     if not device:
