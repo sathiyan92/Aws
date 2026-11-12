@@ -371,7 +371,10 @@ def list_devices(
     if stale_devices:
         for d in stale_devices:
             d.is_online = False
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
     if status_filter:
         query = query.filter(Device.status == status_filter)
@@ -401,7 +404,10 @@ def get_device_by_id_or_device_id(
         hb_utc = ensure_utc(device.last_heartbeat_at)
         if (utc_now() - hb_utc).total_seconds() > 120:
             device.is_online = False
-            db.commit()
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
 
     context.assert_device_access(device)
     return device

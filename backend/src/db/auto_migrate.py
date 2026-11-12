@@ -17,7 +17,26 @@ def run_auto_migrations(engine) -> None:
     try:
         import src.db.models
         from src.db.base import Base
-        Base.metadata.create_all(bind=engine)
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as e:
+            logger.warning(f"[AutoMigrate] Base.metadata.create_all notice: {e}")
+
+        # Explicitly ensure discovered_hardware table exists
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS discovered_hardware (
+                    id VARCHAR(36) PRIMARY KEY,
+                    mac_address VARCHAR(32) UNIQUE NOT NULL,
+                    chip_id VARCHAR(64),
+                    ip_address VARCHAR(45),
+                    firmware_version VARCHAR(32) DEFAULT 'v2.2.0-razorpay-ota',
+                    suggested_device_id VARCHAR(32),
+                    last_seen_at DATETIME NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL
+                )
+            """))
 
         inspector = inspect(engine)
         existing_tables = set(inspector.get_table_names())

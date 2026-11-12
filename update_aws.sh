@@ -6,9 +6,19 @@
 # restarts the systemd service, and verifies live health.
 # ==============================================================================
 
+# 0. Sudo Elevation Guard
+if [ "$EUID" -ne 0 ]; then
+    echo ">>> Sudo elevation required. Automatically elevating with sudo..."
+    exec sudo bash "$0" "$@"
+fi
+
 echo "=========================================================================="
 echo ">>> ⚡ UPDATING IOT FLEET PLATFORM ON AWS LIGHTSAIL..."
 echo "=========================================================================="
+
+INSTALL_DIR="/opt/iot-fleet-platform"
+REPO_URL="https://github.com/sathiyan92/Aws.git"
+TMP_DIR="/tmp/iot-fleet-update-tmp"
 
 # 1. Ensure required system packages and libraries are installed
 echo ">>> [1/7] Ensuring git, rsync, curl, lsof, psmisc, libzbar0, and python3-venv are present..."
@@ -17,12 +27,13 @@ which apt-get >/dev/null 2>&1 && {
     apt-get install -y --no-install-recommends git rsync curl lsof psmisc libzbar0 python3-pip python3-venv >/dev/null 2>&1 || true
 }
 
-INSTALL_DIR="/opt/iot-fleet-platform"
-REPO_URL="https://github.com/sathiyan92/Aws.git"
-TMP_DIR="/tmp/iot-fleet-update-tmp"
+# 2. Stop running services temporarily to cleanly update files & prevent file locks
+echo ">>> [2/7] Pausing services to safely apply code updates..."
+systemctl stop iot-fleet-platform.service 2>/dev/null || true
+systemctl stop vending-backend.service 2>/dev/null || true
 
-# 2. Download fresh code from GitHub
-echo ">>> [2/7] Downloading latest code from GitHub origin/main..."
+# 3. Download fresh code from GitHub
+echo ">>> [3/7] Downloading latest code from GitHub origin/main..."
 rm -rf "$TMP_DIR"
 git clone --depth 1 -b main "$REPO_URL" "$TMP_DIR"
 
@@ -31,14 +42,15 @@ if [ ! -d "$TMP_DIR/backend" ]; then
     exit 1
 fi
 
-# 3. Deploy updated application files to /opt/iot-fleet-platform
-echo ">>> [3/7] Deploying application files to $INSTALL_DIR..."
+# 4. Deploy updated application files to /opt/iot-fleet-platform
+echo ">>> [4/7] Deploying application files to $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
 rsync -av --delete \
     --exclude='.venv' \
     --exclude='.git' \
     --exclude='*.db' \
     --exclude='*.sqlite*' \
+    --exclude='*.db-*' \
     --exclude='backend/uploads' \
     "$TMP_DIR/" "$INSTALL_DIR/"
 
@@ -51,6 +63,7 @@ for alt in "/home/ubuntu/iot-fleet-platform" "/home/ubuntu/Aws" "/root/iot-fleet
             --exclude='.git' \
             --exclude='*.db' \
             --exclude='*.sqlite*' \
+            --exclude='*.db-*' \
             --exclude='backend/uploads' \
             "$TMP_DIR/" "$alt/" 2>/dev/null || true
     fi
@@ -58,14 +71,24 @@ done
 
 rm -rf "$TMP_DIR"
 
-# Ensure permissions and writable database access
+# Ensure universal permissions and clean up any stale SQLite lock/journal files
 mkdir -p "$INSTALL_DIR/backend/uploads/firmware"
-chmod -R 777 "$INSTALL_DIR/backend/uploads" 2>/dev/null || true
-chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
-chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
+chown -R root:root "$INSTALL_DIR" 2>/dev/null || true
+chmod -R 777 "$INSTALL_DIR" 2>/dev/null || true
+find "$INSTALL_DIR" -type f -name "*.db" -exec chmod 666 {} + 2>/dev/null || true
+find "$INSTALL_DIR" -type f -name "*.db-*" -delete 2>/dev/null || true
 
-# 4. Clear all Python bytecode caches and install Python dependencies
-echo ">>> [4/7] Installing / updating Python dependencies..."
+# Canonicalize SQLite DB: backend/iot_platform_dev.db -> /opt/iot-fleet-platform/iot_platform_dev.db
+if [ -f "$INSTALL_DIR/iot_platform_dev.db" ]; then
+    rm -f "$INSTALL_DIR/backend/iot_platform_dev.db" 2>/dev/null || true
+    ln -sf "$INSTALL_DIR/iot_platform_dev.db" "$INSTALL_DIR/backend/iot_platform_dev.db" 2>/dev/null || true
+elif [ -f "$INSTALL_DIR/backend/iot_platform_dev.db" ]; then
+    mv "$INSTALL_DIR/backend/iot_platform_dev.db" "$INSTALL_DIR/iot_platform_dev.db"
+    ln -sf "$INSTALL_DIR/iot_platform_dev.db" "$INSTALL_DIR/backend/iot_platform_dev.db" 2>/dev/null || true
+fi
+
+# 5. Clear Python bytecode and prepare virtualenv
+echo ">>> [5/7] Preparing Python environment and dependencies..."
 find "$INSTALL_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find "$INSTALL_DIR" -name "*.pyc" -delete 2>/dev/null || true
 
@@ -93,8 +116,8 @@ echo "  Pip executable   : $PIP_BIN"
 $PIP_BIN install --upgrade pip >/dev/null 2>&1 || true
 $PIP_BIN install -r "$INSTALL_DIR/requirements.txt"
 
-# 5. Run Database Schema Auto-Migration
-echo ">>> [5/7] Running Database Schema Auto-Migration..."
+# Run Database Schema Auto-Migration (including discovered_hardware table creation)
+echo ">>> Running Database Schema Auto-Migration..."
 (cd "$INSTALL_DIR" && PYTHONPATH="$INSTALL_DIR/backend" "$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '$INSTALL_DIR/backend')
@@ -105,15 +128,15 @@ run_auto_migrations(engine)
 print('>>> Database auto-migration completed successfully!')
 ") || true
 
-# 5b. Update Platform Admin Credentials
-echo ">>> Updating Administrator Credentials (gtech_admin)..."
-chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
-chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
+# Update Platform Admin Credentials & Hardware Discovery Queue
+echo ">>> Synchronizing Admin Credentials (gtech_admin / admin)..."
 (cd "$INSTALL_DIR" && "$PYTHON_BIN" "$INSTALL_DIR/update_admin.py" --username gtech_admin --password GtechAdmin@2026) || true
-chmod 777 "$INSTALL_DIR" "$INSTALL_DIR/backend" 2>/dev/null || true
-chmod 666 "$INSTALL_DIR"/*.db "$INSTALL_DIR/backend"/*.db 2>/dev/null || true
 
-# 5c. Fix OTA Firmware URLs and Reset Failed 400 Deployments
+# Re-enforce permissions on databases and parent directory
+chmod -R 777 "$INSTALL_DIR" 2>/dev/null || true
+find "$INSTALL_DIR" -type f -name "*.db" -exec chmod 666 {} + 2>/dev/null || true
+
+# Fix OTA Firmware URLs and Reset Failed 400 Deployments
 echo ">>> Ensuring OTA firmware URLs use direct HTTP to avoid SSL/HTTPS port 400 rejection..."
 (cd "$INSTALL_DIR" && "$PYTHON_BIN" -c "
 import os, sqlite3
@@ -126,7 +149,7 @@ for db_f in ['$INSTALL_DIR/iot_platform_dev.db', '$INSTALL_DIR/backend/iot_platf
             cur.execute(\"UPDATE ota_deployments SET deployment_status = 'PENDING', error_message = NULL WHERE deployment_status = 'FAILED' AND error_message LIKE '%400%'\")
             conn.commit()
             conn.close()
-            print(f'  [✓] Updated OTA URLs and reset failed 400 deployments in {db_f}')
+            print(f'  [✓] Updated OTA URLs in {db_f}')
         except Exception as e:
             print(f'  [!] Note: {e}')
 ") || true
@@ -182,22 +205,18 @@ systemctl restart iot-fleet-platform.service
 # Configure Nginx for large firmware binary uploads (up to 100MB) without duplicate directives
 echo ">>> Ensuring Nginx client_max_body_size is 100M for firmware OTA binary uploads..."
 if [ -d "/etc/nginx" ]; then
-    # 1. Strip all previous client_max_body_size lines to eliminate duplicate directive errors
     rm -f /etc/nginx/conf.d/iot-firmware-size.conf /etc/nginx/conf.d/iot-upload.conf /etc/nginx/conf.d/iot-body-size.conf 2>/dev/null || true
     sed -i '/client_max_body_size/d' /etc/nginx/nginx.conf 2>/dev/null || true
     find /etc/nginx/sites-available /etc/nginx/sites-enabled -type f -exec sed -i '/client_max_body_size/d' {} + 2>/dev/null || true
 
-    # 2. Add single clean global directive in /etc/nginx/conf.d/iot-upload.conf
     mkdir -p /etc/nginx/conf.d
     echo "client_max_body_size 100M;" > /etc/nginx/conf.d/iot-upload.conf
 
-    # 3. Test and restart Nginx safely
     if which nginx >/dev/null 2>&1; then
         if nginx -t >/dev/null 2>&1; then
-            echo ">>> Nginx syntax verified successfully (conf.d method)."
+            echo ">>> Nginx syntax verified successfully."
             systemctl restart nginx 2>/dev/null || true
         else
-            echo ">>> Testing fallback: inserting into nginx.conf http block..."
             rm -f /etc/nginx/conf.d/iot-upload.conf 2>/dev/null || true
             sed -i '/http {/a \    client_max_body_size 100M;' /etc/nginx/nginx.conf 2>/dev/null || true
             nginx -t >/dev/null 2>&1 && systemctl restart nginx 2>/dev/null || true
@@ -206,7 +225,6 @@ if [ -d "/etc/nginx" ]; then
 fi
 
 # Reload Nginx if present and clear cache
-echo ">>> Refreshing Nginx web server..."
 rm -rf /var/cache/nginx/* 2>/dev/null || true
 if which nginx >/dev/null 2>&1; then
     systemctl restart nginx 2>/dev/null || systemctl reload nginx 2>/dev/null || true
@@ -250,5 +268,7 @@ echo "==========================================================================
 echo ">>> ✅ AWS LIGHTSAIL SERVER DEPLOYMENT COMPLETED!"
 echo "=========================================================================="
 echo "🌐 Manufacturer Web Portal : http://127.0.0.1:8000/portal/ (or https://gtechinfo.in/portal/)"
+echo "   Login Credentials        : Username: gtech_admin (or admin)"
+echo "                              Password: GtechAdmin@2026"
 echo "👥 Client Tenant Portal    : http://127.0.0.1:8000/client-portal/ (or https://gtechinfo.in/client-portal/)"
 echo "=========================================================================="

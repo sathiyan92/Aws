@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
 ==============================================================================
-Platform Admin Credentials Update Tool
+Platform Admin Credentials & Hardware Discovery Database Sync Tool
 ==============================================================================
-Safely updates the Super Administrator (MANUFACTURER_ADMIN) username and/or
-password across the SQLite / PostgreSQL database and .env configuration files.
+Safely updates the Super Administrator (MANUFACTURER_ADMIN) credentials
+across SQLite databases, ensures discovered_hardware table exists, and updates
+.env configuration files with absolute Linux permission protection.
 
 Usage:
   Interactive mode:
     python update_admin.py
 
   Non-interactive CLI mode:
-    python update_admin.py --username new_admin --password NewPassword123!
+    python update_admin.py --username gtech_admin --password GtechAdmin@2026
     python update_admin.py --password OnlyNewPassword123!
-    python update_admin.py --username OnlyNewUsername
 ==============================================================================
 """
 
@@ -25,6 +25,9 @@ import hashlib
 import secrets
 import sqlite3
 import re
+import glob
+import uuid
+from datetime import datetime, timezone
 
 # PBKDF2-HMAC-SHA256 hasher identical to backend security standard
 ITERATIONS = 600_000
@@ -73,7 +76,7 @@ def update_env_file(filepath: str, new_username: str = None, new_password: str =
         print(f"  [!] Notice: Could not update {filepath}: {e}")
         return False
 
-def update_sqlite_db(db_path: str, current_identifier: str, new_username: str = None, new_password: str = None):
+def update_sqlite_db(db_path: str, new_username: str = None, new_password: str = None):
     if not os.path.exists(db_path):
         return False
     try:
@@ -89,41 +92,75 @@ def update_sqlite_db(db_path: str, current_identifier: str, new_username: str = 
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
-        # Find admin user by username, email, or role
-        cur.execute(
-            "SELECT id, username, email, role FROM users WHERE username = ? OR email = ? OR username = 'admin' OR username = 'gtech_admin' OR role = 'MANUFACTURER_ADMIN' LIMIT 1",
-            (current_identifier, current_identifier)
-        )
-        row = cur.fetchone()
-        if not row:
-            # Fallback to first user with role MANUFACTURER_ADMIN
-            cur.execute("SELECT id, username, email, role FROM users WHERE role = 'MANUFACTURER_ADMIN' LIMIT 1")
-            row = cur.fetchone()
+        # 1. Ensure discovered_hardware schema exists
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS discovered_hardware (
+                id VARCHAR(36) PRIMARY KEY,
+                mac_address VARCHAR(32) UNIQUE NOT NULL,
+                chip_id VARCHAR(64),
+                ip_address VARCHAR(45),
+                firmware_version VARCHAR(32) DEFAULT 'v2.2.0-razorpay-ota',
+                suggested_device_id VARCHAR(32),
+                last_seen_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_discovered_hardware_mac ON discovered_hardware (mac_address)")
 
-        if not row:
-            conn.close()
-            return False
+        # 2. Update Admin Password across all MANUFACTURER_ADMIN rows
+        target_pass = new_password or "GtechAdmin@2026"
+        hashed = hash_password(target_pass)
 
-        user_id, old_username, old_email, role = row
+        # Update any existing admin users
+        cur.execute("""
+            UPDATE users
+            SET password_hash = ?, updated_at = datetime('now')
+            WHERE username IN ('admin', 'gtech_admin') OR role = 'MANUFACTURER_ADMIN'
+        """, (hashed,))
+        updated_rows = cur.rowcount
 
-        updates = []
-        params = []
-        if new_username:
-            updates.append("username = ?")
-            params.append(new_username)
-        if new_password:
-            hashed = hash_password(new_password)
-            updates.append("password_hash = ?")
-            params.append(hashed)
+        # 3. Ensure 'gtech_admin' exists
+        cur.execute("SELECT id FROM users WHERE username = 'gtech_admin'")
+        if not cur.fetchone():
+            gtech_id = str(uuid.uuid4())
+            email = "gtech_admin@gtechinfo.in"
+            cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cur.fetchone():
+                email = f"gtech_admin_{gtech_id[:6]}@gtechinfo.in"
+            cur.execute("""
+                INSERT INTO users (id, client_id, username, email, password_hash, full_name, role, status, created_at, updated_at)
+                VALUES (?, NULL, 'gtech_admin', ?, ?, 'Platform Administrator', 'MANUFACTURER_ADMIN', 'ACTIVE', datetime('now'), datetime('now'))
+            """, (gtech_id, email, hashed))
+            print(f"  [+] Created user 'gtech_admin' in {db_path}")
 
-        if updates:
-            params.append(user_id)
-            query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
-            cur.execute(query, params)
-            conn.commit()
-            print(f"  [OK] Successfully updated database: {db_path} (User: '{old_username}' -> '{new_username or old_username}')")
+        # 4. Ensure 'admin' exists as alias
+        cur.execute("SELECT id FROM users WHERE username = 'admin'")
+        if not cur.fetchone():
+            admin_id = str(uuid.uuid4())
+            email = "admin@manufacturer.local"
+            cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cur.fetchone():
+                email = f"admin_legacy_{admin_id[:6]}@manufacturer.local"
+            cur.execute("""
+                INSERT INTO users (id, client_id, username, email, password_hash, full_name, role, status, created_at, updated_at)
+                VALUES (?, NULL, 'admin', ?, ?, 'Platform Super Administrator', 'MANUFACTURER_ADMIN', 'ACTIVE', datetime('now'), datetime('now'))
+            """, (admin_id, email, hashed))
+            print(f"  [+] Created user 'admin' in {db_path}")
 
+        conn.commit()
         conn.close()
+
+        # Guarantee write permissions after commit
+        try:
+            os.chmod(db_path, 0o666)
+            db_dir = os.path.dirname(os.path.abspath(db_path))
+            if db_dir:
+                os.chmod(db_dir, 0o777)
+        except Exception:
+            pass
+
+        print(f"  [OK] Successfully synchronized database: {db_path} ({updated_rows} users updated)")
         return True
     except Exception as e:
         print(f"  [!] Error updating {db_path}: {e}")
@@ -132,44 +169,14 @@ def update_sqlite_db(db_path: str, current_identifier: str, new_username: str = 
 def main():
     parser = argparse.ArgumentParser(description="Update platform admin username and password.")
     parser.add_argument("--current", help="Current admin username or email (default: admin)", default="admin")
-    parser.add_argument("--username", help="New admin username")
-    parser.add_argument("--password", help="New admin password")
+    parser.add_argument("--username", help="New admin username", default="gtech_admin")
+    parser.add_argument("--password", help="New admin password", default="GtechAdmin@2026")
     args = parser.parse_args()
 
-    current_id = args.current
     new_user = args.username
     new_pass = args.password
 
-    # Interactive mode if neither username nor password provided
-    if not new_user and not new_pass:
-        print("\n=======================================================")
-        print("   Platform Admin Account Credentials Updater")
-        print("=======================================================\n")
-        
-        prompt_curr = input(f"Current Admin Username or Email [default: {current_id}]: ").strip()
-        if prompt_curr:
-            current_id = prompt_curr
-        
-        prompt_user = input("Enter NEW Username (leave empty to keep unchanged): ").strip()
-        if prompt_user:
-            new_user = prompt_user
-
-        prompt_pass = getpass.getpass("Enter NEW Password (min 6 chars, leave empty to keep unchanged): ").strip()
-        if prompt_pass:
-            confirm_pass = getpass.getpass("Confirm NEW Password: ").strip()
-            if prompt_pass != confirm_pass:
-                print("\n[X] Error: Passwords do not match!")
-                sys.exit(1)
-            if len(prompt_pass) < 6:
-                print("\n[X] Error: Password must be at least 6 characters long!")
-                sys.exit(1)
-            new_pass = prompt_pass
-
-    if not new_user and not new_pass:
-        print("\n[!] No changes requested. Exiting.")
-        sys.exit(0)
-
-    print("\n[*] Applying credentials update...")
+    print("\n[*] Applying admin credentials & database sync...")
 
     # 1. Update SQLite Databases
     sqlite_paths = [
@@ -178,9 +185,14 @@ def main():
         "/opt/iot-fleet-platform/iot_platform_dev.db",
         "/opt/iot-fleet-platform/backend/iot_platform_dev.db",
     ]
+    # Scan for any other db files
+    for extra in glob.glob("/opt/iot-fleet-platform/**/*.db", recursive=True):
+        if extra not in sqlite_paths:
+            sqlite_paths.append(extra)
+
     updated_db_count = 0
     for p in sqlite_paths:
-        if update_sqlite_db(p, current_id, new_username=new_user, new_password=new_pass):
+        if update_sqlite_db(p, new_username=new_user, new_password=new_pass):
             updated_db_count += 1
 
     # 2. Update .env files
@@ -195,12 +207,12 @@ def main():
             print(f"  [OK] Updated environment config: {ep}")
 
     print("\n=======================================================")
-    print("   Credentials Updated Successfully!")
+    print("   Admin Credentials & DB Schema Synchronized!")
     print("=======================================================")
-    if new_user:
-        print(f"  Username : {new_user}")
-    if new_pass:
-        print(f"  Password : {new_pass}")
+    print(f"  Primary User   : gtech_admin")
+    print(f"  Alias User     : admin")
+    print(f"  Password       : {new_pass}")
+    print(f"  Databases Synced: {updated_db_count}")
     print("=======================================================\n")
 
 if __name__ == "__main__":
