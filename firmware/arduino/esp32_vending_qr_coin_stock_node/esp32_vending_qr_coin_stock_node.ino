@@ -1094,9 +1094,9 @@ void uiDrawStandbyQRScreen() {
   String displayId = (device_id == "AUTO" || device_id.length() == 0) 
                      ? ("VM-" + getDeviceMacAddress().substring(12)) 
                      : device_id;
-  TFT_display.setCursor(170, 100);
+  TFT_display.setCursor(185, 62);
   TFT_display.setTextColor(COLOR_CYAN);
-  TFT_display.setTextSize(2);
+  TFT_display.setTextSize(1);
   TFT_display.printf("[%s]", displayId.c_str());
 
   // Product Title
@@ -1142,30 +1142,39 @@ void uiDrawStandbyQRScreen() {
     TFT_display.drawRect(20, 148, 280, 226, COLOR_AMBER);
 
     // Coin Graphic Circle
-    TFT_display.fillCircle(160, 215, 45, COLOR_HEADER);
-    TFT_display.drawCircle(160, 215, 45, COLOR_YELLOW);
-    TFT_display.drawCircle(160, 215, 43, COLOR_AMBER);
-    TFT_display.setTextColor(COLOR_YELLOW);
-    TFT_display.setTextSize(4);
-    TFT_display.setCursor(140, 202);
-    TFT_display.print("Rs");
+    TFT_display.fillCircle(160, 208, 46, COLOR_HEADER);
+    TFT_display.drawCircle(160, 208, 46, COLOR_YELLOW);
+    TFT_display.drawCircle(160, 208, 44, COLOR_AMBER);
 
-    TFT_display.setCursor(35, 275);
+    // Display coin price inside the coin circle! (e.g. "Rs 5" or "Rs 2")
+    String coinAmtStr = "Rs " + String((int)(pending_amount_rupee + 0.05f));
+    int cTextW = coinAmtStr.length() * 18;
+    TFT_display.setTextColor(COLOR_YELLOW);
+    TFT_display.setTextSize(3);
+    TFT_display.setCursor(160 - (cTextW / 2), 198);
+    TFT_display.print(coinAmtStr);
+
+    TFT_display.setCursor(46, 268);
     TFT_display.setTextColor(COLOR_WHITE);
     TFT_display.setTextSize(2);
     TFT_display.print("INSERT COIN TO VEND");
 
-    TFT_display.setCursor(55, 305);
+    // Price Box Banner
+    TFT_display.fillRect(35, 294, 250, 36, COLOR_DARK_GRAY);
+    TFT_display.drawRect(35, 294, 250, 36, COLOR_GREEN);
+    String pStr = "PRICE: Rs " + String(pending_amount_rupee, 2);
+    int pW = pStr.length() * 12;
     TFT_display.setTextColor(COLOR_GREEN);
     TFT_display.setTextSize(2);
-    TFT_display.printf("Price: Rs %.2f", pending_amount_rupee);
+    TFT_display.setCursor(160 - (pW / 2), 304);
+    TFT_display.print(pStr);
 
-    TFT_display.setCursor(45, 338);
+    TFT_display.setCursor(35, 340);
     TFT_display.setTextColor(COLOR_CYAN);
     TFT_display.setTextSize(1);
-    TFT_display.print("Coin Acceptor Active (GPIO 34 -> 25)");
+    TFT_display.printf("Coin Acceptor Active (GPIO %d -> GPIO %d)", PIN_COIN_INPUT, PIN_COIN_PULSE_OUT);
 
-    TFT_display.setCursor(65, 355);
+    TFT_display.setCursor(55, 356);
     TFT_display.setTextColor(COLOR_GRAY);
     TFT_display.setTextSize(1);
     TFT_display.print("Accepts Rs 1, Rs 2 & Rs 5 Coins");
@@ -1175,15 +1184,15 @@ void uiDrawStandbyQRScreen() {
 
     // Subtext under QR
     if (payment_mode.equalsIgnoreCase("BOTH")) {
-      TFT_display.setCursor(30, 342);
+      TFT_display.setCursor(22, 342);
       TFT_display.setTextColor(COLOR_YELLOW);
       TFT_display.setTextSize(1);
-      TFT_display.print("OR INSERT PHYSICAL COIN IN SLOT");
+      TFT_display.printf("SCAN UPI QR OR INSERT Rs %.2f IN COINS", pending_amount_rupee);
 
-      TFT_display.setCursor(45, 358);
+      TFT_display.setCursor(30, 358);
       TFT_display.setTextColor(COLOR_WHITE);
       TFT_display.setTextSize(1);
-      TFT_display.print("Scan UPI QR OR Drop Coin to Vend");
+      TFT_display.print("Scan UPI QR OR Drop Coin to Auto-Vend");
     } else {
       TFT_display.setCursor(45, 342);
       TFT_display.setTextColor(COLOR_WHITE);
@@ -2263,6 +2272,7 @@ void checkForRemoteQRConfigUpdates() {
         prefs.putString("cust_qr", custom_qr_code);
         prefs.putString("tr_id", dynamic_tr_id);
         prefs.putInt("cfg_ver", current_config_version);
+        prefs.putString("pay_mode", payment_mode);
         prefs.end();
 
         // Display update notice on ILI9488 LCD Screen (Vertical 320x480)
@@ -2306,10 +2316,16 @@ void checkForRemoteQRConfigUpdates() {
         bool hasStockQtyInCloud = doc.containsKey("current_stock");
         int newStockQty = hasStockQtyInCloud ? doc["current_stock"].as<int>() : current_stock;
 
+        bool hasPayModeInCloud = doc.containsKey("payment_mode");
+        String newPayMode = hasPayModeInCloud ? doc["payment_mode"].as<String>() : payment_mode;
+        newPayMode.trim();
+        newPayMode.toUpperCase();
+
         bool stockModeChanged = (hasStockModeInCloud && newStockMode != stock_management_enabled);
         bool stockQtyChanged  = (hasStockQtyInCloud && newStockQty >= 0 && newStockQty != current_stock);
+        bool payModeChanged   = (hasPayModeInCloud && newPayMode.length() > 0 && !newPayMode.equalsIgnoreCase(payment_mode));
 
-        if (deviceIdChanged || newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id) || stockModeChanged || stockQtyChanged) {
+        if (deviceIdChanged || newVersion != current_config_version || newQrString != custom_qr_code || newVpa != razorpay_upi_vpa || newAmount != pending_amount_rupee || newName != pending_product_name || (newTrId.length() > 0 && newTrId != dynamic_tr_id) || stockModeChanged || stockQtyChanged || payModeChanged) {
           Serial.println("\n==================================================================");
           Serial.println(">>> \U0001f4f6 REMOTE CONFIG UPDATE RECEIVED FROM PORTAL / CLOUD! <<<     ");
           Serial.printf("  New VPA        : %s\n", newVpa.c_str());
@@ -2324,10 +2340,13 @@ void checkForRemoteQRConfigUpdates() {
 
           current_config_version   = newVersion;
           razorpay_upi_vpa         = newVpa;
-          pending_amount_rupee     = newAmount;
+          if (newAmount > 0) pending_amount_rupee = newAmount;
           pending_product_name     = newName;
           stock_management_enabled = newStockMode;
           current_stock            = newStockQty;
+          if (hasPayModeInCloud && newPayMode.length() > 0) {
+            payment_mode = newPayMode;
+          }
 
           if (!newQrString.startsWith("data:") && newQrString.length() <= 250) {
             custom_qr_code = newQrString;
@@ -2347,6 +2366,7 @@ void checkForRemoteQRConfigUpdates() {
           prefs.putInt("cfg_ver", current_config_version);
           prefs.putBool("stock_en", stock_management_enabled);
           prefs.putInt("stock", current_stock);
+          prefs.putString("pay_mode", payment_mode);
           prefs.end();
 
           // Immediately Refresh LCD Screen with updated mode & QR!
