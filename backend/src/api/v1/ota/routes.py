@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile, Request, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from src.db.session import get_db
-from src.db.base import utc_now, generate_uuid
+from src.db.base import utc_now, ensure_utc, generate_uuid
 from src.db.models.device import Device, DeviceType
 from src.db.models.firmware import FirmwareVersion, OTADeployment
 from src.db.models.audit import AuditLog
@@ -53,7 +53,7 @@ def serialize_firmware(f: FirmwareVersion) -> FirmwareVersionResponse:
         binary_url=f.binary_url,
         changelog=f.changelog,
         is_deprecated=f.is_deprecated,
-        created_at=f.created_at,
+        created_at=ensure_utc(f.created_at) or utc_now(),
     )
 
 
@@ -66,9 +66,9 @@ def serialize_deployment(d: OTADeployment) -> OTADeploymentResponse:
         version_string=d.firmware_version.version_string if d.firmware_version else "UNKNOWN",
         deployment_status=d.deployment_status,
         error_message=d.error_message,
-        started_at=d.started_at,
-        completed_at=d.completed_at,
-        created_at=d.created_at,
+        started_at=ensure_utc(d.started_at),
+        completed_at=ensure_utc(d.completed_at),
+        created_at=ensure_utc(d.created_at) or utc_now(),
     )
 
 

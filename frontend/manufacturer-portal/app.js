@@ -1135,10 +1135,32 @@ function showToast(message, type = "info") {
     }, 4000);
 }
 
+function parseUtcDate(isoStr) {
+    if (!isoStr) return null;
+    let s = String(isoStr).trim();
+    if (s.includes(" ") && !s.includes("T")) {
+        s = s.replace(" ", "T");
+    }
+    // If timestamp has no timezone offset ('Z', '+', or '-HH:MM'), append 'Z' so browser treats it as UTC
+    if (s.includes("T") && !s.endsWith("Z") && !s.includes("+") && !s.match(/-\d{2}:\d{2}$/)) {
+        s += "Z";
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+}
+
 function formatDate(isoStr) {
     if (!isoStr) return "—";
-    const d = new Date(isoStr);
-    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const d = parseUtcDate(isoStr);
+    if (!d) return String(isoStr);
+    return d.toLocaleString("en-IN", { 
+        day: "numeric",
+        month: "short", 
+        hour: "2-digit", 
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true
+    });
 }
 
 // ==============================================================================

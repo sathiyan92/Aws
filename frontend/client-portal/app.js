@@ -1310,7 +1310,7 @@ function renderCoinTransactions(txs) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><span class="mono-text">${t.transaction_number || t.id.slice(0, 8)}</span></td>
-            <td>${new Date(t.transacted_at).toLocaleTimeString()}</td>
+            <td>${(function(s){ if(!s) return '—'; let str=String(s).trim(); if(str.includes(' ') && !str.includes('T')) str=str.replace(' ','T'); if(str.includes('T') && !str.endsWith('Z') && !str.includes('+')) str+='Z'; const d=new Date(str); return isNaN(d.getTime()) ? str : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }); })(t.transacted_at)}</td>
             <td><strong style="color: var(--warning);">₹${t.amount_in_rupees.toFixed(2)}</strong></td>
             <td>${t.coins_inserted || 1} pulse(s)</td>
             <td>Vault OK</td>
