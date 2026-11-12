@@ -1094,9 +1094,9 @@ void uiDrawStandbyQRScreen() {
   String displayId = (device_id == "AUTO" || device_id.length() == 0) 
                      ? ("VM-" + getDeviceMacAddress().substring(12)) 
                      : device_id;
-  TFT_display.setCursor(185, 62);
+  TFT_display.setCursor(185, 90);
   TFT_display.setTextColor(COLOR_CYAN);
-  TFT_display.setTextSize(1);
+  TFT_display.setTextSize(2);
   TFT_display.printf("[%s]", displayId.c_str());
 
   // Product Title
