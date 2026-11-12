@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Any, TYPE_CHECKING
 from sqlalchemy import String, Text, Boolean, Integer, DateTime, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.db.base import Base, TimestampMixin, generate_uuid
+from src.db.base import Base, TimestampMixin, generate_uuid, utc_now
 
 if TYPE_CHECKING:
     from src.db.models.client import Client
@@ -157,3 +157,23 @@ class DeviceCredential(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<DeviceCredential(device_id='{self.device_id}', auth_type='{self.auth_type}', revoked={self.is_revoked})>"
+
+
+class DiscoveredHardware(Base, TimestampMixin):
+    """
+    Queue of newly discovered, unassigned physical ESP32 hardware boards.
+    Automatically populated when an unregistered MAC address connects.
+    Operators can assign a permanent Machine ID via the Manufacturer Portal.
+    """
+    __tablename__ = "discovered_hardware"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    mac_address: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    chip_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    firmware_version: Mapped[Optional[str]] = mapped_column(String(32), default="v2.2.0-razorpay-ota", nullable=True)
+    suggested_device_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<DiscoveredHardware(mac='{self.mac_address}', suggested='{self.suggested_device_id}')>"

@@ -186,65 +186,58 @@ def authenticate_device(
             (Device.device_id == payload.device_id.strip()) | (Device.mac_address.ilike(payload.device_id.strip()))
         ).first()
 
-    # Priority 3: Zero-Touch Dynamic Auto-Provisioning by Hardware MAC Address!
-    # When an unprovisioned ESP32 connects with generic firmware, automatically allocate
-    # the next sequential Machine ID (e.g. VM-000005, VM-000006) and bind its hardware MAC!
+    # Priority 3: Hardware Discovery Queue (Zero-Touch Onboarding)
+    # When an unassigned ESP32 connects, place it in the Discovery Queue and allow
+    # the operator to enter or select a custom Machine ID (e.g. VM-000005) in the Web Dashboard.
     if not device:
-        client = db.query(Client).first()
-        dev_type = db.query(DeviceType).filter_by(code="VENDING_MACHINE").first()
-        if client and dev_type:
+        if clean_mac and clean_mac not in placeholder_macs:
+            from src.db.models.device import DiscoveredHardware
             from src.services.device_service import generate_next_device_id
-            assigned_id = generate_next_device_id(db, "VENDING_MACHINE")
-            clean_mac = payload.mac_address.strip().upper() if payload.mac_address else "AUTO"
-            clean_chip = payload.chip_id.strip() if payload.chip_id else f"CHIP-{assigned_id}"
-            device = Device(
-                device_id=assigned_id,
-                client_id=client.id,
-                device_type_id=dev_type.id,
-                hardware_id=f"HW-{assigned_id}",
-                chip_id=clean_chip,
-                mac_address=clean_mac,
-                factory_serial=f"SN-{assigned_id}",
-                status="ACTIVE",
-                is_online=True,
-                last_heartbeat_at=utc_now(),
-                current_firmware_version=payload.firmware_version or "v2.2.0-razorpay-ota",
-                current_config_version=1,
-            )
-            db.add(device)
-            db.flush()
-            token_val = f"dev_token_{device.device_id}"
-            cred = DeviceCredential(
-                device_id=device.id,
-                auth_type="TOKEN",
-                token_hash=hashlib.sha256(token_val.encode()).hexdigest(),
-            )
-            db.add(cred)
+            disc = db.query(DiscoveredHardware).filter(DiscoveredHardware.mac_address.ilike(clean_mac)).first()
+            client_ip = request.client.host if request.client else None
+            if not disc:
+                suggested = generate_next_device_id(db, "VENDING_MACHINE")
+                disc = DiscoveredHardware(
+                    mac_address=clean_mac,
+                    chip_id=clean_chip,
+                    ip_address=client_ip,
+                    firmware_version=payload.firmware_version or "v2.2.0-razorpay-ota",
+                    suggested_device_id=suggested,
+                    last_seen_at=utc_now(),
+                )
+                db.add(disc)
+                db.commit()
+            else:
+                disc.last_seen_at = utc_now()
+                if client_ip:
+                    disc.ip_address = client_ip
+                if clean_chip:
+                    disc.chip_id = clean_chip
+                db.commit()
 
-            # Create default Slot 1 Product & Config
-            from src.db.models.product import Product
-            from src.db.models.vending import MachineSlot
-            from src.db.models.config import DeviceConfig
-            prod = db.query(Product).filter_by(client_id=client.id).first()
-            slot = MachineSlot(
-                device_id=device.id,
-                slot_number=1,
-                product_id=prod.id if prod else None,
-                capacity=50,
-                current_stock=20,
-                is_active=True,
-            )
-            db.add(slot)
-            cfg = DeviceConfig(
-                device_id=device.id,
-                config_payload={"settings": {"current_stock": 20, "stock_management_enabled": True}},
-                is_synced=True,
-            )
-            db.add(cfg)
-            db.commit()
-            db.refresh(device)
-        else:
-            raise DeviceAuthFailedException(f"Device '{payload.device_id}' or MAC '{payload.mac_address}' is not registered on this platform.")
+        # Return a pending state response so ESP32 knows it is in discovery queue waiting for web assignment
+        return DeviceAuthResponse(
+            session_token="",
+            token_type="Bearer",
+            expires_in_seconds=0,
+            device_id="PENDING",
+            client_id=None,
+            product_type="VENDING_MACHINE",
+            active_config_version=0,
+            mqtt=MQTTConnectionDetails(
+                broker_uri=f"mqtts://{request.url.hostname or 'localhost'}:8883",
+                port=8883,
+                client_id=f"DISCOVERED-{clean_mac.replace(':', '')[-6:] if clean_mac else 'PENDING'}",
+                topics=MQTTTopicMap(
+                    heartbeat="devices/pending/heartbeat",
+                    telemetry="devices/pending/telemetry",
+                    config="devices/pending/config",
+                    commands="devices/pending/commands",
+                    ota="devices/pending/ota",
+                ),
+            ),
+            server_time=utc_now(),
+        )
 
     if device.status == "SUSPENDED":
         raise ForbiddenException(f"Device '{device.device_id}' is suspended. Please contact platform operations.")

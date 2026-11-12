@@ -25,7 +25,11 @@ from src.api.v1.devices.schemas import (
     DeviceDeleteResponse,
     DeviceWiFiUpdateRequest,
     DeviceWiFiResponse,
+    DiscoveredHardwareResponse,
+    DiscoveredHardwareListResponse,
+    ClaimDiscoveredHardwareRequest,
 )
+from src.db.base import utc_now
 
 router = APIRouter(prefix="/devices", tags=["Device Fleet Management"])
 
@@ -136,6 +140,166 @@ def get_fleet_devices(
         total=len(devices),
         devices=[serialize_device(d) for d in devices],
     )
+
+
+
+@router.get("/discovery-queue", response_model=DiscoveredHardwareListResponse)
+def list_discovered_hardware(
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN", "MANUFACTURER_SUPPORT")),
+):
+    """
+    [Manufacturer Only] List all unassigned ESP32 hardware boards waiting to be claimed.
+    """
+    from src.db.models.device import DiscoveredHardware
+    items = db.query(DiscoveredHardware).order_by(DiscoveredHardware.last_seen_at.desc()).all()
+    return DiscoveredHardwareListResponse(
+        total=len(items),
+        items=[
+            DiscoveredHardwareResponse(
+                id=item.id,
+                mac_address=item.mac_address,
+                chip_id=item.chip_id,
+                ip_address=item.ip_address,
+                firmware_version=item.firmware_version,
+                suggested_device_id=item.suggested_device_id,
+                last_seen_at=item.last_seen_at,
+                created_at=item.created_at,
+            )
+            for item in items
+        ]
+    )
+
+
+@router.post("/discovery-queue/claim", response_model=DeviceResponse)
+def claim_discovered_hardware(
+    payload: ClaimDiscoveredHardwareRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+):
+    """
+    [Manufacturer Only] Claim a discovered ESP32 hardware board, bind its MAC address,
+    and assign it a permanent Machine ID (e.g. VM-000005) chosen by the operator online.
+    """
+    from src.db.models.device import DiscoveredHardware, Device, DeviceType, DeviceCredential
+    from src.db.models.client import Client
+    from src.db.models.vending import Product, MachineSlot
+    from src.db.models.config import DeviceConfig
+    from src.core.exceptions.errors import BadRequestException
+    import hashlib
+
+    clean_mac = payload.mac_address.strip().upper()
+    target_id = payload.device_id.strip()
+
+    # Find the discovery record
+    disc = db.query(DiscoveredHardware).filter(DiscoveredHardware.mac_address.ilike(clean_mac)).first()
+    chip_id = disc.chip_id if disc and disc.chip_id else f"CHIP-{target_id}"
+
+    # Check if a device with this target_id already exists
+    existing_dev = db.query(Device).filter(Device.device_id == target_id).first()
+    if existing_dev:
+        # Check if MAC matches or is placeholder
+        placeholder_macs = {'', 'AUTO', 'GENERIC', 'PENDING', 'PENDING_BINDING', '00:00:00:00:00:00'}
+        if existing_dev.mac_address and existing_dev.mac_address.strip().upper() not in placeholder_macs and existing_dev.mac_address.strip().upper() != clean_mac:
+            raise BadRequestException(f"Machine ID '{target_id}' is already assigned to MAC '{existing_dev.mac_address}'. Choose a different ID or edit that machine first.")
+        # Bind this physical MAC to the existing device!
+        existing_dev.mac_address = clean_mac
+        existing_dev.chip_id = chip_id
+        existing_dev.status = "ACTIVE"
+        device = existing_dev
+    else:
+        # Determine client and product family
+        client = None
+        if payload.client_id:
+            client = db.query(Client).filter(Client.id == payload.client_id).first()
+        if not client:
+            client = db.query(Client).first()
+
+        dev_type = db.query(DeviceType).filter_by(code=payload.device_type_code or "VENDING_MACHINE").first()
+        if not dev_type:
+            dev_type = db.query(DeviceType).first()
+
+        device = Device(
+            device_id=target_id,
+            client_id=client.id if client else None,
+            device_type_id=dev_type.id,
+            hardware_id=f"HW-{target_id}",
+            chip_id=chip_id,
+            mac_address=clean_mac,
+            factory_serial=f"SN-{target_id}",
+            status="ACTIVE",
+            is_online=True,
+            last_heartbeat_at=utc_now(),
+            current_firmware_version=disc.firmware_version if disc and disc.firmware_version else "v2.2.0-razorpay-ota",
+            current_config_version=1,
+        )
+        db.add(device)
+        db.flush()
+
+        # Add credential
+        token_val = f"dev_token_{device.device_id}"
+        cred = DeviceCredential(
+            device_id=device.id,
+            auth_type="TOKEN",
+            token_hash=hashlib.sha256(token_val.encode()).hexdigest(),
+        )
+        db.add(cred)
+
+        # Slot 1 & Config
+        prod = db.query(Product).filter_by(client_id=client.id).first() if client else None
+        slot = MachineSlot(
+            device_id=device.id,
+            client_id=client.id if client else None,
+            slot_number=1,
+            slot_code=f"SLOT-{device.device_id}-1",
+            product_id=prod.id if prod else None,
+            capacity=50,
+            current_stock=20,
+            is_active=True,
+        )
+        db.add(slot)
+        import json
+        cfg_payload = {"settings": {"current_stock": 20, "stock_management_enabled": True}}
+        checksum = hashlib.sha256(json.dumps(cfg_payload, sort_keys=True).encode()).hexdigest()
+        cfg = DeviceConfig(
+            device_id=device.id,
+            client_id=device.client_id,
+            active_version=1,
+            config_payload=cfg_payload,
+            checksum=checksum,
+            is_synced=True,
+        )
+        db.add(cfg)
+
+    # Remove from discovery queue
+    if disc:
+        db.delete(disc)
+
+    db.commit()
+    db.refresh(device)
+    return serialize_device(device)
+
+
+@router.delete("/discovery-queue/{identifier}")
+def dismiss_discovered_hardware(
+    identifier: str,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(require_roles("MANUFACTURER_ADMIN")),
+):
+    """
+    [Manufacturer Only] Dismiss or remove an item from the Discovery Queue.
+    """
+    from src.db.models.device import DiscoveredHardware
+    disc = db.query(DiscoveredHardware).filter(
+        (DiscoveredHardware.id == identifier) | (DiscoveredHardware.mac_address.ilike(identifier.strip()))
+    ).first()
+    if disc:
+        mac = disc.mac_address
+        db.delete(disc)
+        db.commit()
+        return {"status": "dismissed", "mac_address": mac}
+    return {"status": "not_found", "message": f"Discovered hardware '{identifier}' not found."}
 
 
 @router.get("/{device_id}", response_model=DeviceResponse)

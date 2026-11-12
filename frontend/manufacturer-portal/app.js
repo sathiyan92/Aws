@@ -232,6 +232,7 @@ async function loadDevices() {
 
 async function loadFleet() {
     await loadDevices();
+    await loadDiscoveryQueue();
     await loadStats();
     renderOverview();
     if (state.activeTab === "devices") renderDevicesTable();
@@ -2946,3 +2947,123 @@ function handlePaymentModeChange() {
         badge.style.color = "#a5b4fc";
     }
 }
+
+
+// ==============================================================================
+// HARDWARE DISCOVERY & ZERO-TOUCH MACHINE ASSIGNMENT
+// ==============================================================================
+async function loadDiscoveryQueue() {
+    try {
+        const res = await apiRequest("/devices/discovery-queue");
+        const banner = document.getElementById("discoveryBanner");
+        const countEl = document.getElementById("discoveryCount");
+        const container = document.getElementById("discoveryItemsContainer");
+        if (!banner || !container) return;
+
+        const items = res?.items || [];
+        if (items.length === 0) {
+            banner.style.display = "none";
+            return;
+        }
+
+        banner.style.display = "block";
+        if (countEl) countEl.innerText = items.length;
+
+        container.innerHTML = items.map(item => `
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:0.85rem 1.15rem; flex-wrap:wrap; gap:0.75rem;">
+                <div>
+                    <div style="display:flex; align-items:center; gap:0.6rem;">
+                        <span style="font-family:monospace; font-weight:700; font-size:1.05rem; color:#fff; letter-spacing:0.5px;">${item.mac_address}</span>
+                        <span style="font-size:0.7rem; background:rgba(59,130,246,0.25); color:#60a5fa; border:1px solid rgba(59,130,246,0.4); padding:2px 6px; border-radius:4px; font-weight:600;">NEW HARDWARE</span>
+                    </div>
+                    <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:4px;">
+                        Chip: <span style="color:#e2e8f0;">${item.chip_id || 'ESP32'}</span> &bull; 
+                        IP: <span style="color:#e2e8f0;">${item.ip_address || 'Connected'}</span> &bull; 
+                        Suggested: <span style="color:#38bdf8; font-weight:700;">${item.suggested_device_id || 'VM-XXXXXX'}</span>
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <button class="btn btn-primary btn-sm" onclick="openClaimDiscoveryModal('${item.mac_address}', '${item.chip_id || ''}', '${item.suggested_device_id || ''}')" style="font-weight:600;">
+                        ⚡ Assign Machine ID
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="dismissDiscoveredDevice('${item.id}')" title="Dismiss from Queue" style="padding:0.35rem 0.65rem; color:var(--text-muted);">
+                        &times;
+                    </button>
+                </div>
+            </div>
+        `).join("");
+    } catch (e) {
+        console.warn("Notice checking discovery queue:", e);
+    }
+}
+window.loadDiscoveryQueue = loadDiscoveryQueue;
+
+function openClaimDiscoveryModal(mac, chip, suggestedId) {
+    document.getElementById("claimMac").value = mac;
+    document.getElementById("claimChip").value = chip;
+    document.getElementById("claimDeviceId").value = suggestedId || "";
+
+    const clientSelect = document.getElementById("claimClient");
+    if (clientSelect && state.clients) {
+        clientSelect.innerHTML = state.clients.map(c => `
+            <option value="${c.id}">${c.name}</option>
+        `).join("");
+    }
+    openModal("modalClaimDiscovery");
+}
+window.openClaimDiscoveryModal = openClaimDiscoveryModal;
+
+async function dismissDiscoveredDevice(id) {
+    try {
+        await apiRequest(`/devices/discovery-queue/${id}`, { method: "DELETE" });
+        showToast("Discovered board dismissed", "info");
+        await loadDiscoveryQueue();
+    } catch (e) {
+        showToast("Error dismissing device", "error");
+    }
+}
+window.dismissDiscoveredDevice = dismissDiscoveredDevice;
+
+document.addEventListener("DOMContentLoaded", () => {
+    const claimForm = document.getElementById("claimDiscoveryForm");
+    if (claimForm) {
+        claimForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const mac = document.getElementById("claimMac").value.trim();
+            const devId = document.getElementById("claimDeviceId").value.trim().toUpperCase();
+            const clientId = document.getElementById("claimClient").value;
+            const typeCode = document.getElementById("claimType").value;
+
+            if (!devId) {
+                showToast("Please enter a Machine ID (e.g. VM-000005)", "error");
+                return;
+            }
+
+            try {
+                const res = await apiRequest("/devices/discovery-queue/claim", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        mac_address: mac,
+                        device_id: devId,
+                        client_id: clientId || undefined,
+                        device_type_code: typeCode || "VENDING_MACHINE"
+                    })
+                });
+                closeModal("modalClaimDiscovery");
+                showToast(`⚡ Machine ${res.device_id} assigned and activated! Node will sync in seconds.`, "success");
+                await loadDiscoveryQueue();
+                await loadDevices();
+                await loadFleet();
+            } catch (err) {
+                showToast(err.message || "Failed to assign Machine ID", "error");
+            }
+        });
+    }
+
+    // Auto-poll discovery queue every 8 seconds
+    setInterval(() => {
+        if (state.token && (state.activeTab === "devices" || state.activeTab === "overview")) {
+            loadDiscoveryQueue();
+        }
+    }, 8000);
+});

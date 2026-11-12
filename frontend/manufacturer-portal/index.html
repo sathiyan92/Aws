@@ -287,6 +287,24 @@
                      TAB: ALL DEVICES
                      ========================================== -->
                 <section id="tab-devices" class="tab-pane">
+
+                    <!-- Dynamic Hardware Discovery Queue Banner -->
+                    <div id="discoveryBanner" style="display:none; background: linear-gradient(135deg, rgba(30, 58, 138, 0.4), rgba(88, 28, 135, 0.4)); border: 1px solid rgba(96, 165, 250, 0.5); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                            <div>
+                                <div style="display:flex; align-items:center; gap:0.5rem; font-weight:700; font-size:1.05rem; color:#60a5fa;">
+                                    <span style="width:10px; height:10px; border-radius:50%; background:#3b82f6; box-shadow:0 0 10px #3b82f6; display:inline-block;"></span>
+                                    <span>✨ New Hardware Discovered (<span id="discoveryCount">0</span> Unassigned)</span>
+                                </div>
+                                <p style="margin:0.25rem 0 0; font-size:0.85rem; color:var(--text-secondary);">
+                                    Physical ESP32 boards powered on and waiting for Machine ID assignment.
+                                </p>
+                            </div>
+                        </div>
+                        <div id="discoveryItemsContainer" style="margin-top:1rem; display:flex; flex-direction:column; gap:0.75rem;">
+                            <!-- Injected via JavaScript -->
+                        </div>
+                    </div>
                     <div class="card-panel">
                         <div class="panel-header">
                             <div>
@@ -854,6 +872,50 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modalProvision')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Provision Node</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Modal: Claim Discovered Hardware -->
+    <div id="modalClaimDiscovery" class="modal-overlay">
+        <div class="modal-container" style="max-width:520px;">
+            <div class="modal-header">
+                <h3>⚡ Assign Machine ID to Discovered Hardware</h3>
+                <button class="modal-close" onclick="closeModal('modalClaimDiscovery')">&times;</button>
+            </div>
+            <form id="claimDiscoveryForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Physical Silicon MAC Address</label>
+                        <input type="text" class="input-field" id="claimMac" readonly style="background:rgba(255,255,255,0.05); color:var(--text-muted); cursor:not-allowed;">
+                    </div>
+                    <div class="form-group">
+                        <label>Hardware Chip ID</label>
+                        <input type="text" class="input-field" id="claimChip" readonly style="background:rgba(255,255,255,0.05); color:var(--text-muted); cursor:not-allowed;">
+                    </div>
+                    <div class="form-group">
+                        <label>Machine ID to Assign <small style="color:var(--text-secondary);">(Enter custom e.g. VM-000005 or accept suggestion)</small></label>
+                        <input type="text" class="input-field" id="claimDeviceId" required placeholder="e.g. VM-000005, VM-000007">
+                    </div>
+                    <div class="form-group">
+                        <label>Assign to Client / Tenant</label>
+                        <select class="input-field" id="claimClient">
+                            <!-- Populated with clients -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Product Family</label>
+                        <select class="input-field" id="claimType">
+                            <option value="VENDING_MACHINE">Commercial Vending Machine (QR + Coin)</option>
+                            <option value="RFID_ATTENDANCE">Smart RFID Terminal</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalClaimDiscovery')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">⚡ Confirm & Activate Machine</button>
                 </div>
             </form>
         </div>

@@ -117,3 +117,26 @@ class DeviceWiFiResponse(BaseModel):
     message: str
     updated_at: Optional[datetime] = None
 
+
+
+class DiscoveredHardwareResponse(BaseModel):
+    id: str
+    mac_address: str
+    chip_id: Optional[str] = None
+    ip_address: Optional[str] = None
+    firmware_version: Optional[str] = None
+    suggested_device_id: Optional[str] = None
+    last_seen_at: datetime
+    created_at: datetime
+
+
+class DiscoveredHardwareListResponse(BaseModel):
+    total: int
+    items: List[DiscoveredHardwareResponse]
+
+
+class ClaimDiscoveredHardwareRequest(BaseModel):
+    mac_address: str = Field(..., description="Physical MAC address of discovered hardware")
+    device_id: str = Field(..., min_length=3, max_length=32, description="Target Machine ID to assign (e.g. VM-000005)")
+    client_id: Optional[str] = Field(None, description="Optional tenant Client ID to assign")
+    device_type_code: Optional[str] = Field("VENDING_MACHINE", description="VENDING_MACHINE or RFID_ATTENDANCE")

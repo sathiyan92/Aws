@@ -917,7 +917,80 @@ void uiUpdateNetworkStatus(NetworkStatus newStatus) {
  * Screen 1: Permanent Standby QR Screen
  * Customer simply scans the QR code on screen and pays ₹10. No buttons needed!
  */
+
+/**
+ * Screen: Hardware Discovery & Zero-Touch Web Pairing Screen
+ * Shown when an unassigned ESP32 connects and waits for admin assignment in Web Portal.
+ */
+void uiDrawPendingDiscoveryScreen() {
+  TFT_display.fillScreen(COLOR_BG);
+
+  // Top Blue Header
+  TFT_display.fillRect(0, 0, 320, 50, COLOR_BLUE);
+  TFT_display.setCursor(15, 14);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.print("G-TECH SMART FLEET");
+
+  // Center Card
+  TFT_display.fillRect(15, 65, 290, 395, COLOR_CARD);
+  TFT_display.drawRect(15, 65, 290, 395, COLOR_BLUE);
+
+  // Discovery Badge
+  TFT_display.fillRect(25, 80, 270, 35, COLOR_DARK_GRAY);
+  TFT_display.drawRect(25, 80, 270, 35, COLOR_CYAN);
+  TFT_display.setCursor(45, 90);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("NEW NODE DETECTED");
+
+  // Hardware Details
+  TFT_display.setCursor(25, 135);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("SILICON MAC ADDRESS:");
+
+  TFT_display.setCursor(25, 155);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(2);
+  TFT_display.print(getDeviceMacAddress().c_str());
+
+  TFT_display.setCursor(25, 195);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.setTextSize(1);
+  TFT_display.print("ASSIGNED IP ADDRESS:");
+
+  TFT_display.setCursor(25, 215);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(2);
+  TFT_display.print(WiFi.localIP().toString().c_str());
+
+  // Call to action
+  TFT_display.fillRect(25, 260, 270, 110, COLOR_BG);
+  TFT_display.drawRect(25, 260, 270, 110, COLOR_CARD_BORDER);
+
+  TFT_display.setCursor(35, 275);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(2);
+  TFT_display.print("READY TO PAIR");
+
+  TFT_display.setCursor(35, 305);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Open Web Portal to assign");
+  TFT_display.setCursor(35, 322);
+  TFT_display.print("Machine ID to this hardware.");
+
+  TFT_display.setCursor(35, 345);
+  TFT_display.setTextColor(COLOR_GRAY);
+  TFT_display.print("Auto-checking every 3 sec...");
+}
+
 void uiDrawStandbyQRScreen() {
+  if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) {
+    uiDrawPendingDiscoveryScreen();
+    return;
+  }
   TFT_display.fillScreen(COLOR_BG);
 
   // 1. Top Header Bar (y: 0 - 45, width: 320)
@@ -2068,7 +2141,7 @@ void checkForRemoteQRConfigUpdates() {
   WiFiClient client;
   HTTPClient http;
   // If machine has not yet loaded its assigned ID, query by hardware MAC address
-  String queryIdentifier = (device_id == "AUTO" || device_id == "VM-000001" || device_id.length() == 0) ? getDeviceMacAddress() : device_id;
+  String queryIdentifier = (device_id == "AUTO" || device_id == "PENDING" || device_id == "VM-000001" || device_id.length() == 0) ? getDeviceMacAddress() : device_id;
   String endpoint = server_base_url + "/api/v1/orders/qr-config/" + queryIdentifier;
 
   http.setConnectTimeout(2500);
@@ -2103,7 +2176,14 @@ void checkForRemoteQRConfigUpdates() {
       bool deviceIdChanged = false;
       if (doc.containsKey("device_id")) {
         String cloudDevId = doc["device_id"].as<String>();
-        if (cloudDevId.length() > 0 && cloudDevId != device_id && cloudDevId != "AUTO" && cloudDevId.indexOf(':') == -1) {
+        if (cloudDevId == "PENDING" && device_id != "PENDING" && device_id != "AUTO") {
+          Serial.println("[Config] ⚠️ Machine unassigned/deleted in Cloud! Reverting to Discovery Mode...");
+          device_id = "PENDING";
+          prefs.begin("vending_cfg", false);
+          prefs.putString("dev_id", "PENDING");
+          prefs.end();
+          uiDrawStandbyQRScreen();
+        } else if (cloudDevId.length() > 0 && cloudDevId != device_id && cloudDevId != "AUTO" && cloudDevId != "PENDING" && cloudDevId.indexOf(':') == -1) {
           Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDevId.c_str());
           device_id = cloudDevId;
           device_token = "dev_token_" + device_id;
