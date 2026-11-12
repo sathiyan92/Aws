@@ -193,7 +193,11 @@ const float COIN_VALUE_PER_PULSE   = 1.0; // Rs 1.00 per pulse (e.g. Rs 1 = 1 pu
 // ==============================================================================
 // Set RELAY_ACTIVE_LOW to 1 if your relay module is Active-LOW (trigger on LOW).
 // Set RELAY_ACTIVE_LOW to 0 if your relay / driver is Active-HIGH (trigger on HIGH).
-#define RELAY_ACTIVE_LOW 0
+#define RELAY_ACTIVE_LOW 1
+
+// Dynamic runtime variables (stored in NVS and toggleable via Serial commands or Web)
+bool relay_active_low        = RELAY_ACTIVE_LOW;
+bool dispense_sensor_enabled = DISPENSE_SENSOR_ENABLED;
 
 // Number of Active Motors connected (1 or 2)
 #define ACTIVE_MOTOR_COUNT 1
@@ -364,10 +368,20 @@ void reportOTAStatus(String deploymentId, String status, String errorMsg = "");
 // ==============================================================================
 // 5. MOTOR CONTROL HELPER
 // ==============================================================================
+static bool motorActiveState[3] = {false, false, false};
+
 void setMotor(int slotNumber, bool turnOn) {
   int pin = (slotNumber == 2 && ACTIVE_MOTOR_COUNT > 1) ? PIN_MOTOR_SLOT_2 : PIN_MOTOR_SLOT_1;
-  int state = turnOn ? (RELAY_ACTIVE_LOW ? LOW : HIGH) : (RELAY_ACTIVE_LOW ? HIGH : LOW);
+  int state = turnOn ? (relay_active_low ? LOW : HIGH) : (relay_active_low ? HIGH : LOW);
   digitalWrite(pin, state);
+  int idx = (slotNumber == 2) ? 2 : 1;
+  if (motorActiveState[idx] != turnOn) {
+    motorActiveState[idx] = turnOn;
+    Serial.printf("[⚡ Motor %d Relay] -> %s (GPIO %d = %s | %s Mode)\n",
+                  slotNumber, turnOn ? "ENERGIZED (ON)" : "DE-ENERGIZED (OFF)", pin,
+                  state == HIGH ? "HIGH (3.3V)" : "LOW (0V)",
+                  relay_active_low ? "Active-LOW" : "Active-HIGH");
+  }
 }
 
 void setCoinPulsePin(bool active) {
@@ -1390,6 +1404,8 @@ void loadPersistentConfig() {
   // Load Stock Management state and quantity
   stock_management_enabled = prefs.getBool("stock_en", ENABLE_STOCK_MANAGEMENT);
   current_stock            = prefs.getInt("stock", DEFAULT_INITIAL_STOCK);
+  relay_active_low         = prefs.getBool("relay_low", RELAY_ACTIVE_LOW);
+  dispense_sensor_enabled  = prefs.getBool("sensor_en", DISPENSE_SENSOR_ENABLED);
   payment_mode             = prefs.getString("pay_mode", "BOTH");
   refill_stock_count       = current_stock;
   prefs.end();
@@ -1843,7 +1859,8 @@ void dispenseProduct(int slotNumber, float amount, String orderId, String dispen
     }
 
     // --- DISPENSE DROP SENSOR (PIN_DISPENSE_SENSOR, GPIO 14) ---
-    if (DISPENSE_SENSOR_ENABLED && !materialDropDetected) {
+    // Minimum 600ms grace period so initial motor rotation / vibration / floating pin does not abort dispense
+    if (dispense_sensor_enabled && !materialDropDetected && (elapsed >= 600)) {
       int sVal = digitalRead(PIN_DISPENSE_SENSOR);
       bool detected = DISPENSE_SENSOR_ACTIVE_LOW ? (sVal == LOW) : (sVal == HIGH);
       if (detected) {
@@ -2533,11 +2550,18 @@ void checkForPendingOTA() {
 // 16. HARDWARE MOTOR TEST & BENCH TESTING
 // ==============================================================================
 void testMotorHardware() {
-  Serial.println("\n[⚙️ TEST] Starting Hardware Motor 1 Test (GPIO 26)...");
+  Serial.println("\n==================================================================");
+  Serial.printf("[⚙️ TEST] Starting Hardware Motor 1 Test on GPIO %d...\n", PIN_MOTOR_SLOT_1);
+  Serial.printf("          Current Polarity Mode: %s\n", 
+                relay_active_low ? "ACTIVE-LOW (Writing LOW to pin turns Relay ON)" : "ACTIVE-HIGH (Writing HIGH to pin turns Relay ON)");
+  Serial.println("          >>> Energizing Relay (Motor 1 ON for 2.0s)...");
   setMotor(1, true);
-  delay(1500);
+  delay(2000);
+  Serial.println("          >>> De-energizing Relay (Motor 1 OFF)...");
   setMotor(1, false);
-  Serial.println("[✓] Motor 1 test completed.\n");
+  Serial.println("[✓] Motor 1 hardware test complete! Relay is now OFF.");
+  Serial.println("    (If relay clicked OFF during test instead of ON, send 'r' or 'relay:high' to invert polarity!)");
+  Serial.println("==================================================================\n");
 }
 
 void printHelpMenu() {
@@ -2549,7 +2573,12 @@ void printHelpMenu() {
   Serial.println("  'paymode:qr'  : Set Mode to QR_ONLY");
   Serial.println("  'paymode:coin': Set Mode to COIN_ONLY");
   Serial.println("  'paymode:both': Set Mode to BOTH (QR + Coin)");
-  Serial.println("  't'           : Test Motor Hardware (Runs Motor 1 for 1.5s)");
+  Serial.println("  't'           : Test Motor 1 Relay (Turns ON 2.0s then OFF)");
+  Serial.println("  'r'           : Toggle/Invert Relay Polarity (Active-LOW <-> Active-HIGH)");
+  Serial.println("  'relay:low'   : Force Relay Polarity to Active-LOW (Standard Songle Module)");
+  Serial.println("  'relay:high'  : Force Relay Polarity to Active-HIGH (MOSFET / Transistor)");
+  Serial.println("  'sensor:on'   : Enable Dispense Drop Sensor Chute Cutoff");
+  Serial.println("  'sensor:off'  : Disable Drop Sensor Cutoff (Runs full 3s motor timer)");
   Serial.println("  's'           : Test Dispense Drop Sensor (GPIO 14)");
   Serial.println("  'stock:20'    : Set Machine Stock to 20 Units");
   Serial.println("  'o'           : Force OTA Update Check Now");
@@ -2572,12 +2601,19 @@ void setup() {
   Serial.println("   >>> ESP32 HYBRID VENDING CONTROLLER (QR + COIN + STOCK) <<<          ");
   Serial.println("==================================================================");
 
-  // 1. Initialize Motor, Coin Pulse, Push Buttons & Dispense Sensor Pins
+  // 1. Load Flash NVS Config first (so relay polarity & settings are active before pins init)
+  loadPersistentConfig();
+
+  // 2. Initialize Motor, Coin Pulse, Push Buttons & Dispense Sensor Pins
+  // Safe initialization: pre-write inactive level BEFORE pinMode to eliminate relay click
+  digitalWrite(PIN_MOTOR_SLOT_1, relay_active_low ? HIGH : LOW);
+  digitalWrite(PIN_MOTOR_SLOT_2, relay_active_low ? HIGH : LOW);
   pinMode(PIN_MOTOR_SLOT_1, OUTPUT);
   pinMode(PIN_MOTOR_SLOT_2, OUTPUT);
-  pinMode(PIN_COIN_PULSE_OUT, OUTPUT);
   setMotor(1, false);
   setMotor(2, false);
+
+  pinMode(PIN_COIN_PULSE_OUT, OUTPUT);
   setCoinPulsePin(false);
 
   pinMode(PIN_SETUP_BTN, INPUT_PULLUP);
@@ -2608,8 +2644,7 @@ void setup() {
   TFT_display.print("Vertical Node Active");
   delay(1200);
 
-  // 3. Load Flash NVS Config
-  loadPersistentConfig();
+  // (Flash NVS Config loaded at startup)
 
   // 4. Connect to Wi-Fi (Shows "Wi-Fi Connected Successfully!" for 2 seconds)
   connectToWiFi();
@@ -2797,8 +2832,46 @@ void loop() {
       } else if (cmd == "p" || cmd == "P") {
         Serial.println("\n[💳 TEST] SIMULATING RAZORPAY PAYMENT RECEIVED (Rs " + String(pending_amount_rupee, 2) + ")!");
         dispenseProduct(1, pending_amount_rupee, "BENCH-TEST-" + String(millis()));
-      } else if (cmd == "t" || cmd == "T") {
+      } else if (cmd == "t" || cmd == "T" || cmd.equalsIgnoreCase("test")) {
         testMotorHardware();
+      } else if (cmd == "r" || cmd == "R" || cmd.equalsIgnoreCase("relay") || cmd.equalsIgnoreCase("relay:invert")) {
+        relay_active_low = !relay_active_low;
+        prefs.begin("vending_cfg", false);
+        prefs.putBool("relay_low", relay_active_low);
+        prefs.end();
+        setMotor(1, false);
+        setMotor(2, false);
+        Serial.printf("\n[🔄 Relay Polarity Inverted] Relay 1 is now: %s\n",
+                      relay_active_low ? "ACTIVE-LOW (LOW=ON, HIGH=OFF) [Standard Module]" : "ACTIVE-HIGH (HIGH=ON, LOW=OFF)");
+        Serial.println("                             Motors turned OFF. Test actuation with 't'.");
+      } else if (cmd.equalsIgnoreCase("relay:low")) {
+        relay_active_low = true;
+        prefs.begin("vending_cfg", false);
+        prefs.putBool("relay_low", true);
+        prefs.end();
+        setMotor(1, false);
+        setMotor(2, false);
+        Serial.println("\n[✓ Relay Config] Set to ACTIVE-LOW (LOW=ON, HIGH=OFF). Motors OFF. Saved to NVS.");
+      } else if (cmd.equalsIgnoreCase("relay:high")) {
+        relay_active_low = false;
+        prefs.begin("vending_cfg", false);
+        prefs.putBool("relay_low", false);
+        prefs.end();
+        setMotor(1, false);
+        setMotor(2, false);
+        Serial.println("\n[✓ Relay Config] Set to ACTIVE-HIGH (HIGH=ON, LOW=OFF). Motors OFF. Saved to NVS.");
+      } else if (cmd.equalsIgnoreCase("sensor:on")) {
+        dispense_sensor_enabled = true;
+        prefs.begin("vending_cfg", false);
+        prefs.putBool("sensor_en", true);
+        prefs.end();
+        Serial.println("\n[✓ Sensor Config] Dispense Drop Sensor ENABLED. Saved to NVS.");
+      } else if (cmd.equalsIgnoreCase("sensor:off")) {
+        dispense_sensor_enabled = false;
+        prefs.begin("vending_cfg", false);
+        prefs.putBool("sensor_en", false);
+        prefs.end();
+        Serial.println("\n[✓ Sensor Config] Dispense Drop Sensor DISABLED (Motor runs full 3s timer). Saved to NVS.");
       } else if (cmd == "s" || cmd == "S") {
         int sVal = digitalRead(PIN_DISPENSE_SENSOR);
         bool detected = DISPENSE_SENSOR_ACTIVE_LOW ? (sVal == LOW) : (sVal == HIGH);
