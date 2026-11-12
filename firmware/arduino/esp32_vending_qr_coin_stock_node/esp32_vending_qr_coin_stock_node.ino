@@ -150,7 +150,7 @@ const int PIN_STOCK_SAVE_BTN   = 33;  // Push Button 2 (INPUT_PULLUP to GND)
 
 // Material Dispense Sensor: Detects item dropping through the chute
 const int PIN_DISPENSE_SENSOR  = 14;  // IR Beam Break / Optical / Microswitch (INPUT_PULLUP)
-const int PIN_COIN_INPUT        = 34;  // Electronic Coin Acceptor Pulse Input (INPUT_PULLUP, GPIO 34 or 34/35)
+const int PIN_COIN_INPUT        = 13;  // Electronic Coin Acceptor Pulse Input (INPUT_PULLUP, GPIO 34 or 34/35)
 
 // COIN ACCEPTOR INPUT TIMING & POLARITY
 #define COIN_INPUT_ACTIVE_LOW       1     // 1 for Active-LOW (pulls LOW on pulse), 0 for Active-HIGH
@@ -1094,7 +1094,7 @@ void uiDrawStandbyQRScreen() {
   String displayId = (device_id == "AUTO" || device_id.length() == 0) 
                      ? ("VM-" + getDeviceMacAddress().substring(12)) 
                      : device_id;
-  TFT_display.setCursor(215, 62);
+  TFT_display.setCursor(170, 100);
   TFT_display.setTextColor(COLOR_CYAN);
   TFT_display.setTextSize(2);
   TFT_display.printf("[%s]", displayId.c_str());
@@ -1909,11 +1909,20 @@ void dispenseProduct(int slotNumber, float amount, String orderId, String dispen
   // Calculate Coin Pulses based on QR Payment Amount (e.g. Rs 1.00 = 1 pulse, Rs 2.00 = 2 pulses, etc.)
   int coinPulses = (int)((amount / COIN_VALUE_PER_PULSE) + 0.5f);
   if (coinPulses < 1) coinPulses = 1;
+  if (orderId.startsWith("COIN")) {
+    coinPulses = 0; // Pulses were already mirrored in real-time to GPIO 25 as coin was inserted
+  }
 
   Serial.println("\n******************************************************************");
-  Serial.printf(">>> 🚀 RAZORPAY PAYMENT VERIFIED (Rs %.2f)! DISPENSING MOTOR %d...\n", amount, slotNumber);
+  if (orderId.startsWith("COIN")) {
+    Serial.printf(">>> 🚀 PHYSICAL COIN ACCEPTED! DISPENSING MOTOR %d...\n", slotNumber);
+  } else {
+    Serial.printf(">>> 🚀 RAZORPAY PAYMENT VERIFIED (Rs %.2f)! DISPENSING MOTOR %d...\n", amount, slotNumber);
+  }
   Serial.printf("    Item       : %s\n", targetProduct.c_str());
-  Serial.printf("    Coin Pulses: %d Pulse(s) on GPIO %d (SAME TIME as Motor 1)\n", coinPulses, PIN_COIN_PULSE_OUT);
+  if (coinPulses > 0) {
+    Serial.printf("    Coin Pulses: %d Pulse(s) on GPIO %d (SAME TIME as Motor 1)\n", coinPulses, PIN_COIN_PULSE_OUT);
+  }
   Serial.printf("    Auth       : %s\n", dispenseToken.length() > 0 ? dispenseToken.c_str() : "(Standard)");
   Serial.println("******************************************************************");
 
@@ -2862,6 +2871,11 @@ void processCoinAcceptorInput() {
 }
 
 void loop() {
+  // ----------------------------------------------------------------------------
+  // 0. PHYSICAL COIN ACCEPTOR PULSE ENGINE (Echoes to GPIO 25 & Triggers Vend)
+  // ----------------------------------------------------------------------------
+  processCoinAcceptorInput();
+
   // ----------------------------------------------------------------------------
   // 1. PUSH SWITCH 1 (GPIO 32): CYCLE STOCK NUMBER (1 to 50, then wraps to 1)
   // ----------------------------------------------------------------------------
