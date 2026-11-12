@@ -231,8 +231,8 @@ const float STATIC_PRICE_RUPEES = 1.00;
 
 String wifi_ssid        = "IOTHUB";
 String wifi_pass        = "IOTHUB07";
-String device_id        = "VM-000001";              // Unique Machine ID in 1000+ fleet
-String device_token     = "dev_token_VM-000001";
+String device_id        = "VM-000005";              // Unique Machine ID in 1000+ fleet
+String device_token     = "dev_token_VM-000005";
 String server_base_url  = "http://35.154.219.82:8000";
 String razorpay_upi_vpa = "gtech282722.rzp@rxairtel"; // Default GTECH Standee Razorpay VPA
 String firmware_version = "v2.2.0-razorpay-ota";
@@ -2476,6 +2476,7 @@ void printHelpMenu() {
   Serial.println("  'relay:high'  : Set Active-HIGH (Transistor / MOSFET)");
   Serial.println("  'sensor:on'   : Enable Dispense Drop Sensor");
   Serial.println("  'sensor:off'  : Disable Drop Sensor (Full timer vend)");
+  Serial.println("  'id:VM-000005' : Set Machine ID and save permanently to Flash NVS");
   Serial.println("  'o' : Force OTA Update Check Now");
   Serial.println("  'h' : Show this Help Menu");
   Serial.println("==================================================================\n");
@@ -2750,6 +2751,29 @@ void loop() {
         prefs.end();
         Serial.printf("\n[Mode Toggled] Stock Mode is now: %s\n", stock_management_enabled ? "STOCK-BASED" : "WITHOUT STOCK");
         uiDrawStandbyQRScreen();
+      } else if (cmd.startsWith("id:") || cmd.startsWith("ID:") || cmd.startsWith("dev:") || cmd.startsWith("DEV:")) {
+        int colonIdx = cmd.indexOf(':');
+        String newId = cmd.substring(colonIdx + 1);
+        newId.trim();
+        newId.toUpperCase();
+        if (newId.length() > 0) {
+          device_id = newId;
+          device_token = "dev_token_" + device_id;
+          prefs.begin("vending_cfg", false);
+          prefs.putString("dev_id", device_id);
+          prefs.putString("code_dev_id", device_id);
+          prefs.putString("token", device_token);
+          prefs.end();
+          Serial.println("\n==================================================================");
+          Serial.printf("[✓ Machine Identity Set] Device ID updated to: %s\n", device_id.c_str());
+          Serial.println("  Saved permanently into Flash NVS! Refreshing LCD & Cloud Sync...");
+          Serial.println("==================================================================\n");
+          if (WiFi.status() == WL_CONNECTED) {
+            authenticateWithCloud();
+            checkForRemoteQRConfigUpdates();
+          }
+          uiDrawStandbyQRScreen();
+        }
       } else if (cmd == "o" || cmd == "O") {
         Serial.println("\n[⚡ OTA] Manually triggering OTA check from Serial...");
         checkForPendingOTA();
