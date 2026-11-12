@@ -219,15 +219,17 @@ async def handle_razorpay_webhook(
 @router.get("/qr-config/{device_id}")
 def get_qr_configuration(
     device_id: str,
+    mac: Optional[str] = Query(None, description="Physical hardware MAC address of ESP32"),
     db: Session = Depends(get_db),
 ):
     """
     [Edge & Dashboard Endpoint]
     Fetch active QR code, VPA, and price configuration for a machine.
     Used by ESP32 to detect remote QR code changes in real-time.
+    Supports authoritative Hardware MAC lookup for Zero-Touch Machine ID assignment.
     """
     from src.services.order_service import get_device_qr_config
-    return get_device_qr_config(db=db, device_id=device_id)
+    return get_device_qr_config(db=db, device_id=device_id, mac=mac)
 
 
 @router.put("/qr-config/{device_id}")

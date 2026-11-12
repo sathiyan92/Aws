@@ -37,6 +37,8 @@ def run_auto_migrations(engine) -> None:
                     updated_at DATETIME NOT NULL
                 )
             """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_discovered_hardware_mac ON discovered_hardware (mac_address)"))
+            conn.execute(text("DELETE FROM devices WHERE device_id IN ('PENDING', 'AUTO')"))
 
         inspector = inspect(engine)
         existing_tables = set(inspector.get_table_names())

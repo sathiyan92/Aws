@@ -615,33 +615,52 @@ def process_razorpay_webhook(db: Session, webhook_data: Dict[str, Any]) -> Dict[
     return _handle_payment_captured(db=db, webhook_data=webhook_data, payment_id=payment_id)
 
 
-def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
+def get_device_qr_config(db: Session, device_id: str, mac: Optional[str] = None) -> Dict[str, Any]:
     """
     [Edge & Portal Endpoint]
     Fetch active QR code, VPA, and price configuration for a machine.
+    Supports authoritative Hardware MAC lookup for Zero-Touch Machine ID assignment.
     """
-    device = db.query(Device).filter(
-        (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
-    ).first()
+    clean_mac = mac.strip().upper() if (mac and ":" in mac) else None
+    clean_id = (device_id or "").strip()
+    placeholder_ids = {"", "AUTO", "PENDING", "GENERIC"}
+
+    device = None
+    # 1. Authoritative Physical MAC Address lookup
+    if clean_mac:
+        device = db.query(Device).filter(Device.mac_address.ilike(clean_mac)).first()
+
+    # 2. Device ID lookup (if not found by MAC and not placeholder)
+    if not device and clean_id and clean_id.upper() not in placeholder_ids:
+        device = db.query(Device).filter(
+            (Device.device_id == clean_id) | (Device.mac_address.ilike(clean_id))
+        ).first()
+
     if not device:
-        clean_query = device_id.strip()
-        # If an unprovisioned hardware node queries by MAC address, queue in Discovery Queue!
-        if ":" in clean_query:
+        # Check if we have a physical MAC address to record in Discovery Queue
+        disc_mac = clean_mac if clean_mac else (clean_id.upper() if ":" in clean_id else None)
+        if disc_mac:
             from src.db.models.device import DiscoveredHardware
             from src.services.device_service import generate_next_device_id
-            disc = db.query(DiscoveredHardware).filter(DiscoveredHardware.mac_address.ilike(clean_query)).first()
+            disc = db.query(DiscoveredHardware).filter(DiscoveredHardware.mac_address.ilike(disc_mac)).first()
             if not disc:
                 suggested = generate_next_device_id(db, "VENDING_MACHINE")
                 disc = DiscoveredHardware(
-                    mac_address=clean_query.upper(),
+                    mac_address=disc_mac,
                     suggested_device_id=suggested,
                     last_seen_at=utc_now(),
                 )
                 db.add(disc)
-                db.commit()
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
             else:
                 disc.last_seen_at = utc_now()
-                db.commit()
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
 
             return {
                 "device_id": "PENDING",
@@ -653,8 +672,22 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
                 "wifi_ssid": "",
                 "wifi_password": "",
                 "status": "DISCOVERED_PENDING_CLAIM",
-                "mac_address": clean_query.upper(),
+                "mac_address": disc_mac,
                 "message": "Device waiting for Machine ID assignment in Web Portal",
+            }
+
+        # If requested ID is PENDING or AUTO, return PENDING
+        if clean_id.upper() in placeholder_ids:
+            return {
+                "device_id": "PENDING",
+                "razorpay_upi_vpa": "",
+                "qr_payload": "",
+                "amount_rupees": 0.0,
+                "product_name": "Pending Web Pairing",
+                "config_version": 0,
+                "wifi_ssid": "",
+                "wifi_password": "",
+                "status": "PENDING_DISCOVERY",
             }
 
         fallback_id = "VM-000001"
@@ -672,7 +705,10 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
 
     device.is_online = True
     device.last_heartbeat_at = utc_now()
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
     # 1. Inspect DeviceModule QR_PAYMENT config
     from src.db.models.device import DeviceModule

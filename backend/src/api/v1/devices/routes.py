@@ -389,6 +389,7 @@ def update_device_hardware_details(
     device = device_service.update_device_hardware(
         db=db,
         device_id=device_id,
+        device_id_new=payload.device_id,
         hardware_id=payload.hardware_id,
         chip_id=payload.chip_id,
         mac_address=payload.mac_address,

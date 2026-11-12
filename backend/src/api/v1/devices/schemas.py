@@ -86,6 +86,7 @@ class DeviceTypeResponse(BaseModel):
 
 class DeviceUpdateHardwareRequest(BaseModel):
     """Payload to update physical hardware details and operational status."""
+    device_id: Optional[str] = Field(None, description="New Machine ID to rename device to (e.g. VM-000005)")
     hardware_id: Optional[str] = Field(None, description="Board/PCB revision, e.g. HW-ESP32S3-V1.2")
     chip_id: Optional[str] = Field(None, description="Unique ESP32 eFuse chip ID")
     mac_address: Optional[str] = Field(None, description="Factory MAC address: XX:XX:XX:XX:XX:XX")

@@ -125,6 +125,7 @@ function switchTab(tabName) {
     if (tabName === "rfid") { renderDevicesTable("RFID_ATTENDANCE"); loadAdminRfidCards(); loadAdminRfidLogs(); }
     if (tabName === "firmware") renderFirmwareTab();
     if (tabName === "audit") renderAuditTable();
+    loadDiscoveryQueue();
 }
 
 // ==============================================================================
@@ -231,9 +232,9 @@ async function loadDevices() {
 }
 
 async function loadFleet() {
-    await loadDevices();
-    await loadDiscoveryQueue();
-    await loadStats();
+    try { await loadDevices(); } catch (e) { console.warn("Notice loading devices:", e); }
+    try { await loadDiscoveryQueue(); } catch (e) { console.warn("Notice loading discovery queue:", e); }
+    try { await loadStats(); } catch (e) { console.warn("Notice loading stats:", e); }
     renderOverview();
     if (state.activeTab === "devices") renderDevicesTable();
     if (state.activeTab === "vending") renderDevicesTable("VENDING_MACHINE");
@@ -696,6 +697,7 @@ function initModals() {
     document.getElementById("editHardwareForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const devId = document.getElementById("editHardwareDeviceId").value;
+        const newMachineId = document.getElementById("editHardwareDevId").value.trim().toUpperCase();
         const hwRevision = document.getElementById("editHardwareRevision").value.trim();
         const status = document.getElementById("editHardwareStatus").value;
         const mac = document.getElementById("editHardwareMac").value.trim();
@@ -707,6 +709,7 @@ function initModals() {
             const res = await apiRequest(`/devices/${devId}`, {
                 method: "PUT",
                 body: JSON.stringify({
+                    device_id: newMachineId || undefined,
                     hardware_id: hwRevision,
                     status: status,
                     mac_address: mac,

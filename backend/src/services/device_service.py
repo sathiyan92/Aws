@@ -416,6 +416,7 @@ def get_device_by_id_or_device_id(
 def update_device_hardware(
     db: Session,
     device_id: str,
+    device_id_new: Optional[str] = None,
     hardware_id: Optional[str] = None,
     chip_id: Optional[str] = None,
     mac_address: Optional[str] = None,
@@ -427,7 +428,7 @@ def update_device_hardware(
     user_agent: Optional[str] = None,
 ) -> Device:
     """
-    Update physical hardware specifications, identifiers, or operational lifecycle status.
+    Update physical hardware specifications, identifiers, Machine ID, or operational lifecycle status.
     Asserts uniqueness for chip_id, mac_address, and factory_serial across all other devices.
     """
     device = db.query(Device).filter(
@@ -437,6 +438,7 @@ def update_device_hardware(
         raise NotFoundException("Device", device_id)
 
     old_state = {
+        "device_id": device.device_id,
         "hardware_id": device.hardware_id,
         "chip_id": device.chip_id,
         "mac_address": device.mac_address,
@@ -444,6 +446,31 @@ def update_device_hardware(
         "status": device.status,
         "current_firmware_version": device.current_firmware_version,
     }
+
+    # Allow renaming Machine ID (e.g. VM-000001 -> VM-000005)
+    if device_id_new and device_id_new.strip() and device_id_new.strip().upper() != device.device_id:
+        target_dev_id = device_id_new.strip().upper()
+        existing = db.query(Device).filter(Device.device_id == target_dev_id, Device.id != device.id).first()
+        if existing:
+            placeholder_macs = {'', 'AUTO', 'GENERIC', 'PENDING', 'PENDING_BINDING', '00:00:00:00:00:00'}
+            if existing.mac_address in placeholder_macs:
+                db.delete(existing)
+                db.flush()
+            else:
+                raise BadRequestException(f"Machine ID '{target_dev_id}' is already registered to MAC '{existing.mac_address}'.")
+        device.device_id = target_dev_id
+        device.factory_serial = f"SN-{target_dev_id}"
+
+        # Update credentials token hash
+        from src.db.models.device import DeviceCredential
+        cred = db.query(DeviceCredential).filter_by(device_id=device.id).first()
+        if cred:
+            new_tok = f"dev_token_{target_dev_id}"
+            cred.token_hash = hashlib.sha256(new_tok.encode()).hexdigest()
+
+        # Update slot codes
+        for slot in (device.slots or []):
+            slot.slot_code = f"SLOT-{target_dev_id}-{slot.slot_number}"
 
     # Validate and check uniqueness of hardware identifiers
     if chip_id and chip_id != device.chip_id:

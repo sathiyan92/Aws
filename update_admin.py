@@ -107,6 +107,7 @@ def update_sqlite_db(db_path: str, new_username: str = None, new_password: str =
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_discovered_hardware_mac ON discovered_hardware (mac_address)")
+        cur.execute("DELETE FROM devices WHERE device_id IN ('PENDING', 'AUTO')")
 
         # 2. Update Admin Password across all MANUFACTURER_ADMIN rows
         target_pass = new_password or "GtechAdmin@2026"

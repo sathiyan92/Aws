@@ -944,6 +944,25 @@ void uiDrawPendingDiscoveryScreen() {
   TFT_display.setCursor(35, 345);
   TFT_display.setTextColor(COLOR_GRAY);
   TFT_display.print("Auto-checking every 3 sec...");
+
+  TFT_display.fillRect(25, 380, 270, 65, COLOR_DARK_GRAY);
+  TFT_display.drawRect(25, 380, 270, 65, COLOR_CARD_BORDER);
+  TFT_display.setCursor(35, 392);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(1);
+  TFT_display.print("Or Enter in Serial Monitor:");
+  TFT_display.setCursor(35, 412);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(2);
+  TFT_display.print("VM-000005");
+
+  Serial.println("\n==================================================================");
+  Serial.println(">>> [DISCOVERY MODE] WAITING FOR MACHINE ID ASSIGNMENT <<<");
+  Serial.printf("  Hardware MAC : %s\n", getDeviceMacAddress().c_str());
+  Serial.printf("  Assigned IP  : %s\n", WiFi.localIP().toString().c_str());
+  Serial.println("  OPTION 1: Assign in Web Portal (http://35.154.219.82:8000/portal/)");
+  Serial.println("  OPTION 2: Type 'VM-000005' (or 'id:VM-000005') in Serial Monitor now!");
+  Serial.println("==================================================================\n");
 }
 
 void uiDrawStandbyQRScreen() {
@@ -2029,22 +2048,19 @@ void checkForRemoteQRConfigUpdates() {
       bool deviceIdChanged = false;
       if (doc.containsKey("device_id")) {
         String cloudDevId = doc["device_id"].as<String>();
-        if (cloudDevId == "PENDING" && device_id != "PENDING" && device_id != "AUTO") {
-          Serial.println("[Config] ⚠️ Machine unassigned/deleted in Cloud! Reverting to Discovery Mode...");
-          device_id = "PENDING";
-          prefs.begin("vending_cfg", false);
-          prefs.putString("dev_id", "PENDING");
-          prefs.end();
-          uiDrawStandbyQRScreen();
-        } else if (cloudDevId.length() > 0 && cloudDevId != device_id && cloudDevId != "AUTO" && cloudDevId != "PENDING" && cloudDevId.indexOf(':') == -1) {
-          Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDevId.c_str());
-          device_id = cloudDevId;
-          device_token = "dev_token_" + device_id;
-          deviceIdChanged = true;
-          prefs.begin("vending_cfg", false);
-          prefs.putString("dev_id", device_id);
-          prefs.putString("token", device_token);
-          prefs.end();
+        if (cloudDevId.length() > 0 && cloudDevId != "AUTO" && cloudDevId != "PENDING" && cloudDevId.indexOf(':') == -1) {
+          if (cloudDevId != device_id) {
+            Serial.printf("[Config] 🏷️ Machine ID adopted from Cloud: %s -> %s\n", device_id.c_str(), cloudDevId.c_str());
+            device_id = cloudDevId;
+            device_token = "dev_token_" + device_id;
+            deviceIdChanged = true;
+            prefs.begin("vending_cfg", false);
+            prefs.putString("dev_id", device_id);
+            prefs.putString("code_dev_id", device_id);
+            prefs.putString("token", device_token);
+            prefs.end();
+            uiDrawStandbyQRScreen();
+          }
         }
       }
 
@@ -2830,9 +2846,10 @@ void loop() {
         prefs.end();
         Serial.printf("\n[Mode Toggled] Stock Mode is now: %s\n", stock_management_enabled ? "STOCK-BASED" : "WITHOUT STOCK");
         uiDrawStandbyQRScreen();
-      } else if (cmd.startsWith("id:") || cmd.startsWith("ID:") || cmd.startsWith("dev:") || cmd.startsWith("DEV:")) {
+      } else if (cmd.startsWith("id:") || cmd.startsWith("ID:") || cmd.startsWith("dev:") || cmd.startsWith("DEV:") ||
+                 cmd.startsWith("vm-") || cmd.startsWith("VM-") || cmd.startsWith("rfid-") || cmd.startsWith("RFID-")) {
         int colonIdx = cmd.indexOf(':');
-        String newId = cmd.substring(colonIdx + 1);
+        String newId = (colonIdx != -1) ? cmd.substring(colonIdx + 1) : cmd;
         newId.trim();
         newId.toUpperCase();
         if (newId.length() > 0) {
@@ -2845,7 +2862,7 @@ void loop() {
           prefs.end();
           Serial.println("\n==================================================================");
           Serial.printf("[✓ Machine Identity Set] Device ID updated to: %s\n", device_id.c_str());
-          Serial.println("  Saved permanently into Flash NVS! Refreshing LCD & Cloud Sync...");
+          Serial.println("  Saved permanently into Flash NVS! Cloud sync starting...");
           Serial.println("==================================================================\n");
           if (WiFi.status() == WL_CONNECTED) {
             authenticateWithCloud();
