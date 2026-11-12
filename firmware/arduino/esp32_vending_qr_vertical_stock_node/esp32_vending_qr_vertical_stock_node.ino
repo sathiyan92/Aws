@@ -1232,6 +1232,10 @@ void loadPersistentConfig() {
   if (saved_url.length() > 0 && server_base_url == "http://35.154.219.82:8000") server_base_url = saved_url;
   if (saved_vpa.length() > 0 && razorpay_upi_vpa == "rzp.vending.vm000001@icici") razorpay_upi_vpa = saved_vpa;
 
+  // Always load machine Device ID and Token from Flash NVS
+  device_id    = prefs.getString("dev_id", device_id);
+  device_token = prefs.getString("token", "dev_token_" + device_id);
+
 #if FORCE_STATIC_PROGRAM_CONFIG
   // Enforce Static Program QR, Name, and Price from Arduino IDE code!
   custom_qr_code       = String(STATIC_QR_CODE);
@@ -1252,7 +1256,6 @@ void loadPersistentConfig() {
   Serial.println("******************************************************************\n");
 #else
   if (saved_qr.length() > 0) custom_qr_code = saved_qr;
-  device_id = prefs.getString("dev_id", device_id);
   pending_amount_rupee = prefs.getFloat("price", pending_amount_rupee);
   pending_product_name = prefs.getString("p_name", pending_product_name);
   current_config_version = prefs.getInt("cfg_ver", current_config_version);
@@ -2129,13 +2132,17 @@ bool authenticateWithCloud() {
     if (respDoc.containsKey("device_id")) {
       String assignedId = respDoc["device_id"].as<String>();
       if (assignedId.length() > 0 && assignedId != device_id) {
-        Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s\n", assignedId.c_str());
+        Serial.printf("[✓] Cloud automatically identified this MAC as Device ID: %s (Previous: %s)\n", assignedId.c_str(), device_id.c_str());
         device_id = assignedId;
         device_token = "dev_token_" + device_id;
         prefs.begin("vending_cfg", false);
         prefs.putString("dev_id", device_id);
         prefs.putString("token", device_token);
         prefs.end();
+        // Immediately refresh LCD Screen so it shows the new cloud-assigned Device ID!
+        if (current_state == STATE_STANDBY_QR) {
+          uiDrawStandbyQRScreen();
+        }
       }
     }
     Serial.println("[✓] Cloud Gateway Handshake SUCCESS! Real MAC Address Bound. Machine is ONLINE.");
@@ -2491,15 +2498,15 @@ void setup() {
   // 4. Connect to Wi-Fi (Shows "Wi-Fi Connected Successfully!" for 2 seconds)
   connectToWiFi();
 
-  // 5. Render Standby QR Screen IMMEDIATELY so QR code and product are visible with zero delay!
-  uiDrawStandbyQRScreen();
-  printHelpMenu();
-
-  // 6. Fast non-blocking cloud handshake (occurs in background after QR is already displayed)
+  // 5. Cloud Gateway Handshake (Authenticates via hardware MAC & binds correct Device ID e.g. VM-000005)
   if (WiFi.status() == WL_CONNECTED) {
     authenticateWithCloud();
     sendHeartbeat();
   }
+
+  // 6. Render Standby QR Screen (Now displays correct Device ID, QR code, and price with zero delay)
+  uiDrawStandbyQRScreen();
+  printHelpMenu();
 
   Serial.println("[✓] Zero-Touch Vending Ready! Customer can scan QR anytime.");
 }
