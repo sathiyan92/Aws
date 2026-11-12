@@ -624,11 +624,60 @@ def get_device_qr_config(db: Session, device_id: str) -> Dict[str, Any]:
         (Device.device_id == device_id) | (Device.mac_address.ilike(device_id.strip()))
     ).first()
     if not device:
-        vpa = f"rzp.vending.{device_id.lower()}@icici"
+        clean_query = device_id.strip()
+        # If an unprovisioned hardware node queries by MAC address or AUTO, auto-provision next sequential machine!
+        if ":" in clean_query or clean_query.upper() in {"AUTO", "GENERIC"}:
+            client = db.query(Client).first()
+            dev_type = db.query(DeviceType).filter_by(code="VENDING_MACHINE").first()
+            if client and dev_type:
+                from src.services.device_service import generate_next_device_id
+                assigned_id = generate_next_device_id(db, "VENDING_MACHINE")
+                clean_mac = clean_query.upper() if ":" in clean_query else "AUTO"
+                device = Device(
+                    device_id=assigned_id,
+                    client_id=client.id,
+                    device_type_id=dev_type.id,
+                    hardware_id=f"HW-{assigned_id}",
+                    chip_id=f"CHIP-{assigned_id}",
+                    mac_address=clean_mac,
+                    factory_serial=f"SN-{assigned_id}",
+                    status="ACTIVE",
+                    is_online=True,
+                    last_heartbeat_at=utc_now(),
+                    current_firmware_version="v2.2.0-razorpay-ota",
+                    current_config_version=1,
+                )
+                db.add(device)
+                db.flush()
+                from src.db.models.product import Product
+                from src.db.models.vending import MachineSlot
+                from src.db.models.config import DeviceConfig
+                prod = db.query(Product).filter_by(client_id=client.id).first()
+                slot = MachineSlot(
+                    device_id=device.id,
+                    slot_number=1,
+                    product_id=prod.id if prod else None,
+                    capacity=50,
+                    current_stock=20,
+                    is_active=True,
+                )
+                db.add(slot)
+                cfg = DeviceConfig(
+                    device_id=device.id,
+                    config_payload={"settings": {"current_stock": 20, "stock_management_enabled": True}},
+                    is_synced=True,
+                )
+                db.add(cfg)
+                db.commit()
+                db.refresh(device)
+
+    if not device:
+        fallback_id = "VM-000001" if (":" in device_id or device_id.upper() in {"AUTO", "GENERIC"}) else device_id
+        vpa = f"rzp.vending.{fallback_id.lower()}@icici"
         return {
-            "device_id": device_id,
+            "device_id": fallback_id,
             "razorpay_upi_vpa": vpa,
-            "qr_payload": f"upi://pay?pa={vpa}&pn=IoT%20Vending&am=10.00&cu=INR&tn={device_id}",
+            "qr_payload": f"upi://pay?pa={vpa}&pn=IoT%20Vending&am=10.00&cu=INR&tn={fallback_id}",
             "amount_rupees": 10.0,
             "product_name": "Cold Drink",
             "config_version": 1,

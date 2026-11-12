@@ -2103,7 +2103,7 @@ void checkForRemoteQRConfigUpdates() {
       bool deviceIdChanged = false;
       if (doc.containsKey("device_id")) {
         String cloudDevId = doc["device_id"].as<String>();
-        if (cloudDevId.length() > 0 && cloudDevId != device_id) {
+        if (cloudDevId.length() > 0 && cloudDevId != device_id && cloudDevId != "AUTO" && cloudDevId.indexOf(':') == -1) {
           Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDevId.c_str());
           device_id = cloudDevId;
           device_token = "dev_token_" + device_id;
