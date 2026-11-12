@@ -1921,7 +1921,7 @@ void checkForRemoteQRConfigUpdates() {
   WiFiClient client;
   HTTPClient http;
   // If machine has not yet loaded its assigned ID, query by hardware MAC address
-  String queryIdentifier = (device_id == "VM-000001") ? getDeviceMacAddress() : device_id;
+  String queryIdentifier = (device_id == "AUTO" || device_id == "VM-000001" || device_id.length() == 0) ? getDeviceMacAddress() : device_id;
   String endpoint = server_base_url + "/api/v1/orders/qr-config/" + queryIdentifier;
 
   http.setConnectTimeout(2500);
@@ -2130,7 +2130,7 @@ bool authenticateWithCloud() {
   http.addHeader("Content-Type", "application/json");
 
   StaticJsonDocument<768> doc;
-  doc["device_id"]        = (device_id == "AUTO") ? "" : device_id;
+  doc["device_id"]        = "AUTO"; // Always query by Hardware MAC so cloud mapping is authoritative!
   doc["chip_id"]          = chipId;
   doc["mac_address"]      = realMac;
   doc["device_token"]     = device_token;
@@ -2401,7 +2401,7 @@ void checkForPendingOTA() {
 
   WiFiClient client;
   HTTPClient http;
-  String queryOtaId = (device_id == "VM-000001") ? getDeviceMacAddress() : device_id;
+  String queryOtaId = (device_id == "AUTO" || device_id == "VM-000001" || device_id.length() == 0) ? getDeviceMacAddress() : device_id;
   String endpoint = server_base_url + "/api/v1/ota/check/" + queryOtaId;
 
   http.setConnectTimeout(6000);

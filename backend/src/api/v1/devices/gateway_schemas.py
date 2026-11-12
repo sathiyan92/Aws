@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 class DeviceAuthRequest(BaseModel):
     """Payload sent by ESP32 during initial connection handshake."""
-    device_id: str = Field(..., description="Permanent burned Device ID, e.g. VM-000001", min_length=3, max_length=32)
+    device_id: Optional[str] = Field("AUTO", description="Device ID or 'AUTO' to resolve by MAC", min_length=0, max_length=32)
     chip_id: str = Field(..., description="eFuse Unique Chip ID from hardware silicon, e.g. ESP32S3-D801")
     mac_address: str = Field(..., description="Physical Wi-Fi/Ethernet MAC address, e.g. 30:AE:A4:07:00:01")
     device_token: str = Field(..., description="Secret device provisioning bearer token burned in NVS")
