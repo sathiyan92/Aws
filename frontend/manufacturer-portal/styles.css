@@ -122,6 +122,24 @@ body {
     font-size: 1.25rem;
     box-shadow: 0 0 15px var(--primary-glow);
 }
+.brand-icon.logo-badge {
+    background: #ffffff;
+    padding: 3px;
+    border-radius: var(--radius-md, 10px);
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 15px rgba(56, 189, 248, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.brand-icon.logo-badge img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
 
 .brand-text h1 {
     font-family: 'Plus Jakarta Sans', sans-serif;

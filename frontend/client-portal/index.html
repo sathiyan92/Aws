@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apex Client Portal | IoT Fleet Management & Dynamic Visibility</title>
+    <title>G-TECH Client Portal | IoT Fleet Management & Dynamic Visibility</title>
+    <link rel="icon" type="image/png" href="gtech-logo.png">
     <meta name="description" content="Multi-tenant client management portal with real-time dynamic hardware feature visibility and server-side policy enforcement for ESP32 vending fleets and RFID systems.">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -18,16 +19,12 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="brand-icon">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                        <polyline points="2 17 12 22 22 17"></polyline>
-                        <polyline points="2 12 12 17 22 12"></polyline>
-                    </svg>
+                <div class="brand-icon logo-badge">
+                    <img src="gtech-logo.png" alt="G-TECH Logo">
                 </div>
                 <div class="brand-text">
-                    <h1 id="clientBrandTitle">Client Portal</h1>
-                    <p id="tenantSubTitle">Tenant Workspace</p>
+                    <h1 id="clientBrandTitle">G-TECH</h1>
+                    <p id="tenantSubTitle">Automations & Vending</p>
                 </div>
             </div>
 
@@ -79,7 +76,7 @@
                 <div class="user-badge">
                     <div class="avatar" id="userAvatar">A</div>
                     <div class="user-meta">
-                        <div class="name" id="userNameLabel">Apex Admin</div>
+                        <div class="name" id="userNameLabel">G-TECH Admin</div>
                         <div class="role" id="userRoleLabel">CLIENT_ADMIN</div>
                     </div>
                 </div>
@@ -103,7 +100,7 @@
 
                 <div style="display: flex; align-items: center; gap: 1rem;">
                     <div style="text-align: right;">
-                        <span id="tenantNameHeader" style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">Apex Vending Solutions</span>
+                        <span id="tenantNameHeader" style="font-size: 0.85rem; font-weight: 700; color: var(--primary);">G-TECH Vending Solutions</span>
                         <div id="tenantIdHeader" style="font-size: 0.7rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">Tenant: apex-vending</div>
                     </div>
                     <button class="btn btn-warning btn-sm" onclick="switchTab('tab-qr')" style="padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight:700; display:flex; align-items:center; gap:0.35rem; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; box-shadow:0 2px 8px rgba(245,158,11,0.3);" title="Configure QR Code & Price">
@@ -237,7 +234,7 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="qrMerchantName">Merchant Display Name</label>
-                                    <input type="text" id="qrMerchantName" class="input-field" placeholder="Apex Vending Express">
+                                    <input type="text" id="qrMerchantName" class="input-field" placeholder="G-TECH Vending Express">
                                 </div>
                                 <div class="form-group">
                                     <label for="qrCurrency">Operating Currency</label>
@@ -1034,16 +1031,12 @@
     <!-- Login Overlay for Client User -->
     <div class="modal-overlay" id="loginModal">
         <div class="modal-container" style="max-width: 420px; text-align: center;">
-            <div class="brand-icon" style="margin: 0 auto 1rem auto; width: 48px; height: 48px;">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                    <polyline points="2 17 12 22 22 17"></polyline>
-                    <polyline points="2 12 12 17 22 12"></polyline>
-                </svg>
+            <div class="brand-icon logo-badge" style="margin: 0 auto 1rem auto; width: 68px; height: 68px; padding: 6px; border-radius: 14px;">
+                <img src="gtech-logo.png" alt="G-TECH Logo">
             </div>
-            <h3 style="font-size: 1.25rem; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; margin-bottom: 0.25rem;">Client Tenant Login</h3>
-            <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 1.5rem;">
-                Multi-Tenant Cloud IoT Platform for Vending & RFID Fleets
+            <h3 style="font-size: 1.35rem; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; margin-bottom: 0.25rem; color:#fff;">G-TECH Client Login</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+                G-TECH Automations / Robotics / Vending Platform
             </p>
 
             <form id="loginForm" style="text-align: left;">

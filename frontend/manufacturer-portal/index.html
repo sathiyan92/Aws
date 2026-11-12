@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manufacturer Operations Portal | Multi-Tenant IoT Fleet</title>
+    <title>G-TECH Operations Portal | Multi-Tenant IoT Fleet</title>
+    <link rel="icon" type="image/png" href="gtech-logo.png">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -18,10 +19,12 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="brand-icon">⚡</div>
+                <div class="brand-icon logo-badge">
+                    <img src="gtech-logo.png" alt="G-TECH Logo">
+                </div>
                 <div class="brand-text">
-                    <h1>IoT Fleet OEM</h1>
-                    <p>Manufacturer Ops</p>
+                    <h1>G-TECH</h1>
+                    <p>Automations & Vending</p>
                 </div>
             </div>
 
@@ -86,7 +89,7 @@
             <header class="top-header">
                 <div class="header-title">
                     <h2 id="pageTitle">Fleet Command Center</h2>
-                    <p>Real-Time Commercial IoT Hardware Orchestration</p>
+                    <p>G-TECH Commercial IoT Hardware Orchestration</p>
                 </div>
                 <div class="header-actions">
                     <button class="btn btn-warning btn-sm" onclick="switchTab('qr-manager')" style="font-weight:700; display:flex; align-items:center; gap:0.4rem; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; box-shadow:0 2px 8px rgba(245,158,11,0.3);">
@@ -1501,8 +1504,16 @@
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
         <div class="modal-container" style="max-width:420px; position:relative;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
-                <h3>🔐 Operations Portal Login</h3>
+            <div style="text-align:center; padding-top:0.5rem;">
+                <div class="brand-icon logo-badge" style="margin: 0 auto 0.75rem auto; width:58px; height:58px; padding:5px; border-radius:12px;">
+                    <img src="gtech-logo.png" alt="G-TECH Logo">
+                </div>
+            </div>
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border:none; padding:0 0 0.5rem 0;">
+                <div>
+                    <h3 style="margin:0; font-size:1.2rem; font-weight:800; color:#fff;">G-TECH Operations Login</h3>
+                    <p style="margin:2px 0 0 0; font-size:0.75rem; color:var(--text-muted);">Automations / Robotics / Vending Platform</p>
+                </div>
                 <button class="modal-close" onclick="closeModal('modalLogin')">&times;</button>
             </div>
             <form id="loginForm" autocomplete="off">
