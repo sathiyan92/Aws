@@ -313,9 +313,12 @@ class _OperationsScreenState extends State<OperationsScreen> {
             child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm Vend'),
+            child: const Text('Confirm Vend', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -357,35 +360,34 @@ class _OperationsScreenState extends State<OperationsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
-        title: const Text('Assign Hardware ID', style: TextStyle(color: Colors.white)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Discovered Node: ${disc.tempId}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: deviceIdCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'Permanent Machine ID',
-                  labelStyle: TextStyle(color: Colors.white70),
-                ),
+        scrollable: true,
+        title: const Text('Assign Hardware ID', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Discovered Node: ${disc.tempId}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: deviceIdCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Permanent Machine ID',
+                labelStyle: TextStyle(color: Colors.white70),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : (uniqueClients.isNotEmpty ? uniqueClients.keys.first : null),
-                dropdownColor: const Color(0xFF131B2E),
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'Assign to Tenant Vendor',
-                  labelStyle: TextStyle(color: Colors.white70),
-                ),
-                items: uniqueClients.values.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-                onChanged: (val) => selectedClientId = val,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : (uniqueClients.isNotEmpty ? uniqueClients.keys.first : null),
+              dropdownColor: const Color(0xFF131B2E),
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Assign to Tenant Vendor',
+                labelStyle: TextStyle(color: Colors.white70),
               ),
-            ],
-          ),
+              items: uniqueClients.values.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+              onChanged: (val) => selectedClientId = val,
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -393,7 +395,10 @@ class _OperationsScreenState extends State<OperationsScreen> {
             child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               final ok = await ApiService().claimDiscoveryDevice(
@@ -409,7 +414,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 _loadAllData();
               }
             },
-            child: const Text('Assign & Deploy'),
+            child: const Text('Assign & Deploy', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -429,9 +434,9 @@ class _OperationsScreenState extends State<OperationsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
+        scrollable: true,
         title: const Text('👤 Create Vendor Login', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        content: SingleChildScrollView(
-          child: Column(
+        content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
@@ -540,7 +545,10 @@ class _OperationsScreenState extends State<OperationsScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6366F1),
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
               if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty || emailCtrl.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -576,7 +584,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 );
               }
             },
-            child: const Text('Create Vendor Login'),
+            child: const Text('Create Vendor Login', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -591,29 +599,31 @@ class _OperationsScreenState extends State<OperationsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
-        title: Text('🔑 Reset Password for ${client.name}', style: const TextStyle(color: Colors.white, fontSize: 15)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: userCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Username', labelStyle: TextStyle(color: Colors.white70)),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: passCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'New Password', labelStyle: TextStyle(color: Colors.white70)),
-              ),
-            ],
-          ),
+        scrollable: true,
+        title: Text('🔑 Reset Password for ${client.name}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: userCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Username', labelStyle: TextStyle(color: Colors.white70)),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: passCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'New Password', labelStyle: TextStyle(color: Colors.white70)),
+            ),
+          ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               try {
@@ -639,7 +649,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 );
               }
             },
-            child: const Text('Save Password'),
+            child: const Text('Save Password', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -661,43 +671,47 @@ class _OperationsScreenState extends State<OperationsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
+        scrollable: true,
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         title: const Text('⚡ Register New Hardware', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: devIdCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Permanent Device ID', labelStyle: TextStyle(color: Colors.white70)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: devIdCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Permanent Device ID', labelStyle: TextStyle(color: Colors.white70)),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: macCtrl,
+              style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+              decoration: const InputDecoration(
+                labelText: 'Hardware MAC Address (Optional)',
+                labelStyle: TextStyle(color: Colors.white70),
+                hintText: 'e.g. 34:85:18:8f:55:10',
+                hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: macCtrl,
-                style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
-                decoration: const InputDecoration(
-                  labelText: 'Hardware MAC Address (Optional)',
-                  labelStyle: TextStyle(color: Colors.white70),
-                  hintText: 'e.g. 34:85:18:8f:55:10',
-                  hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
-                ),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : (uniqueClients.isNotEmpty ? uniqueClients.keys.first : null),
-                dropdownColor: const Color(0xFF131B2E),
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Assign to Tenant Vendor', labelStyle: TextStyle(color: Colors.white70)),
-                items: uniqueClients.values.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-                onChanged: (val) => selectedClientId = val,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : (uniqueClients.isNotEmpty ? uniqueClients.keys.first : null),
+              dropdownColor: const Color(0xFF131B2E),
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Assign to Tenant Vendor', labelStyle: TextStyle(color: Colors.white70)),
+              items: uniqueClients.values.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+              onChanged: (val) => selectedClientId = val,
+            ),
+          ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               try {
@@ -721,7 +735,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 );
               }
             },
-            child: const Text('Register Hardware'),
+            child: const Text('Register Hardware', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -758,55 +772,57 @@ class _OperationsScreenState extends State<OperationsScreen> {
 
           return AlertDialog(
             backgroundColor: const Color(0xFF131B2E),
+            scrollable: true,
             title: Text('🔗 Link Machine to ${client.name}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Select machine to link to this vendor:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: effectiveDevId,
-                    dropdownColor: const Color(0xFF131B2E),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      labelText: 'Select Machine',
-                      labelStyle: TextStyle(color: Colors.white70),
-                    ),
-                    items: uniqueDevices.values.map((d) {
-                      final isCurrent = (d.clientId == client.id || (d.clientName != null && d.clientName!.toLowerCase() == client.name.toLowerCase()));
-                      final statusLabel = isCurrent
-                          ? 'Already linked to this vendor'
-                          : (d.clientName != null && d.clientName != 'Unassigned'
-                              ? 'Assigned to ${d.clientName}'
-                              : 'Unassigned Inventory');
-                      return DropdownMenuItem<String>(
-                        value: d.deviceId,
-                        child: Text(
-                          '${d.deviceId} ($statusLabel)',
-                          style: TextStyle(
-                            color: isCurrent ? const Color(0xFF38BDF8) : Colors.white,
-                            fontSize: 13,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() => selectedDevId = val);
-                      }
-                    },
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select machine to link to this vendor:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: effectiveDevId,
+                  dropdownColor: const Color(0xFF131B2E),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Select Machine',
+                    labelStyle: TextStyle(color: Colors.white70),
                   ),
-                ],
-              ),
+                  items: uniqueDevices.values.map((d) {
+                    final isCurrent = (d.clientId == client.id || (d.clientName != null && d.clientName!.toLowerCase() == client.name.toLowerCase()));
+                    final statusLabel = isCurrent
+                        ? 'Already linked to this vendor'
+                        : (d.clientName != null && d.clientName != 'Unassigned'
+                            ? 'Assigned to ${d.clientName}'
+                            : 'Unassigned Inventory');
+                    return DropdownMenuItem<String>(
+                      value: d.deviceId,
+                      child: Text(
+                        '${d.deviceId} ($statusLabel)',
+                        style: TextStyle(
+                          color: isCurrent ? const Color(0xFF38BDF8) : Colors.white,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedDevId = val);
+                    }
+                  },
+                ),
+              ],
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () async {
                   Navigator.pop(ctx);
                   try {
@@ -854,7 +870,10 @@ class _OperationsScreenState extends State<OperationsScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               try {
@@ -879,7 +898,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 );
               }
             },
-            child: const Text('Unlink Machine'),
+            child: const Text('Unlink Machine', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -900,39 +919,41 @@ class _OperationsScreenState extends State<OperationsScreen> {
 
           return AlertDialog(
             backgroundColor: const Color(0xFF131B2E),
-            title: Text('Assign Vendor: ${dev.deviceId}', style: const TextStyle(color: Colors.white, fontSize: 16)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Current: ${dev.clientName ?? "Unassigned"}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    isExpanded: true,
-                    initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : null,
-                    dropdownColor: const Color(0xFF131B2E),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'Select Vendor Tenant'),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('Unassigned (Factory Inventory)', style: TextStyle(color: Colors.white70)),
-                      ),
-                      ...uniqueClients.values.map((c) => DropdownMenuItem<String?>(
-                        value: c.id,
-                        child: Text('${c.name} (${c.code})', style: const TextStyle(color: Colors.white)),
-                      )),
-                    ],
-                    onChanged: (val) => setDialogState(() => selectedClientId = val),
-                  ),
-                ],
-              ),
+            scrollable: true,
+            title: Text('Assign Vendor: ${dev.deviceId}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Current: ${dev.clientName ?? "Unassigned"}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  isExpanded: true,
+                  initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : null,
+                  dropdownColor: const Color(0xFF131B2E),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(labelText: 'Select Vendor Tenant'),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Unassigned (Factory Inventory)', style: TextStyle(color: Colors.white70)),
+                    ),
+                    ...uniqueClients.values.map((c) => DropdownMenuItem<String?>(
+                      value: c.id,
+                      child: Text('${c.name} (${c.code})', style: const TextStyle(color: Colors.white)),
+                    )),
+                  ],
+                  onChanged: (val) => setDialogState(() => selectedClientId = val),
+                ),
+              ],
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () async {
                   Navigator.pop(ctx);
                   try {
@@ -957,7 +978,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                     );
                   }
                 },
-                child: const Text('Save Assignment'),
+                child: const Text('Save Assignment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -1333,36 +1354,46 @@ class _OperationsScreenState extends State<OperationsScreen> {
         const SizedBox(height: 14),
 
         // Device Selector Dropdown
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFF131B2E),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              dropdownColor: const Color(0xFF131B2E),
-              value: _devices.any((d) => d.deviceId == _selectedQrDeviceId)
-                  ? _selectedQrDeviceId
-                  : (_devices.isNotEmpty ? _devices.first.deviceId : null),
-              items: _devices.map((d) => DropdownMenuItem<String>(
-                value: d.deviceId,
-                child: Text(
-                  '${d.deviceId} (${d.isOnline ? "ONLINE" : "OFFLINE"}) - ${d.clientName ?? "Unassigned"}',
-                  style: const TextStyle(color: Colors.white),
-                  overflow: TextOverflow.ellipsis,
+        Builder(
+          builder: (context) {
+            final uniqueDevices = <String, DeviceModel>{};
+            for (final d in _devices) {
+              uniqueDevices[d.deviceId] = d;
+            }
+            final effectiveDevId = uniqueDevices.containsKey(_selectedQrDeviceId)
+                ? _selectedQrDeviceId
+                : (uniqueDevices.isNotEmpty ? uniqueDevices.keys.first : null);
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF131B2E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF131B2E),
+                  value: effectiveDevId,
+                  items: uniqueDevices.values.map((d) => DropdownMenuItem<String>(
+                    value: d.deviceId,
+                    child: Text(
+                      '${d.deviceId} (${d.isOnline ? "ONLINE" : "OFFLINE"}) - ${d.clientName ?? "Unassigned"}',
+                      style: const TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  )).toList(),
+                  onChanged: (id) {
+                    if (id != null) {
+                      setState(() => _selectedQrDeviceId = id);
+                      _loadDeviceQrConfig(id);
+                    }
+                  },
                 ),
-              )).toList(),
-              onChanged: (id) {
-                if (id != null) {
-                  setState(() => _selectedQrDeviceId = id);
-                  _loadDeviceQrConfig(id);
-                }
-              },
-            ),
-          ),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 14),
 
@@ -1432,11 +1463,12 @@ class _OperationsScreenState extends State<OperationsScreen> {
                             child: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF0284C7),
+                                foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 8),
                               ),
                               onPressed: _showQrImageSourcePicker,
-                              icon: const Icon(Icons.photo_camera, size: 16),
-                              label: const Text('📷 Upload QR Image', style: TextStyle(fontSize: 12)),
+                              icon: const Icon(Icons.photo_camera, size: 16, color: Colors.white),
+                              label: const Text('📷 Upload QR Image', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                           ),
                           if (_selectedImageFilename != null) ...[
@@ -1843,13 +1875,16 @@ class _OperationsScreenState extends State<OperationsScreen> {
                         const Text('Target Machine: ', style: TextStyle(color: Colors.white70, fontSize: 12)),
                         const Spacer(),
                         ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                          ),
                           onPressed: () {
                             if (_devices.isEmpty) return;
                             _showSelectDeviceDeployDialog(fw);
                           },
-                          icon: const Icon(Icons.rocket_launch, size: 14),
-                          label: const Text('Deploy OTA', style: TextStyle(fontSize: 12)),
+                          icon: const Icon(Icons.rocket_launch, size: 14, color: Colors.white),
+                          label: const Text('Deploy OTA', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -1922,38 +1957,40 @@ class _OperationsScreenState extends State<OperationsScreen> {
 
           return AlertDialog(
             backgroundColor: const Color(0xFF131B2E),
-            title: Text('Deploy Firmware ${fw.version}', style: const TextStyle(color: Colors.white)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Select target fleet machine:', style: TextStyle(color: Colors.white70)),
-                  const SizedBox(height: 10),
-                  DropdownButton<String>(
-                    isExpanded: true,
-                    dropdownColor: const Color(0xFF131B2E),
-                    value: effectiveDevId,
-                    items: uniqueDevices.values.map((d) => DropdownMenuItem<String>(
-                      value: d.deviceId,
-                      child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)),
-                    )).toList(),
-                    onChanged: (id) {
-                      if (id != null) setDialogState(() => selectedDevId = id);
-                    },
-                  ),
-                ],
-              ),
+            scrollable: true,
+            title: Text('Deploy Firmware ${fw.version}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select target fleet machine:', style: TextStyle(color: Colors.white70)),
+                const SizedBox(height: 10),
+                DropdownButton<String>(
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF131B2E),
+                  value: effectiveDevId,
+                  items: uniqueDevices.values.map((d) => DropdownMenuItem<String>(
+                    value: d.deviceId,
+                    child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)),
+                  )).toList(),
+                  onChanged: (id) {
+                    if (id != null) setDialogState(() => selectedDevId = id);
+                  },
+                ),
+              ],
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () {
                   Navigator.pop(ctx);
                   _deployOta(effectiveDevId, fw.id);
                 },
-                child: const Text('Push OTA Now'),
+                child: const Text('Push OTA Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -2031,11 +2068,12 @@ class _OperationsScreenState extends State<OperationsScreen> {
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0284C7),
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     ),
                     onPressed: () => _showAssignDialog(disc),
-                    icon: const Icon(Icons.assignment_turned_in, size: 14),
-                    label: const Text('Assign ID', style: TextStyle(fontSize: 12)),
+                    icon: const Icon(Icons.assignment_turned_in, size: 14, color: Colors.white),
+                    label: const Text('Assign ID', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -2057,11 +2095,12 @@ class _OperationsScreenState extends State<OperationsScreen> {
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               ),
               onPressed: _showCreateVendorDialog,
-              icon: const Icon(Icons.person_add, size: 14),
-              label: const Text('+ Create Vendor', style: TextStyle(fontSize: 12)),
+              icon: const Icon(Icons.person_add, size: 14, color: Colors.white),
+              label: const Text('+ Create Vendor', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
