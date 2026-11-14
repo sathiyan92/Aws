@@ -23,6 +23,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!mobile/flutter_app/lib/
+!mobile/flutter_app/lib/**
 parts/
 sdist/
 var/
