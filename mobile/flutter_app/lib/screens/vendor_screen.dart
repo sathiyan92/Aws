@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
@@ -13,6 +14,7 @@ class VendorScreen extends StatefulWidget {
 class _VendorScreenState extends State<VendorScreen> {
   bool _isLoading = false;
   List<DeviceModel> _devices = [];
+  DateTime? _lastBackPressTime;
 
   @override
   void initState() {
@@ -195,7 +197,25 @@ class _VendorScreenState extends State<VendorScreen> {
   Widget build(BuildContext context) {
     final user = ApiService().currentUser;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF0B0F19),
       appBar: AppBar(
         backgroundColor: const Color(0xFF131B2E),
@@ -425,7 +445,8 @@ class _VendorScreenState extends State<VendorScreen> {
                 ],
               ),
             ),
-    );
+    ),
+  );
   }
 }
 

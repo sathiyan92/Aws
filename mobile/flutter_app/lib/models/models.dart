@@ -323,11 +323,13 @@ class ClientModel {
     return ClientModel(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? '',
-      code: json['code'] ?? '',
-      contactEmail: json['contact_email'],
-      allocatedDevices: json['allocated_devices'] is int
-          ? json['allocated_devices']
-          : (json['devices_count'] is int ? json['devices_count'] : 0),
+      code: json['client_code'] ?? json['code'] ?? '',
+      contactEmail: json['contact_email'] ?? json['email'],
+      allocatedDevices: json['device_count'] is int
+          ? json['device_count']
+          : (json['allocated_devices'] is int
+              ? json['allocated_devices']
+              : (json['devices_count'] is int ? json['devices_count'] : 0)),
     );
   }
 

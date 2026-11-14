@@ -97,13 +97,18 @@ def register_device(
     [Manufacturer Only] Register a newly assembled ESP32 device.
     Generates permanent Device ID, unique device credentials, initial modules, and config v1.
     """
+    import secrets
+    clean_mac = payload.mac_address.strip().upper() if (payload.mac_address and payload.mac_address.strip()) else f"AUTO:{secrets.token_hex(4).upper()}"
+    clean_chip = payload.chip_id.strip() if (payload.chip_id and payload.chip_id.strip()) else f"CHIP-{secrets.token_hex(4).upper()}"
+    clean_serial = payload.factory_serial.strip() if (payload.factory_serial and payload.factory_serial.strip()) else f"SN-{secrets.token_hex(4).upper()}"
+
     device = device_service.register_physical_device(
         db=db,
-        device_type_code=payload.device_type_code,
+        device_type_code=payload.device_type_code or "VENDING_MACHINE",
         hardware_id=payload.hardware_id,
-        chip_id=payload.chip_id,
-        mac_address=payload.mac_address,
-        factory_serial=payload.factory_serial,
+        chip_id=clean_chip,
+        mac_address=clean_mac,
+        factory_serial=clean_serial,
         initial_modules=payload.initial_modules,
         client_id=payload.client_id,
         actor_user=context.user,

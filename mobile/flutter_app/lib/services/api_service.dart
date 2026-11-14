@@ -333,13 +333,16 @@ class ApiService {
     String? clientId,
   }) async {
     final uri = Uri.parse('$_baseUrl${ApiConfig.registerDevice}');
+    final randomSuffix = DateTime.now().millisecondsSinceEpoch.toString().substring(7);
     final res = await http.post(
       uri,
       headers: _headers(),
       body: jsonEncode({
         'device_type_code': deviceTypeCode,
         'hardware_id': hardwareId,
-        if (macAddress != null && macAddress.isNotEmpty) 'mac_address': macAddress,
+        'chip_id': 'CHIP-$randomSuffix',
+        'mac_address': (macAddress != null && macAddress.trim().isNotEmpty) ? macAddress.trim().toUpperCase() : 'AUTO:$randomSuffix',
+        'factory_serial': 'SN-$randomSuffix',
         if (clientId != null && clientId.isNotEmpty) 'client_id': clientId,
       }),
     ).timeout(const Duration(seconds: 12));
@@ -347,6 +350,26 @@ class ApiService {
       return true;
     } else {
       throw Exception('Register Hardware failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
+  // Assign Machine to Vendor Client (/devices/{deviceId}/assign)
+  Future<bool> assignDeviceToClient({
+    required String deviceId,
+    String? clientId,
+  }) async {
+    final uri = Uri.parse('$_baseUrl${ApiConfig.assignDevice(deviceId)}');
+    final res = await http.post(
+      uri,
+      headers: _headers(),
+      body: jsonEncode({
+        'client_id': clientId,
+      }),
+    ).timeout(const Duration(seconds: 12));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return true;
+    } else {
+      throw Exception('Assign Device failed (${res.statusCode}): ${res.body}');
     }
   }
 

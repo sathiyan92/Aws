@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -15,6 +16,7 @@ class OperationsScreen extends StatefulWidget {
 class _OperationsScreenState extends State<OperationsScreen> {
   int _currentTabIndex = 0;
   bool _isLoading = false;
+  DateTime? _lastBackPressTime;
 
   List<DeviceModel> _devices = [];
   List<DiscoveryDeviceModel> _discoveryQueue = [];
@@ -343,39 +345,47 @@ class _OperationsScreenState extends State<OperationsScreen> {
     final deviceIdCtrl = TextEditingController(
       text: 'VM-${(_devices.length + 1).toString().padLeft(6, '0')}',
     );
-    String? selectedClientId = _clients.isNotEmpty ? _clients.first.id : null;
+
+    // Deduplicate clients
+    final uniqueClients = <String, ClientModel>{};
+    for (final c in _clients) {
+      uniqueClients[c.id] = c;
+    }
+    String? selectedClientId = uniqueClients.isNotEmpty ? uniqueClients.keys.first : null;
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
         title: const Text('Assign Hardware ID', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Discovered Node: ${disc.tempId}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: deviceIdCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Permanent Machine ID',
-                labelStyle: TextStyle(color: Colors.white70),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Discovered Node: ${disc.tempId}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: deviceIdCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Permanent Machine ID',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _clients.any((c) => c.id == selectedClientId) ? selectedClientId : (_clients.isNotEmpty ? _clients.first.id : null),
-              dropdownColor: const Color(0xFF131B2E),
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Assign to Tenant Vendor',
-                labelStyle: TextStyle(color: Colors.white70),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : (uniqueClients.isNotEmpty ? uniqueClients.keys.first : null),
+                dropdownColor: const Color(0xFF131B2E),
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Assign to Tenant Vendor',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+                items: uniqueClients.values.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                onChanged: (val) => selectedClientId = val,
               ),
-              items: _clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-              onChanged: (val) => selectedClientId = val,
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -501,19 +511,28 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: (assignDeviceId != null && _devices.any((d) => d.deviceId == assignDeviceId)) ? assignDeviceId : null,
-                dropdownColor: const Color(0xFF131B2E),
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'Assign Machine',
-                  labelStyle: TextStyle(color: Colors.white70),
-                ),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('No Machine (Assign Later)')),
-                  ..._devices.map((d) => DropdownMenuItem(value: d.deviceId, child: Text(d.deviceId))),
-                ],
-                onChanged: (val) => assignDeviceId = val,
+              Builder(
+                builder: (context) {
+                  final uniqueDevs = <String, DeviceModel>{};
+                  for (final d in _devices) {
+                    uniqueDevs[d.deviceId] = d;
+                  }
+                  final effectiveVal = (assignDeviceId != null && uniqueDevs.containsKey(assignDeviceId)) ? assignDeviceId : null;
+                  return DropdownButtonFormField<String>(
+                    initialValue: effectiveVal,
+                    dropdownColor: const Color(0xFF131B2E),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Assign Machine',
+                      labelStyle: TextStyle(color: Colors.white70),
+                    ),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('No Machine (Assign Later)')),
+                      ...uniqueDevs.values.map((d) => DropdownMenuItem(value: d.deviceId, child: Text(d.deviceId))),
+                    ],
+                    onChanged: (val) => assignDeviceId = val,
+                  );
+                },
               ),
             ],
           ),
@@ -573,21 +592,23 @@ class _OperationsScreenState extends State<OperationsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
         title: Text('🔑 Reset Password for ${client.name}', style: const TextStyle(color: Colors.white, fontSize: 15)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: userCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: 'Username', labelStyle: TextStyle(color: Colors.white70)),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: passCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: 'New Password', labelStyle: TextStyle(color: Colors.white70)),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: userCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Username', labelStyle: TextStyle(color: Colors.white70)),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: passCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'New Password', labelStyle: TextStyle(color: Colors.white70)),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
@@ -628,42 +649,50 @@ class _OperationsScreenState extends State<OperationsScreen> {
   void _showRegisterHardwareDialog() {
     final devIdCtrl = TextEditingController(text: 'VM-${(_devices.length + 1).toString().padLeft(6, '0')}');
     final macCtrl = TextEditingController();
-    String? selectedClientId = _clients.isNotEmpty ? _clients.first.id : null;
+
+    // Deduplicate clients
+    final uniqueClients = <String, ClientModel>{};
+    for (final c in _clients) {
+      uniqueClients[c.id] = c;
+    }
+    String? selectedClientId = uniqueClients.isNotEmpty ? uniqueClients.keys.first : null;
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
         title: const Text('⚡ Register New Hardware', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: devIdCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: 'Permanent Device ID', labelStyle: TextStyle(color: Colors.white70)),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: macCtrl,
-              style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
-              decoration: const InputDecoration(
-                labelText: 'Hardware MAC Address (Optional)',
-                labelStyle: TextStyle(color: Colors.white70),
-                hintText: 'e.g. 34:85:18:8f:55:10',
-                hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: devIdCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Permanent Device ID', labelStyle: TextStyle(color: Colors.white70)),
               ),
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              initialValue: _clients.any((c) => c.id == selectedClientId) ? selectedClientId : (_clients.isNotEmpty ? _clients.first.id : null),
-              dropdownColor: const Color(0xFF131B2E),
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: 'Assign to Tenant Vendor', labelStyle: TextStyle(color: Colors.white70)),
-              items: _clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
-              onChanged: (val) => selectedClientId = val,
-            ),
-          ],
+              const SizedBox(height: 10),
+              TextField(
+                controller: macCtrl,
+                style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+                decoration: const InputDecoration(
+                  labelText: 'Hardware MAC Address (Optional)',
+                  labelStyle: TextStyle(color: Colors.white70),
+                  hintText: 'e.g. 34:85:18:8f:55:10',
+                  hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : (uniqueClients.isNotEmpty ? uniqueClients.keys.first : null),
+                dropdownColor: const Color(0xFF131B2E),
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(labelText: 'Assign to Tenant Vendor', labelStyle: TextStyle(color: Colors.white70)),
+                items: uniqueClients.values.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+                onChanged: (val) => selectedClientId = val,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
@@ -699,6 +728,244 @@ class _OperationsScreenState extends State<OperationsScreen> {
     );
   }
 
+  void _showAssignMachineToVendorDialog(ClientModel client) {
+    if (_devices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No machines registered in fleet to assign.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final uniqueDevices = <String, DeviceModel>{};
+    for (final d in _devices) {
+      uniqueDevices[d.deviceId] = d;
+    }
+
+    // Default to first unassigned machine, or first in list
+    final unassigned = uniqueDevices.values.firstWhere(
+      (d) => d.clientId == null || d.clientId!.isEmpty || d.clientName == null || d.clientName == 'Unassigned',
+      orElse: () => uniqueDevices.values.first,
+    );
+    String selectedDevId = unassigned.deviceId;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final effectiveDevId = uniqueDevices.containsKey(selectedDevId)
+              ? selectedDevId
+              : uniqueDevices.keys.first;
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF131B2E),
+            title: Text('🔗 Link Machine to ${client.name}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select machine to link to this vendor:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: effectiveDevId,
+                    dropdownColor: const Color(0xFF131B2E),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Select Machine',
+                      labelStyle: TextStyle(color: Colors.white70),
+                    ),
+                    items: uniqueDevices.values.map((d) {
+                      final isCurrent = (d.clientId == client.id || (d.clientName != null && d.clientName!.toLowerCase() == client.name.toLowerCase()));
+                      final statusLabel = isCurrent
+                          ? 'Already linked to this vendor'
+                          : (d.clientName != null && d.clientName != 'Unassigned'
+                              ? 'Assigned to ${d.clientName}'
+                              : 'Unassigned Inventory');
+                      return DropdownMenuItem<String>(
+                        value: d.deviceId,
+                        child: Text(
+                          '${d.deviceId} ($statusLabel)',
+                          style: TextStyle(
+                            color: isCurrent ? const Color(0xFF38BDF8) : Colors.white,
+                            fontSize: 13,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedDevId = val);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    final ok = await ApiService().assignDeviceToClient(
+                      deviceId: effectiveDevId,
+                      clientId: client.id,
+                    );
+                    if (!mounted) return;
+                    if (ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('✓ Successfully linked $effectiveDevId to ${client.name}!'),
+                          backgroundColor: const Color(0xFF10B981),
+                        ),
+                      );
+                      _loadAllData();
+                    }
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to link machine: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.link, size: 16),
+                label: const Text('Link Machine'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _confirmUnassignDevice(DeviceModel dev, ClientModel client) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B2E),
+        title: Text('Unlink ${dev.deviceId}?', style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: Text(
+          'Remove ${dev.deviceId} from ${client.name} and return it to Unassigned Inventory?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final ok = await ApiService().assignDeviceToClient(
+                  deviceId: dev.deviceId,
+                  clientId: null,
+                );
+                if (!mounted) return;
+                if (ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('✓ Unlinked ${dev.deviceId} to factory inventory.'),
+                      backgroundColor: const Color(0xFF10B981),
+                    ),
+                  );
+                  _loadAllData();
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to unlink: $e'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            child: const Text('Unlink Machine'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeviceVendorAssignModal(DeviceModel dev) {
+    String? selectedClientId = dev.clientId ?? (_clients.isNotEmpty ? _clients.first.id : null);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final uniqueClients = <String, ClientModel>{};
+          for (final c in _clients) {
+            uniqueClients[c.id] = c;
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF131B2E),
+            title: Text('Assign Vendor: ${dev.deviceId}', style: const TextStyle(color: Colors.white, fontSize: 16)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Current: ${dev.clientName ?? "Unassigned"}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    isExpanded: true,
+                    initialValue: uniqueClients.containsKey(selectedClientId) ? selectedClientId : null,
+                    dropdownColor: const Color(0xFF131B2E),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Select Vendor Tenant'),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Unassigned (Factory Inventory)', style: TextStyle(color: Colors.white70)),
+                      ),
+                      ...uniqueClients.values.map((c) => DropdownMenuItem<String?>(
+                        value: c.id,
+                        child: Text('${c.name} (${c.code})', style: const TextStyle(color: Colors.white)),
+                      )),
+                    ],
+                    onChanged: (val) => setDialogState(() => selectedClientId = val),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    final ok = await ApiService().assignDeviceToClient(
+                      deviceId: dev.deviceId,
+                      clientId: selectedClientId,
+                    );
+                    if (!mounted) return;
+                    if (ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('✓ Updated assignment for ${dev.deviceId}!'),
+                          backgroundColor: const Color(0xFF10B981),
+                        ),
+                      );
+                      _loadAllData();
+                    }
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                },
+                child: const Text('Save Assignment'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ApiService().currentUser;
@@ -707,7 +974,29 @@ class _OperationsScreenState extends State<OperationsScreen> {
     final onlineFleet = _stats['online_devices'] ?? _devices.where((d) => d.isOnline).length;
     final offlineFleet = _stats['offline_devices'] ?? (_devices.length - onlineFleet);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_currentTabIndex != 0) {
+          setState(() => _currentTabIndex = 0);
+          return;
+        }
+        final now = DateTime.now();
+        if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF0B0F19),
       appBar: AppBar(
         backgroundColor: const Color(0xFF131B2E),
@@ -810,7 +1099,8 @@ class _OperationsScreenState extends State<OperationsScreen> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildStatCard(String title, String val, IconData icon, Color color) {
@@ -928,9 +1218,26 @@ class _OperationsScreenState extends State<OperationsScreen> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      'Vendor: ${d.clientName ?? 'Unassigned'}  •  Mode: ${d.paymentMode}',
-                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                    InkWell(
+                      onTap: () => _showDeviceVendorAssignModal(d),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Vendor: ${d.clientName ?? "Unassigned"}',
+                              style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.edit, size: 12, color: Color(0xFF38BDF8)),
+                            const Spacer(),
+                            Text(
+                              'Mode: ${d.paymentMode}',
+                              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     if (d.macAddress != null) ...[
                       const SizedBox(height: 2),
@@ -964,17 +1271,30 @@ class _OperationsScreenState extends State<OperationsScreen> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF38BDF8),
                               side: const BorderSide(color: Color(0xFF0284C7)),
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                             ),
                             onPressed: () => _triggerTestDispense(d),
-                            icon: const Icon(Icons.flash_on, size: 16),
-                            label: const Text('Test Vend'),
+                            icon: const Icon(Icons.flash_on, size: 14),
+                            label: const Text('Test Vend', style: TextStyle(fontSize: 11)),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFA5B4FC),
+                            side: const BorderSide(color: Color(0xFF6366F1)),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          ),
+                          onPressed: () => _showDeviceVendorAssignModal(d),
+                          icon: const Icon(Icons.business, size: 14),
+                          label: const Text('Assign', style: TextStyle(fontSize: 11)),
+                        ),
+                        const SizedBox(width: 6),
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFFF59E0B),
                             side: const BorderSide(color: Color(0xFFF59E0B)),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           ),
                           onPressed: () {
                             setState(() {
@@ -983,8 +1303,8 @@ class _OperationsScreenState extends State<OperationsScreen> {
                               _loadDeviceQrConfig(d.deviceId);
                             });
                           },
-                          icon: const Icon(Icons.qr_code, size: 16),
-                          label: const Text('QR Config'),
+                          icon: const Icon(Icons.qr_code, size: 14),
+                          label: const Text('QR Config', style: TextStyle(fontSize: 11)),
                         ),
                       ],
                     ),
@@ -1552,32 +1872,38 @@ class _OperationsScreenState extends State<OperationsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final effectiveDevId = _devices.any((d) => d.deviceId == selectedDevId)
+          final uniqueDevices = <String, DeviceModel>{};
+          for (final d in _devices) {
+            uniqueDevices[d.deviceId] = d;
+          }
+          final effectiveDevId = uniqueDevices.containsKey(selectedDevId)
               ? selectedDevId
-              : _devices.first.deviceId;
+              : (uniqueDevices.isNotEmpty ? uniqueDevices.keys.first : '');
 
           return AlertDialog(
             backgroundColor: const Color(0xFF131B2E),
             title: Text('Deploy Firmware ${fw.version}', style: const TextStyle(color: Colors.white)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Select target fleet machine:', style: TextStyle(color: Colors.white70)),
-                const SizedBox(height: 10),
-                DropdownButton<String>(
-                  isExpanded: true,
-                  dropdownColor: const Color(0xFF131B2E),
-                  value: effectiveDevId,
-                  items: _devices.map((d) => DropdownMenuItem<String>(
-                    value: d.deviceId,
-                    child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)),
-                  )).toList(),
-                  onChanged: (id) {
-                    if (id != null) setDialogState(() => selectedDevId = id);
-                  },
-                ),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select target fleet machine:', style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 10),
+                  DropdownButton<String>(
+                    isExpanded: true,
+                    dropdownColor: const Color(0xFF131B2E),
+                    value: effectiveDevId,
+                    items: uniqueDevices.values.map((d) => DropdownMenuItem<String>(
+                      value: d.deviceId,
+                      child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)),
+                    )).toList(),
+                    onChanged: (id) {
+                      if (id != null) setDialogState(() => selectedDevId = id);
+                    },
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
@@ -1716,6 +2042,13 @@ class _OperationsScreenState extends State<OperationsScreen> {
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, idx) {
               final c = _clients[idx];
+              final linkedDevices = _devices.where((d) =>
+                  (d.clientId != null && d.clientId == c.id) ||
+                  (d.clientName != null && d.clientName!.trim().toLowerCase() == c.name.trim().toLowerCase()) ||
+                  (d.clientName != null && d.clientName!.trim().toLowerCase() == c.code.trim().toLowerCase())
+              ).toList();
+              final machineCount = linkedDevices.isNotEmpty ? linkedDevices.length : c.allocatedDevices;
+
               return Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -1743,7 +2076,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            '${c.allocatedDevices} Machines',
+                            '$machineCount Machine${machineCount == 1 ? "" : "s"}',
                             style: const TextStyle(color: Color(0xFFA5B4FC), fontSize: 11, fontWeight: FontWeight.w700),
                           ),
                         ),
@@ -1751,13 +2084,72 @@ class _OperationsScreenState extends State<OperationsScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Tenant Code: ${c.code}  •  Email: ${c.contactEmail}',
+                      'Tenant Code: ${c.code}  •  Email: ${c.contactEmail ?? "N/A"}',
                       style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                     ),
                     const SizedBox(height: 10),
+                    // Linked Machine Details
+                    const Text('Linked Machines:', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    if (linkedDevices.isEmpty)
+                      const Text(
+                        'No machines linked to this vendor yet',
+                        style: TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
+                      )
+                    else
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: linkedDevices.map((dev) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: dev.isOnline
+                                ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                : Colors.white.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: dev.isOnline
+                                  ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                  : Colors.white12,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.circle,
+                                size: 6,
+                                color: dev.isOnline ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                dev.deviceId,
+                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(width: 6),
+                              InkWell(
+                                onTap: () => _confirmUnassignDevice(dev, c),
+                                child: const Icon(Icons.close, size: 13, color: Colors.white54),
+                              ),
+                            ],
+                          ),
+                        )).toList(),
+                      ),
+                    const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF10B981),
+                            side: const BorderSide(color: Color(0xFF10B981)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          ),
+                          onPressed: () => _showAssignMachineToVendorDialog(c),
+                          icon: const Icon(Icons.add_link, size: 14),
+                          label: const Text('+ Link Machine', style: TextStyle(fontSize: 11)),
+                        ),
+                        const SizedBox(width: 8),
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF38BDF8),

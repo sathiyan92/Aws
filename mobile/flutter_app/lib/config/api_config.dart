@@ -23,8 +23,9 @@ class ApiConfig {
   static const String createClient = '/clients';
   static String clientUsers(String clientId) => '/clients/$clientId/users';
 
-  // Device Provisioning
+  // Device Provisioning & Assignment
   static const String registerDevice = '/devices';
+  static String assignDevice(String deviceId) => '/devices/$deviceId/assign';
 
   // OTA Firmware & Deployment endpoints
   static const String firmwareList = '/ota/firmware';

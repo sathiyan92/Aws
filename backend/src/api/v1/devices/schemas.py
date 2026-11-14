@@ -17,11 +17,11 @@ class DeviceModuleSchema(BaseModel):
 
 class DeviceRegisterRequest(BaseModel):
     """Payload sent by manufacturer to register a newly assembled physical device."""
-    device_type_code: str = Field(..., description="Device type: VENDING_MACHINE or RFID_ATTENDANCE")
-    hardware_id: str = Field(..., description="Board/PCB revision, e.g. HW-ESP32S3-V1.2")
-    chip_id: str = Field(..., description="Unique ESP32 eFuse chip ID")
-    mac_address: str = Field(..., description="Factory MAC address: XX:XX:XX:XX:XX:XX")
-    factory_serial: str = Field(..., description="Permanent physical serial label")
+    device_type_code: str = Field("VENDING_MACHINE", description="Device type: VENDING_MACHINE or RFID_ATTENDANCE")
+    hardware_id: str = Field(..., description="Board/PCB revision or device machine ID, e.g. HW-ESP32S3-V1.2")
+    chip_id: Optional[str] = Field(None, description="Unique ESP32 eFuse chip ID")
+    mac_address: Optional[str] = Field(None, description="Factory MAC address: XX:XX:XX:XX:XX:XX")
+    factory_serial: Optional[str] = Field(None, description="Permanent physical serial label")
     client_id: Optional[str] = Field(None, description="Optional initial client tenant ID")
     initial_modules: Dict[str, bool] = Field(
         default_factory=dict,
