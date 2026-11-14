@@ -1,0 +1,52 @@
+name: Build iOS App (Cloud Mac)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'mobile/flutter_app/**'
+      - '.github/workflows/build-ios.yml'
+
+jobs:
+  build-ios:
+    name: Build iOS Package on GitHub Mac Runner
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter Environment
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter & CocoaPods Dependencies
+        working-directory: mobile/flutter_app
+        run: |
+          flutter pub get
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: Build iOS Runner (.app)
+        working-directory: mobile/flutter_app
+        run: |
+          flutter build ios --no-codesign --debug
+
+      - name: Package .ipa File
+        working-directory: mobile/flutter_app
+        run: |
+          mkdir -p build/ios/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/Payload/
+          cd build/ios
+          zip -r GTech-Fleet-iOS.ipa Payload
+
+      - name: Upload iOS App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GTech-Fleet-iOS-App
+          path: mobile/flutter_app/build/ios/GTech-Fleet-iOS.ipa
+          retention-days: 14
