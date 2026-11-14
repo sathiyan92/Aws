@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.gtech.gtech_iot_fleet"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
