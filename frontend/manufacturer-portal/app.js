@@ -102,7 +102,25 @@ function initNavigation() {
     });
 }
 
+
+function toggleMobileSidebar() {
+    const sidebar = document.querySelector(".sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) sidebar.classList.toggle("mobile-open");
+    if (backdrop) backdrop.classList.toggle("open");
+}
+
+function closeMobileSidebar() {
+    const sidebar = document.querySelector(".sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) sidebar.classList.remove("mobile-open");
+    if (backdrop) backdrop.classList.remove("open");
+}
+window.toggleMobileSidebar = toggleMobileSidebar;
+window.closeMobileSidebar = closeMobileSidebar;
+
 function switchTab(tabName) {
+    closeMobileSidebar();
     state.activeTab = tabName;
     document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
     document.querySelector(`.nav-item[data-tab="${tabName}"]`)?.classList.add("active");
@@ -947,6 +965,7 @@ async function handleLoginSubmit() {
         localStorage.setItem("mfg_user", JSON.stringify(res.user));
 
         closeModal("modalLogin");
+        closeMobileSidebar();
         showToast(`Welcome back, ${res.user.full_name || res.user.username}!`, "success");
         bootstrapPortal();
     } catch (err) {

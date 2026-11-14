@@ -511,7 +511,25 @@ function updateCapabilityBanner(device) {
     });
 }
 
+
+function toggleMobileSidebar() {
+    const sidebar = document.querySelector(".sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) sidebar.classList.toggle("mobile-open");
+    if (backdrop) backdrop.classList.toggle("open");
+}
+
+function closeMobileSidebar() {
+    const sidebar = document.querySelector(".sidebar");
+    const backdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) sidebar.classList.remove("mobile-open");
+    if (backdrop) backdrop.classList.remove("open");
+}
+window.toggleMobileSidebar = toggleMobileSidebar;
+window.closeMobileSidebar = closeMobileSidebar;
+
 function switchTab(tabId) {
+    closeMobileSidebar();
     state.currentTab = tabId;
 
     // Toggle active nav item
