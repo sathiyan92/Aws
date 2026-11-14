@@ -32,7 +32,7 @@ jobs:
       - name: Build iOS App (.app Bundle)
         working-directory: mobile/flutter_app
         run: |
-          flutter build ios --no-codesign --release
+          flutter build ios --no-codesign --release -v
 
       - name: Package .ipa File
         working-directory: mobile/flutter_app
