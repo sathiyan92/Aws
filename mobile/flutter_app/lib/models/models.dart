@@ -148,6 +148,14 @@ class DeviceModel {
       stockManagementEnabled: json['stock_management_enabled'] != false,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DeviceModel && runtimeType == other.runtimeType && deviceId == other.deviceId;
+
+  @override
+  int get hashCode => deviceId.hashCode;
 }
 
 class QrConfigModel {
@@ -322,4 +330,12 @@ class ClientModel {
           : (json['devices_count'] is int ? json['devices_count'] : 0),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ClientModel && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

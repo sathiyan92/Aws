@@ -24,7 +24,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
   Map<String, dynamic> _stats = {};
 
   // QR & Operating Settings Tab state
-  DeviceModel? _selectedQrDevice;
+  String? _selectedQrDeviceId;
   QrConfigModel? _currentQrConfig;
   bool _isLoadingQr = false;
   final _qrUpiLinkCtrl = TextEditingController();
@@ -74,12 +74,14 @@ class _OperationsScreenState extends State<OperationsScreen> {
         _firmwareList = results[4] as List<FirmwareModel>;
         _otaDeployments = results[5] as List<OtaDeploymentModel>;
 
-        if (_devices.isNotEmpty && _selectedQrDevice == null) {
-          _selectedQrDevice = _devices.firstWhere(
-            (d) => d.deviceId == 'VM-000001',
-            orElse: () => _devices.first,
-          );
-          _loadDeviceQrConfig(_selectedQrDevice!.deviceId);
+        if (_devices.isNotEmpty) {
+          if (_selectedQrDeviceId == null || !_devices.any((d) => d.deviceId == _selectedQrDeviceId)) {
+            _selectedQrDeviceId = _devices.firstWhere(
+              (d) => d.deviceId == 'VM-000001',
+              orElse: () => _devices.first,
+            ).deviceId;
+            _loadDeviceQrConfig(_selectedQrDeviceId!);
+          }
         }
       });
     } catch (e) {
@@ -122,7 +124,8 @@ class _OperationsScreenState extends State<OperationsScreen> {
   }
 
   Future<void> _saveQrConfig() async {
-    if (_selectedQrDevice == null) return;
+    final devId = _selectedQrDeviceId ?? (_devices.isNotEmpty ? _devices.first.deviceId : null);
+    if (devId == null) return;
     final price = double.tryParse(_qrPriceCtrl.text.trim()) ?? 2.0;
     final link = _qrUpiLinkCtrl.text.trim();
     final prod = _qrProductCtrl.text.trim();
@@ -130,7 +133,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
 
     try {
       final ok = await ApiService().updateQrConfig(
-        _selectedQrDevice!.deviceId,
+        devId,
         price: price,
         standeeUpiLink: link,
         productName: prod,
@@ -144,7 +147,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✓ Synchronized settings to ${_selectedQrDevice!.deviceId}!'),
+            content: Text('✓ Synchronized settings to $devId!'),
             backgroundColor: const Color(0xFF10B981),
           ),
         );
@@ -362,7 +365,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: selectedClientId,
+              initialValue: _clients.any((c) => c.id == selectedClientId) ? selectedClientId : (_clients.isNotEmpty ? _clients.first.id : null),
               dropdownColor: const Color(0xFF131B2E),
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
@@ -499,7 +502,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                value: assignDeviceId,
+                initialValue: (assignDeviceId != null && _devices.any((d) => d.deviceId == assignDeviceId)) ? assignDeviceId : null,
                 dropdownColor: const Color(0xFF131B2E),
                 style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
@@ -653,7 +656,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: selectedClientId,
+              initialValue: _clients.any((c) => c.id == selectedClientId) ? selectedClientId : (_clients.isNotEmpty ? _clients.first.id : null),
               dropdownColor: const Color(0xFF131B2E),
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(labelText: 'Assign to Tenant Vendor', labelStyle: TextStyle(color: Colors.white70)),
@@ -975,7 +978,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                           ),
                           onPressed: () {
                             setState(() {
-                              _selectedQrDevice = d;
+                              _selectedQrDeviceId = d.deviceId;
                               _currentTabIndex = 1;
                               _loadDeviceQrConfig(d.deviceId);
                             });
@@ -1018,18 +1021,24 @@ class _OperationsScreenState extends State<OperationsScreen> {
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: DropdownButtonHideUnderline(
-            child: DropdownButton<DeviceModel>(
+            child: DropdownButton<String>(
               isExpanded: true,
               dropdownColor: const Color(0xFF131B2E),
-              value: _selectedQrDevice,
-              items: _devices.map((d) => DropdownMenuItem(
-                value: d,
-                child: Text('${d.deviceId} (${d.isOnline ? "ONLINE" : "OFFLINE"}) - ${d.clientName ?? "Unassigned"}', style: const TextStyle(color: Colors.white)),
+              value: _devices.any((d) => d.deviceId == _selectedQrDeviceId)
+                  ? _selectedQrDeviceId
+                  : (_devices.isNotEmpty ? _devices.first.deviceId : null),
+              items: _devices.map((d) => DropdownMenuItem<String>(
+                value: d.deviceId,
+                child: Text(
+                  '${d.deviceId} (${d.isOnline ? "ONLINE" : "OFFLINE"}) - ${d.clientName ?? "Unassigned"}',
+                  style: const TextStyle(color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
               )).toList(),
-              onChanged: (d) {
-                if (d != null) {
-                  setState(() => _selectedQrDevice = d);
-                  _loadDeviceQrConfig(d.deviceId);
+              onChanged: (id) {
+                if (id != null) {
+                  setState(() => _selectedQrDeviceId = id);
+                  _loadDeviceQrConfig(id);
                 }
               },
             ),
@@ -1536,43 +1545,53 @@ class _OperationsScreenState extends State<OperationsScreen> {
   }
 
   void _showSelectDeviceDeployDialog(FirmwareModel fw) {
-    DeviceModel selectedDev = _devices.first;
+    if (_devices.isEmpty) return;
+    String selectedDevId = _devices.first.deviceId;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF131B2E),
-          title: Text('Deploy Firmware ${fw.version}', style: const TextStyle(color: Colors.white)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Select target fleet machine:', style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 10),
-              DropdownButton<DeviceModel>(
-                isExpanded: true,
-                dropdownColor: const Color(0xFF131B2E),
-                value: selectedDev,
-                items: _devices.map((d) => DropdownMenuItem(value: d, child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)))).toList(),
-                onChanged: (d) {
-                  if (d != null) setDialogState(() => selectedDev = d);
+        builder: (ctx, setDialogState) {
+          final effectiveDevId = _devices.any((d) => d.deviceId == selectedDevId)
+              ? selectedDevId
+              : _devices.first.deviceId;
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF131B2E),
+            title: Text('Deploy Firmware ${fw.version}', style: const TextStyle(color: Colors.white)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select target fleet machine:', style: TextStyle(color: Colors.white70)),
+                const SizedBox(height: 10),
+                DropdownButton<String>(
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF131B2E),
+                  value: effectiveDevId,
+                  items: _devices.map((d) => DropdownMenuItem<String>(
+                    value: d.deviceId,
+                    child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)),
+                  )).toList(),
+                  onChanged: (id) {
+                    if (id != null) setDialogState(() => selectedDevId = id);
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _deployOta(effectiveDevId, fw.id);
                 },
+                child: const Text('Push OTA Now'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-              onPressed: () {
-                Navigator.pop(ctx);
-                _deployOta(selectedDev.deviceId, fw.id);
-              },
-              child: const Text('Push OTA Now'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

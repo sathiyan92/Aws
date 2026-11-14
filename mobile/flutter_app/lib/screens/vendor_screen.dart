@@ -140,7 +140,7 @@ class _VendorScreenState extends State<VendorScreen> {
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
-                value: ['BOTH', 'QR_ONLY', 'COIN_ONLY'].contains(selectedMode) ? selectedMode : 'BOTH',
+                initialValue: ['BOTH', 'QR_ONLY', 'COIN_ONLY'].contains(selectedMode) ? selectedMode : 'BOTH',
                 dropdownColor: const Color(0xFF131B2E),
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
