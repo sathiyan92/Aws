@@ -11,7 +11,7 @@ on:
 jobs:
   build-ios:
     name: Build iOS Package on GitHub Mac Runner
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Code
@@ -50,3 +50,4 @@ jobs:
           name: GTech-Fleet-iOS-App
           path: mobile/flutter_app/build/ios/GTech-Fleet-iOS.ipa
           retention-days: 14
+
