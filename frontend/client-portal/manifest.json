@@ -1,0 +1,24 @@
+{
+  "name": "G-TECH Vending Vendor Portal",
+  "short_name": "G-TECH Vendor",
+  "description": "Smart Vending Machine Management, Live Inventory & Revenue Dashboard",
+  "start_url": "/client-portal",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f19",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/client-portal/gtech-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/client-portal/gtech-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

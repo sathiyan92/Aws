@@ -43,8 +43,13 @@ function extractTrIdFromPayload(payload) {
  */
 
 function getApiBase() {
-    if (window.location.protocol === "file:") {
-        return "http://localhost:8000/api/v1";
+    const customApi = localStorage.getItem("iot_api_server");
+    if (customApi && customApi.trim().length > 0) {
+        let base = customApi.trim().replace(/\/+$/, '');
+        return base.endsWith("/api/v1") ? base : `${base}/api/v1`;
+    }
+    if (window.location.protocol === "file:" || window.location.protocol === "capacitor:" || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        return "http://35.154.219.82:8000/api/v1";
     }
     const host = window.location.hostname || "localhost";
     const port = window.location.port;

@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>G-TECH Client Portal | IoT Fleet Management & Dynamic Visibility</title>
     <link rel="icon" type="image/png" href="gtech-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0284c7">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="G-TECH Vendor">
+    <link rel="apple-touch-icon" href="gtech-icon.png">
     <meta name="description" content="Multi-tenant client management portal with real-time dynamic hardware feature visibility and server-side policy enforcement for ESP32 vending fleets and RFID systems.">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1063,17 +1070,6 @@
                 <button type="button" class="btn btn-secondary btn-sm" id="btnClientLoginChangePass" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
                     🔑 Change Password
                 </button>
-            </div>
-            <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); font-size: 0.72rem; color: var(--text-muted);">
-                <p><strong>Quick Demo Access:</strong></p>
-                <div style="margin-top: 0.4rem; display: flex; justify-content: center; gap: 0.5rem;">
-                    <button class="btn btn-secondary" id="demoApexBtn" style="font-size: 0.7rem; padding: 0.35rem 0.65rem;">
-                        Apex Vending Admin
-                    </button>
-                    <button class="btn btn-secondary" id="demoMetroBtn" style="font-size: 0.7rem; padding: 0.35rem 0.65rem;">
-                        Metro Retail Admin
-                    </button>
-                </div>
             </div>
         </div>
     </div>

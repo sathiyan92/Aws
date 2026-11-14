@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>G-TECH Fleet Mobile</title>
+    <link rel="icon" type="image/png" href="../manufacturer-portal/gtech-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0b0f19">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="G-TECH Fleet">
+    <style>
+        :root {
+            --bg-dark: #0b0f19;
+            --card-bg: #131b2e;
+            --primary: #0284c7;
+            --primary-glow: rgba(2, 132, 199, 0.35);
+            --accent: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: max(env(safe-area-inset-top), 1.5rem) 1.25rem max(env(safe-area-inset-bottom), 1.5rem);
+            overflow-x: hidden;
+        }
+        .header {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        .logo-wrap {
+            width: 84px;
+            height: 84px;
+            background: #ffffff;
+            border-radius: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.25rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px var(--primary-glow);
+            padding: 8px;
+        }
+        .logo-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #ffffff 40%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 0.35rem;
+        }
+        .portal-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        .portal-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 1.25rem 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+            position: relative;
+            overflow: hidden;
+        }
+        .portal-card:active {
+            transform: scale(0.98);
+        }
+        .card-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            flex-shrink: 0;
+        }
+        .card-mfg .card-icon {
+            background: rgba(2, 132, 199, 0.18);
+            border: 1px solid rgba(2, 132, 199, 0.4);
+        }
+        .card-vendor .card-icon {
+            background: rgba(16, 185, 129, 0.18);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+        .card-info { flex: 1; }
+        .card-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card-desc {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.35;
+        }
+        .arrow {
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+        .settings-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px dashed var(--border);
+            border-radius: 14px;
+            padding: 0.9rem;
+            font-size: 0.78rem;
+        }
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+        }
+        .settings-body {
+            display: none;
+            margin-top: 0.5rem;
+        }
+        .settings-body.open {
+            display: block;
+        }
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.4rem;
+        }
+        .server-input {
+            flex: 1;
+            background: #060911;
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 0.45rem 0.65rem;
+            border-radius: 8px;
+            font-size: 0.78rem;
+        }
+        .save-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.45rem 0.8rem;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.78rem;
+            cursor: pointer;
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            margin-top: 0.5rem;
+        }
+        .dot { width: 7px; height: 7px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; }
+        .footer {
+            text-align: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="header">
+            <div class="logo-wrap">
+                <img src="../manufacturer-portal/gtech-icon.png" alt="G-TECH">
+            </div>
+            <h1>G-TECH Fleet Mobile</h1>
+            <p class="subtitle">Commercial IoT Vending Machine Management</p>
+            <div class="status-pill">
+                <span class="dot"></span> Cloud Server: <strong id="activeHostLabel">35.154.219.82:8000</strong>
+            </div>
+        </div>
+
+        <div class="portal-grid">
+            <a href="../manufacturer-portal/index.html" class="portal-card card-mfg" onclick="savePortalChoice('mfg')">
+                <div class="card-icon">🏭</div>
+                <div class="card-info">
+                    <div class="card-title">
+                        <span>Operations Portal</span>
+                        <span class="arrow">&rsaquo;</span>
+                    </div>
+                    <div class="card-desc">Machine assembly, hardware discovery queue, client accounts, module provisioning & OTA updates</div>
+                </div>
+            </a>
+
+            <a href="../client-portal/index.html" class="portal-card card-vendor" onclick="savePortalChoice('vendor')">
+                <div class="card-icon">🏪</div>
+                <div class="card-info">
+                    <div class="card-title">
+                        <span>Vendor / Merchant Portal</span>
+                        <span class="arrow">&rsaquo;</span>
+                    </div>
+                    <div class="card-desc">Live machine stock, test dispense, UPI QR & Coin pricing, telemetry & sales revenue</div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <div>
+        <div class="settings-card">
+            <div class="settings-header" onclick="toggleSettings()">
+                <span>⚙️ Cloud Server Connection</span>
+                <span id="settingsToggleArrow">&#9662;</span>
+            </div>
+            <div class="settings-body" id="settingsBody">
+                <p style="color:var(--text-muted); font-size:0.72rem;">Configure base backend endpoint:</p>
+                <div class="input-row">
+                    <input type="text" id="serverInput" class="server-input" value="http://35.154.219.82:8000">
+                    <button class="save-btn" onclick="saveServer()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            G-TECH Automations & Robotics &bull; Version 2.0 Mobile
+        </div>
+    </div>
+
+    <script>
+        function init() {
+            const savedServer = localStorage.getItem("iot_api_server") || "http://35.154.219.82:8000";
+            document.getElementById("serverInput").value = savedServer;
+            try {
+                const u = new URL(savedServer);
+                document.getElementById("activeHostLabel").textContent = u.host;
+            } catch(e) {
+                document.getElementById("activeHostLabel").textContent = savedServer;
+            }
+        }
+        function toggleSettings() {
+            const b = document.getElementById("settingsBody");
+            b.classList.toggle("open");
+            document.getElementById("settingsToggleArrow").innerHTML = b.classList.contains("open") ? "&#9652;" : "&#9662;";
+        }
+        function saveServer() {
+            const val = document.getElementById("serverInput").value.trim().replace(/\/+$/, '');
+            if (val) {
+                localStorage.setItem("iot_api_server", val);
+                alert("✓ Cloud Server set to: " + val);
+                init();
+            }
+        }
+        function savePortalChoice(choice) {
+            localStorage.setItem("preferred_mobile_portal", choice);
+        }
+        init();
+    </script>
+</body>
+</html>

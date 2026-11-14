@@ -1,0 +1,21 @@
+{
+  "appId": "com.gtech.iotfleet",
+  "appName": "G-TECH Fleet",
+  "webDir": "frontend",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "http://35.154.219.82:8000/mobile/index.html",
+    "cleartext": true,
+    "allowNavigation": [
+      "35.154.219.82",
+      "gtechinfo.in",
+      "*.gtechinfo.in"
+    ]
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "ios": {
+    "allowsInlineMediaPlayback": true
+  }
+}
