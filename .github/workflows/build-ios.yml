@@ -23,15 +23,13 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Flutter & CocoaPods Dependencies
+      - name: Precache iOS Artifacts & Dependencies
         working-directory: mobile/flutter_app
         run: |
+          flutter precache --ios
           flutter pub get
-          cd ios
-          pod install --repo-update
-          cd ..
 
-      - name: Build iOS Runner (.app)
+      - name: Build iOS App (.app Bundle)
         working-directory: mobile/flutter_app
         run: |
           flutter build ios --no-codesign --debug
@@ -44,10 +42,9 @@ jobs:
           cd build/ios
           zip -r GTech-Fleet-iOS.ipa Payload
 
-      - name: Upload iOS App Artifact
+      - name: Upload iOS App Artifact (.ipa)
         uses: actions/upload-artifact@v4
         with:
           name: GTech-Fleet-iOS-App
           path: mobile/flutter_app/build/ios/GTech-Fleet-iOS.ipa
           retention-days: 14
-
