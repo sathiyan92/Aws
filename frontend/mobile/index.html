@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>G-TECH Fleet Mobile</title>
-    <link rel="icon" type="image/png" href="../manufacturer-portal/gtech-icon.png">
+    <link rel="icon" type="image/png" href="gtech-icon.png">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0b0f19">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -196,7 +196,7 @@
     <div>
         <div class="header">
             <div class="logo-wrap">
-                <img src="../manufacturer-portal/gtech-icon.png" alt="G-TECH">
+                <img src="gtech-icon.png" alt="G-TECH">
             </div>
             <h1>G-TECH Fleet Mobile</h1>
             <p class="subtitle">Commercial IoT Vending Machine Management</p>
@@ -206,7 +206,7 @@
         </div>
 
         <div class="portal-grid">
-            <a href="../manufacturer-portal/index.html" class="portal-card card-mfg" onclick="savePortalChoice('mfg')">
+            <a href="/portal/" class="portal-card card-mfg" onclick="navigateTo('/portal/'); return false;">
                 <div class="card-icon">🏭</div>
                 <div class="card-info">
                     <div class="card-title">
@@ -217,7 +217,7 @@
                 </div>
             </a>
 
-            <a href="../client-portal/index.html" class="portal-card card-vendor" onclick="savePortalChoice('vendor')">
+            <a href="/client-portal/" class="portal-card card-vendor" onclick="navigateTo('/client-portal/'); return false;">
                 <div class="card-icon">🏪</div>
                 <div class="card-info">
                     <div class="card-title">
@@ -274,6 +274,21 @@
                 init();
             }
         }
+        function navigateTo(portalPath) {
+            savePortalChoice(portalPath.includes("portal") && !portalPath.includes("client") ? "mfg" : "vendor");
+            const savedServer = localStorage.getItem("iot_api_server");
+            if (savedServer && savedServer.trim()) {
+                const base = savedServer.trim().replace(/\/+$/, '');
+                window.location.href = `${base}${portalPath}`;
+                return;
+            }
+            if (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:') {
+                window.location.href = `http://35.154.219.82:8000${portalPath}`;
+                return;
+            }
+            window.location.href = portalPath;
+        }
+
         function savePortalChoice(choice) {
             localStorage.setItem("preferred_mobile_portal", choice);
         }

@@ -446,14 +446,17 @@ def get_platform_statistics(
 portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/manufacturer-portal"))
 if os.path.exists(portal_dir):
     app.mount("/portal", StaticFiles(directory=portal_dir, html=True), name="manufacturer_portal")
+    app.mount("/manufacturer-portal", StaticFiles(directory=portal_dir, html=True), name="manufacturer_portal_alias")
 
 # Mount static directory for Client Tenant Portal UI if directory exists
 client_portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/client-portal"))
 if os.path.exists(client_portal_dir):
     app.mount("/client-portal", StaticFiles(directory=client_portal_dir, html=True), name="client_portal")
+    app.mount("/vendor-portal", StaticFiles(directory=client_portal_dir, html=True), name="vendor_portal_alias")
 
 # Mount static directory for Unified Mobile Launcher UI if directory exists
 mobile_portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/mobile"))
 if os.path.exists(mobile_portal_dir):
     app.mount("/mobile", StaticFiles(directory=mobile_portal_dir, html=True), name="mobile_portal")
+
 
