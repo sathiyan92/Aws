@@ -75,3 +75,4 @@ If you require a native `.ipa` file distributed through Apple TestFlight or the 
 7. **Run on iOS Device or Simulator:**
    - Connect your iPhone via USB, select your phone in Xcode's device dropdown, and click the **Run (Play)** button.
    - For TestFlight: Select **Product -> Archive** and distribute through App Store Connect.
+

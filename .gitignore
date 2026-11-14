@@ -76,3 +76,12 @@ mosquitto/log/
 *~
 .DS_Store
 Thumbs.db
+
+# Android Studio & Gradle
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+.cxx/
+

@@ -159,8 +159,8 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onPageFinished(WebView view, String url, boolean hasError) {
-                super.onPageFinished(view, url, hasError);
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
                 progressBar.setVisibility(View.GONE);
                 swipeRefresh.setRefreshing(false);
             }
@@ -243,3 +243,4 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl(targetUrl);
     }
 }
+

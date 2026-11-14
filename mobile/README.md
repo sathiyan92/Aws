@@ -71,3 +71,4 @@ The mobile launcher allows changing the backend server endpoint at any time dire
 - Enter your new domain or IP (e.g., `https://gtechinfo.in` or `http://35.154.219.82:8000`)
 - Tap **Save**
 - The app will instantly point all Operations and Vendor requests to the new server.
+
