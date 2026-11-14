@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
@@ -21,13 +23,19 @@ class _OperationsScreenState extends State<OperationsScreen> {
   List<OtaDeploymentModel> _otaDeployments = [];
   Map<String, dynamic> _stats = {};
 
-  // QR Manager Tab state
+  // QR & Operating Settings Tab state
   DeviceModel? _selectedQrDevice;
   QrConfigModel? _currentQrConfig;
   bool _isLoadingQr = false;
   final _qrUpiLinkCtrl = TextEditingController();
-  final _qrPriceCtrl = TextEditingController();
-  final _qrProductCtrl = TextEditingController();
+  final _qrPriceCtrl = TextEditingController(text: '2');
+  final _qrProductCtrl = TextEditingController(text: 'Commercial Vending Item');
+  final _stockQtyCtrl = TextEditingController(text: '50');
+  final _wifiSsidCtrl = TextEditingController();
+  final _wifiPasswordCtrl = TextEditingController();
+  bool _stockManagementEnabled = true;
+  String _paymentMode = 'BOTH'; // 'BOTH', 'QR_ONLY', 'COIN_ONLY'
+  String? _selectedImageFilename;
 
   @override
   void initState() {
@@ -40,6 +48,9 @@ class _OperationsScreenState extends State<OperationsScreen> {
     _qrUpiLinkCtrl.dispose();
     _qrPriceCtrl.dispose();
     _qrProductCtrl.dispose();
+    _stockQtyCtrl.dispose();
+    _wifiSsidCtrl.dispose();
+    _wifiPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -92,11 +103,17 @@ class _OperationsScreenState extends State<OperationsScreen> {
         _qrUpiLinkCtrl.text = config.standeeUpiLink;
         _qrPriceCtrl.text = config.amountRupees.toStringAsFixed(0);
         _qrProductCtrl.text = config.productName;
+        _stockManagementEnabled = config.stockManagementEnabled;
+        _stockQtyCtrl.text = config.currentStock.toString();
+        _paymentMode = config.paymentMode;
+        _wifiSsidCtrl.text = config.wifiSsid;
+        _wifiPasswordCtrl.text = config.wifiPassword;
+        _selectedImageFilename = null;
       });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load QR: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Failed to load settings: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -106,9 +123,10 @@ class _OperationsScreenState extends State<OperationsScreen> {
 
   Future<void> _saveQrConfig() async {
     if (_selectedQrDevice == null) return;
-    final price = double.tryParse(_qrPriceCtrl.text.trim()) ?? 5.0;
+    final price = double.tryParse(_qrPriceCtrl.text.trim()) ?? 2.0;
     final link = _qrUpiLinkCtrl.text.trim();
     final prod = _qrProductCtrl.text.trim();
+    final stock = int.tryParse(_stockQtyCtrl.text.trim()) ?? 50;
 
     try {
       final ok = await ApiService().updateQrConfig(
@@ -116,12 +134,17 @@ class _OperationsScreenState extends State<OperationsScreen> {
         price: price,
         standeeUpiLink: link,
         productName: prod,
+        stockManagementEnabled: _stockManagementEnabled,
+        currentStock: stock,
+        paymentMode: _paymentMode,
+        wifiSsid: _wifiSsidCtrl.text.trim(),
+        wifiPassword: _wifiPasswordCtrl.text.trim(),
       );
       if (!mounted) return;
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✓ Synchronized QR settings to ${_selectedQrDevice!.deviceId}!'),
+            content: Text('✓ Synchronized settings to ${_selectedQrDevice!.deviceId}!'),
             backgroundColor: const Color(0xFF10B981),
           ),
         );
@@ -135,64 +158,199 @@ class _OperationsScreenState extends State<OperationsScreen> {
     }
   }
 
+  Future<void> _pickAndDecodeQrImage({required ImageSource source}) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: source);
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
+
+      setState(() {
+        _selectedImageFilename = picked.name;
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Scanning & decoding QR code image...'),
+          backgroundColor: Color(0xFF0284C7),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final result = await ApiService().decodeQrImage(base64String);
+      if (!mounted) return;
+
+      final qrPayload = result['qr_payload']?.toString();
+      if (qrPayload != null && qrPayload.isNotEmpty) {
+        setState(() {
+          _qrUpiLinkCtrl.text = qrPayload;
+          if (result['amount_rupees'] is num) {
+            _qrPriceCtrl.text = (result['amount_rupees'] as num).toDouble().toStringAsFixed(0);
+          }
+          if (result['merchant_name'] != null && result['merchant_name'].toString().isNotEmpty) {
+            _qrProductCtrl.text = result['merchant_name'].toString();
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✓ QR Decoded: ${qrPayload.substring(0, qrPayload.length > 35 ? 35 : qrPayload.length)}...'),
+            backgroundColor: const Color(0xFF10B981),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not decode QR payload. You can paste the UPI link directly.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('QR Upload failed: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showQrImageSourcePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF131B2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Upload QR Code / Standee Image',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Color(0xFF38BDF8)),
+                title: const Text('Choose from Photo Gallery', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndDecodeQrImage(source: ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Color(0xFF10B981)),
+                title: const Text('Take Photo with Camera', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndDecodeQrImage(source: ImageSource.camera);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _applyStandeePreset(double price, String tr) {
+    setState(() {
+      _qrPriceCtrl.text = price.toStringAsFixed(0);
+      _qrUpiLinkCtrl.text = 'upi://pay?am=${price.toStringAsFixed(2)}&cu=INR&mc=5300&mode=19&pa=gtech282722.rzp@rxairtel&tn=Payment%20To%20GTECH&tr=$tr';
+      _qrProductCtrl.text = 'G-TECH Smart Dispenser';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('📌 Loaded ₹${price.toStringAsFixed(0)} Standee Preset! Tap "Save & Sync" to push to machine.'),
+        backgroundColor: const Color(0xFF0284C7),
+      ),
+    );
+  }
+
   Future<void> _deployOta(String deviceId, String firmwareId) async {
     try {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deploying OTA to $deviceId...')),
+        SnackBar(content: Text('Deploying OTA to $deviceId...'), backgroundColor: const Color(0xFF0284C7)),
       );
       final ok = await ApiService().deployOtaUpdate(deviceId, firmwareId);
       if (!mounted) return;
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✓ OTA command queued for $deviceId!'), backgroundColor: const Color(0xFF10B981)),
+          SnackBar(content: Text('✓ Queued OTA Update for $deviceId!'), backgroundColor: const Color(0xFF10B981)),
         );
         _loadAllData();
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('OTA deploy failed: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Deployment failed: $e'), backgroundColor: Colors.red),
       );
     }
   }
 
   Future<void> _triggerTestDispense(DeviceModel device) async {
-    try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Testing vend pulse on ${device.deviceId}...')),
-      );
-      final res = await ApiService().triggerDispense(device.deviceId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res['message'] ?? 'Dispense command executed!'),
-          backgroundColor: const Color(0xFF10B981),
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B2E),
+        title: Text('Test Vend: ${device.deviceId}', style: const TextStyle(color: Colors.white)),
+        content: const Text(
+          'Send remote test pulse to trigger physical solenoid / vending motor for Slot 1?',
+          style: TextStyle(color: Colors.white70),
         ),
-      );
-      _loadAllData();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Dispense failed: $e'), backgroundColor: Colors.red),
-      );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm Vend'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        final res = await ApiService().triggerDispense(device.deviceId);
+        if (!mounted) return;
+        final success = res['status'] == 'success' || res['detail'] == null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? '✓ Dispense pulse sent to ${device.deviceId}!' : 'Dispense command failed.'),
+            backgroundColor: success ? const Color(0xFF10B981) : Colors.red,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Test vend error: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   void _showAssignDialog(DiscoveryDeviceModel disc) {
-    final cleanMac = disc.macAddress ?? '';
-    final deviceIdCtrl = TextEditingController(text: 'VM-${cleanMac.replaceAll(":", "").substring(cleanMac.length > 6 ? cleanMac.length - 6 : 0)}');
+    final deviceIdCtrl = TextEditingController(
+      text: 'VM-${(_devices.length + 1).toString().padLeft(6, '0')}',
+    );
     String? selectedClientId = _clients.isNotEmpty ? _clients.first.id : null;
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
-        title: const Text('Assign Machine ID', style: TextStyle(color: Colors.white)),
+        title: const Text('Assign Hardware ID', style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Discovered MAC: ${disc.macAddress}', style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13)),
+            Text('Discovered Node: ${disc.tempId}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
             const SizedBox(height: 12),
             TextField(
               controller: deviceIdCtrl,
@@ -239,6 +397,299 @@ class _OperationsScreenState extends State<OperationsScreen> {
               }
             },
             child: const Text('Assign & Deploy'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateVendorDialog() {
+    final nameCtrl = TextEditingController();
+    final codeCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final userCtrl = TextEditingController();
+    final passCtrl = TextEditingController(text: 'Vendor@2026');
+    String? assignDeviceId = _devices.isNotEmpty ? _devices.first.deviceId : null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B2E),
+        title: const Text('👤 Create Vendor Login', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Company / Vendor Name',
+                  labelStyle: TextStyle(color: Colors.white70),
+                  hintText: 'e.g. Airport Vending Terminal',
+                  hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+                ),
+                onChanged: (val) {
+                  if (codeCtrl.text.isEmpty && val.trim().isNotEmpty) {
+                    codeCtrl.text = val.trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toUpperCase();
+                  }
+                  if (userCtrl.text.isEmpty && val.trim().isNotEmpty) {
+                    userCtrl.text = val.trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase();
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: codeCtrl,
+                style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+                decoration: const InputDecoration(
+                  labelText: 'Vendor Tenant Code',
+                  labelStyle: TextStyle(color: Colors.white70),
+                  hintText: 'e.g. AIRPORT_VENDORS',
+                  hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Contact Email',
+                  labelStyle: TextStyle(color: Colors.white70),
+                  hintText: 'vendor@example.com',
+                  hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Contact Phone (Optional)',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Divider(color: Colors.white12),
+              const SizedBox(height: 6),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Vendor Login Credentials', style: TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: userCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Login Username',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: passCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Login Password',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: assignDeviceId,
+                dropdownColor: const Color(0xFF131B2E),
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: 'Assign Machine',
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('No Machine (Assign Later)')),
+                  ..._devices.map((d) => DropdownMenuItem(value: d.deviceId, child: Text(d.deviceId))),
+                ],
+                onChanged: (val) => assignDeviceId = val,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)),
+            onPressed: () async {
+              if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty || emailCtrl.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please fill in Company Name, Code, and Email'), backgroundColor: Colors.orange),
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              try {
+                final ok = await ApiService().createClient(
+                  clientCode: codeCtrl.text.trim(),
+                  name: nameCtrl.text.trim(),
+                  contactEmail: emailCtrl.text.trim(),
+                  contactPhone: phoneCtrl.text.trim(),
+                  adminUsername: userCtrl.text.trim(),
+                  adminPassword: passCtrl.text.trim(),
+                  assignDeviceId: assignDeviceId,
+                );
+                if (!mounted) return;
+                if (ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('✓ Created Vendor: ${nameCtrl.text.trim()}! Login: ${userCtrl.text.trim()}'),
+                      backgroundColor: const Color(0xFF10B981),
+                    ),
+                  );
+                  _loadAllData();
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Create Vendor failed: $e'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            child: const Text('Create Vendor Login'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showResetVendorPasswordDialog(ClientModel client) {
+    final userCtrl = TextEditingController(text: '${client.code.toLowerCase()}_admin');
+    final passCtrl = TextEditingController(text: 'Vendor@2026');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B2E),
+        title: Text('🔑 Reset Password for ${client.name}', style: const TextStyle(color: Colors.white, fontSize: 15)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: userCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Username', labelStyle: TextStyle(color: Colors.white70)),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: passCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'New Password', labelStyle: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final ok = await ApiService().createClientUser(
+                  clientId: client.id,
+                  username: userCtrl.text.trim(),
+                  password: passCtrl.text.trim(),
+                  email: client.contactEmail,
+                );
+                if (!mounted) return;
+                if (ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('✓ Password set for ${userCtrl.text.trim()}!'),
+                      backgroundColor: const Color(0xFF10B981),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to set password: $e'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            child: const Text('Save Password'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRegisterHardwareDialog() {
+    final devIdCtrl = TextEditingController(text: 'VM-${(_devices.length + 1).toString().padLeft(6, '0')}');
+    final macCtrl = TextEditingController();
+    String? selectedClientId = _clients.isNotEmpty ? _clients.first.id : null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131B2E),
+        title: const Text('⚡ Register New Hardware', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: devIdCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Permanent Device ID', labelStyle: TextStyle(color: Colors.white70)),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: macCtrl,
+              style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+              decoration: const InputDecoration(
+                labelText: 'Hardware MAC Address (Optional)',
+                labelStyle: TextStyle(color: Colors.white70),
+                hintText: 'e.g. 34:85:18:8f:55:10',
+                hintStyle: TextStyle(color: Colors.white24, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: selectedClientId,
+              dropdownColor: const Color(0xFF131B2E),
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(labelText: 'Assign to Tenant Vendor', labelStyle: TextStyle(color: Colors.white70)),
+              items: _clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+              onChanged: (val) => selectedClientId = val,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final ok = await ApiService().registerDevice(
+                  deviceTypeCode: 'VENDING_MACHINE',
+                  hardwareId: devIdCtrl.text.trim(),
+                  macAddress: macCtrl.text.trim().isNotEmpty ? macCtrl.text.trim() : null,
+                  clientId: selectedClientId,
+                );
+                if (!mounted) return;
+                if (ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('✓ Registered Machine ${devIdCtrl.text.trim()}!'), backgroundColor: const Color(0xFF10B981)),
+                  );
+                  _loadAllData();
+                }
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Registration failed: $e'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            child: const Text('Register Hardware'),
           ),
         ],
       ),
@@ -328,20 +779,32 @@ class _OperationsScreenState extends State<OperationsScreen> {
         type: BottomNavigationBarType.fixed,
         selectedFontSize: 11,
         unselectedFontSize: 11,
-        onTap: (index) => setState(() => _currentTabIndex = index),
+        onTap: (idx) => setState(() => _currentTabIndex = idx),
         items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Fleet'),
-          const BottomNavigationBarItem(icon: Icon(Icons.qr_code_2), label: 'QR & UPI'),
-          const BottomNavigationBarItem(icon: Icon(Icons.system_update_alt), label: 'OTA Hub'),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.developer_board),
+            label: 'Fleet',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.qr_code_2),
+            label: 'QR & UPI',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.system_update_alt),
+            label: 'OTA Hub',
+          ),
           BottomNavigationBarItem(
             icon: Badge(
               isLabelVisible: _discoveryQueue.isNotEmpty,
               label: Text('${_discoveryQueue.length}'),
-              child: const Icon(Icons.cell_tower),
+              child: const Icon(Icons.radar),
             ),
             label: 'Discovery',
           ),
-          const BottomNavigationBarItem(icon: Icon(Icons.people_outline), label: 'Vendors'),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.business),
+            label: 'Vendors',
+          ),
         ],
       ),
     );
@@ -354,7 +817,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFF131B2E),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.06)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,7 +825,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
             Icon(icon, color: color, size: 18),
             const SizedBox(height: 6),
             Text(val, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-            Text(title, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10)),
+            Text(title, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
@@ -370,20 +833,6 @@ class _OperationsScreenState extends State<OperationsScreen> {
   }
 
   Widget _buildDevicesTab() {
-    if (_devices.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(40),
-          child: Column(
-            children: [
-              Icon(Icons.inventory_2_outlined, color: Colors.white24, size: 48),
-              SizedBox(height: 12),
-              Text('No devices registered in fleet yet', style: TextStyle(color: Colors.white54)),
-            ],
-          ),
-        ),
-      );
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -394,131 +843,153 @@ class _OperationsScreenState extends State<OperationsScreen> {
               'Connected Hardware Fleet',
               style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
             ),
-            Text(
-              '${_devices.length} machines',
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF38BDF8),
+                side: const BorderSide(color: Color(0xFF0284C7)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              ),
+              onPressed: _showRegisterHardwareDialog,
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Register', style: TextStyle(fontSize: 12)),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _devices.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, idx) {
-            final d = _devices[idx];
-            return Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF131B2E),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: d.isOnline ? const Color(0xFF10B981).withOpacity(0.4) : Colors.white.withOpacity(0.08),
+        if (_devices.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(30),
+            decoration: BoxDecoration(color: const Color(0xFF131B2E), borderRadius: BorderRadius.circular(14)),
+            child: const Center(
+              child: Text('No devices registered in fleet yet', style: TextStyle(color: Colors.white54)),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _devices.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, idx) {
+              final d = _devices[idx];
+              return Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF131B2E),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: d.isOnline ? const Color(0xFF10B981).withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.08),
+                  ),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            d.deviceId,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
-                              borderRadius: BorderRadius.circular(4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              d.deviceId,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
                             ),
-                            child: Text(
-                              'FW v${d.firmwareVersion}',
-                              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'FW ${d.firmwareVersion}',
+                                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: (d.isOnline ? const Color(0xFF10B981) : Colors.grey).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            d.isOnline ? 'ONLINE' : 'OFFLINE',
+                            style: TextStyle(
+                              color: d.isOnline ? const Color(0xFF10B981) : Colors.grey,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: (d.isOnline ? const Color(0xFF10B981) : Colors.grey).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text(
-                          d.isOnline ? 'ONLINE' : 'OFFLINE',
-                          style: TextStyle(
-                            color: d.isOnline ? const Color(0xFF10B981) : Colors.grey,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Vendor: ${d.clientName ?? 'Unassigned'}  •  Mode: ${d.paymentMode}',
+                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                    ),
+                    if (d.macAddress != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'MAC: ${d.macAddress}',
+                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontFamily: 'monospace'),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Vendor: ${d.clientName ?? 'Unassigned'}  •  Mode: ${d.paymentMode}',
-                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-                  ),
-                  if (d.macAddress != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'MAC: ${d.macAddress}',
-                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 11, fontFamily: 'monospace'),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          d.stockManagementEnabled ? 'Stock: ${d.currentStock}/${d.maxStock}' : 'Without-Stock Mode',
+                          style: TextStyle(
+                            color: d.stockManagementEnabled ? Colors.white70 : const Color(0xFF10B981),
+                            fontSize: 12,
+                            fontWeight: d.stockManagementEnabled ? FontWeight.normal : FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text('UPI: ₹${d.upiPrice.toStringAsFixed(0)}', style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        Text('Coin: ₹${d.coinPrice.toStringAsFixed(0)}', style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF38BDF8),
+                              side: const BorderSide(color: Color(0xFF0284C7)),
+                            ),
+                            onPressed: () => _triggerTestDispense(d),
+                            icon: const Icon(Icons.flash_on, size: 16),
+                            label: const Text('Test Vend'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFF59E0B),
+                            side: const BorderSide(color: Color(0xFFF59E0B)),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _selectedQrDevice = d;
+                              _currentTabIndex = 1;
+                              _loadDeviceQrConfig(d.deviceId);
+                            });
+                          },
+                          icon: const Icon(Icons.qr_code, size: 16),
+                          label: const Text('QR Config'),
+                        ),
+                      ],
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text('Stock: ${d.currentStock}/${d.maxStock}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                      const Spacer(),
-                      Text('UPI: ₹${d.upiPrice.toStringAsFixed(0)}', style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 8),
-                      Text('Coin: ₹${d.coinPrice.toStringAsFixed(0)}', style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 12, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF38BDF8),
-                            side: const BorderSide(color: Color(0xFF0284C7)),
-                          ),
-                          onPressed: () => _triggerTestDispense(d),
-                          icon: const Icon(Icons.flash_on, size: 16),
-                          label: const Text('Test Vend'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFF59E0B),
-                          side: const BorderSide(color: Color(0xFFF59E0B)),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _selectedQrDevice = d;
-                            _currentTabIndex = 1;
-                            _loadDeviceQrConfig(d.deviceId);
-                          });
-                        },
-                        icon: const Icon(Icons.qr_code, size: 16),
-                        label: const Text('QR Config'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+                ),
+              );
+            },
+          ),
       ],
     );
   }
@@ -528,12 +999,12 @@ class _OperationsScreenState extends State<OperationsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'UPI QR Code & Price Manager',
+          'UPI QR Code & Operating Configuration',
           style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 4),
         const Text(
-          'Changes made here are pushed live to the machine and standee QR in real-time.',
+          'Upload QR standee image, select stock/without-stock mode, and sync live to ESP32.',
           style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
         ),
         const SizedBox(height: 14),
@@ -544,7 +1015,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF131B2E),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<DeviceModel>(
@@ -564,7 +1035,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
         if (_isLoadingQr)
           const Center(child: Padding(padding: EdgeInsets.all(30), child: CircularProgressIndicator(color: Color(0xFF0284C7))))
@@ -578,34 +1049,138 @@ class _OperationsScreenState extends State<OperationsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Active status pill
                 if (_currentQrConfig != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'Active Config: ${_currentQrConfig!.productName} (₹${_currentQrConfig!.amountRupees.toStringAsFixed(0)})',
-                        style: const TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Active: ${_currentQrConfig!.productName} • ₹${_currentQrConfig!.amountRupees.toStringAsFixed(0)} • ${_stockManagementEnabled ? "Stock Tracking" : "Without-Stock"}',
+                            style: const TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
-                // Product Name
+                // Upload QR Image Action Bar
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.qr_code_scanner, color: Color(0xFF38BDF8), size: 18),
+                          SizedBox(width: 6),
+                          Text('Upload Standee QR Code Photo', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Upload your standee QR code or photo. The app auto-decodes the UPI link.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0284C7),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                              ),
+                              onPressed: _showQrImageSourcePicker,
+                              icon: const Icon(Icons.photo_camera, size: 16),
+                              label: const Text('📷 Upload QR Image', style: TextStyle(fontSize: 12)),
+                            ),
+                          ),
+                          if (_selectedImageFilename != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.check, color: Color(0xFF10B981), size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _selectedImageFilename!,
+                                    style: const TextStyle(color: Color(0xFF10B981), fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // 1-Click Standee Quick Presets
+                const Text('Quick 1-Click Standee Presets:', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    ActionChip(
+                      backgroundColor: const Color(0xFF1E293B),
+                      side: const BorderSide(color: Color(0xFF38BDF8)),
+                      avatar: const Text('₹2', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 11)),
+                      label: const Text('₹2 Standee QR', style: TextStyle(color: Colors.white, fontSize: 11)),
+                      onPressed: () => _applyStandeePreset(2.0, 'TuXKipEEX2KteFqrv2'),
+                    ),
+                    ActionChip(
+                      backgroundColor: const Color(0xFF1E293B),
+                      side: const BorderSide(color: Color(0xFF10B981)),
+                      avatar: const Text('₹5', style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
+                      label: const Text('₹5 Standee QR', style: TextStyle(color: Colors.white, fontSize: 11)),
+                      onPressed: () => _applyStandeePreset(5.0, 'TuXKipEEX2KteFqrv2'),
+                    ),
+                    ActionChip(
+                      backgroundColor: const Color(0xFF1E293B),
+                      side: const BorderSide(color: Color(0xFFF59E0B)),
+                      avatar: const Text('₹10', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 11)),
+                      label: const Text('₹10 Standee QR', style: TextStyle(color: Colors.white, fontSize: 11)),
+                      onPressed: () => _applyStandeePreset(10.0, 'TuXKipEEX2KteFqrv2'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Product Name Field
                 TextField(
                   controller: _qrProductCtrl,
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(
-                    labelText: 'Product Name',
+                    labelText: 'Product / Item Name',
                     labelStyle: TextStyle(color: Colors.white70),
                   ),
                 ),
                 const SizedBox(height: 12),
 
-                // Amount
+                // Amount Field
                 TextField(
                   controller: _qrPriceCtrl,
                   keyboardType: TextInputType.number,
@@ -621,14 +1196,198 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 TextField(
                   controller: _qrUpiLinkCtrl,
                   maxLines: 2,
-                  style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 11),
                   decoration: const InputDecoration(
                     labelText: 'Standee UPI Link / Razorpay QR Payload',
                     labelStyle: TextStyle(color: Color(0xFFF59E0B)),
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
+                // ==========================================
+                // STOCK MODE (With Stock vs Without Stock)
+                // ==========================================
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _stockManagementEnabled
+                        ? const Color(0xFF10B981).withValues(alpha: 0.08)
+                        : const Color(0xFF6366F1).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _stockManagementEnabled
+                          ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                          : const Color(0xFF6366F1).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      _stockManagementEnabled ? '📦 Stock-Based Mode' : '⚡ Without-Stock Mode',
+                                      style: TextStyle(
+                                        color: _stockManagementEnabled ? const Color(0xFF34D399) : const Color(0xFF818CF8),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _stockManagementEnabled
+                                      ? 'Track inventory (machine halts when empty)'
+                                      : 'Continuous vending (no stock count limit)',
+                                  style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _stockManagementEnabled,
+                            activeColor: const Color(0xFF10B981),
+                            inactiveTrackColor: const Color(0xFF6366F1).withValues(alpha: 0.5),
+                            onChanged: (val) {
+                              setState(() => _stockManagementEnabled = val);
+                            },
+                          ),
+                        ],
+                      ),
+                      if (_stockManagementEnabled) ...[
+                        const SizedBox(height: 10),
+                        const Divider(color: Colors.white12),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Text('Stock Units (1 - 50):', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                            const SizedBox(width: 12),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, color: Color(0xFF38BDF8), size: 20),
+                              onPressed: () {
+                                int cur = int.tryParse(_stockQtyCtrl.text) ?? 50;
+                                if (cur > 0) {
+                                  setState(() => _stockQtyCtrl.text = (cur - 1).toString());
+                                }
+                              },
+                            ),
+                            SizedBox(
+                              width: 50,
+                              child: TextField(
+                                controller: _stockQtyCtrl,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold),
+                                decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline, color: Color(0xFF38BDF8), size: 20),
+                              onPressed: () {
+                                int cur = int.tryParse(_stockQtyCtrl.text) ?? 50;
+                                if (cur < 50) {
+                                  setState(() => _stockQtyCtrl.text = (cur + 1).toString());
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '🔘 Machine Switch 1 (GPIO 32): cycle stock | 💾 Switch 2 (GPIO 33): save to Flash',
+                          style: TextStyle(color: Color(0xFF64748B), fontSize: 10),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ==========================================
+                // PAYMENT ACCEPTANCE MODE
+                // ==========================================
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('💳 Payment Acceptance Mode:', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ChoiceChip(
+                              label: const Text('⚡ Both (QR+Coin)', style: TextStyle(fontSize: 10)),
+                              selected: _paymentMode == 'BOTH',
+                              selectedColor: const Color(0xFF0284C7),
+                              onSelected: (_) => setState(() => _paymentMode = 'BOTH'),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: ChoiceChip(
+                              label: const Text('📱 QR Only', style: TextStyle(fontSize: 10)),
+                              selected: _paymentMode == 'QR_ONLY',
+                              selectedColor: const Color(0xFF0284C7),
+                              onSelected: (_) => setState(() => _paymentMode = 'QR_ONLY'),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: ChoiceChip(
+                              label: const Text('🪙 Coin Only', style: TextStyle(fontSize: 10)),
+                              selected: _paymentMode == 'COIN_ONLY',
+                              selectedColor: const Color(0xFF0284C7),
+                              onSelected: (_) => setState(() => _paymentMode = 'COIN_ONLY'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ==========================================
+                // WI-FI CREDENTIALS PUSH TO ESP32
+                // ==========================================
+                Theme(
+                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    title: const Text('📶 Machine Wi-Fi Setup (Push to ESP32)', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    children: [
+                      TextField(
+                        controller: _wifiSsidCtrl,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(labelText: 'Wi-Fi SSID', labelStyle: TextStyle(color: Colors.white70)),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _wifiPasswordCtrl,
+                        obscureText: true,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(labelText: 'Wi-Fi Password', labelStyle: TextStyle(color: Colors.white70)),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Save & Sync Button
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0284C7),
@@ -650,9 +1409,18 @@ class _OperationsScreenState extends State<OperationsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Firmware Artifacts & OTA Distribution Hub',
-          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Firmware & OTA Hub',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              '${_firmwareList.length} artifacts',
+              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            ),
+          ],
         ),
         const SizedBox(height: 4),
         const Text(
@@ -682,7 +1450,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF131B2E),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,10 +1458,10 @@ class _OperationsScreenState extends State<OperationsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Firmware v${fw.version}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text('Firmware ${fw.version}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(color: const Color(0xFF0284C7).withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
+                          decoration: BoxDecoration(color: const Color(0xFF0284C7).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
                           child: Text(fw.deviceTypeCode, style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10, fontWeight: FontWeight.w700)),
                         ),
                       ],
@@ -749,7 +1517,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${dep.deviceId} -> v${dep.targetVersion} [${dep.status}]',
+                        '${dep.deviceId} -> ${dep.targetVersion} [${dep.status}]',
                         style: const TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ),
@@ -775,7 +1543,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFF131B2E),
-          title: Text('Deploy Firmware v${fw.version}', style: const TextStyle(color: Colors.white)),
+          title: Text('Deploy Firmware ${fw.version}', style: const TextStyle(color: Colors.white)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -786,7 +1554,7 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 isExpanded: true,
                 dropdownColor: const Color(0xFF131B2E),
                 value: selectedDev,
-                items: _devices.map((d) => DropdownMenuItem(value: d, child: Text('${d.deviceId} (v${d.firmwareVersion})', style: const TextStyle(color: Colors.white)))).toList(),
+                items: _devices.map((d) => DropdownMenuItem(value: d, child: Text('${d.deviceId} (${d.firmwareVersion})', style: const TextStyle(color: Colors.white)))).toList(),
                 onChanged: (d) {
                   if (d != null) setDialogState(() => selectedDev = d);
                 },
@@ -846,28 +1614,44 @@ class _OperationsScreenState extends State<OperationsScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF131B2E),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
               ),
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(disc.tempId, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0284C7),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          disc.tempId,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        onPressed: () => _showAssignDialog(disc),
-                        icon: const Icon(Icons.assignment_turned_in, size: 14),
-                        label: const Text('Assign ID', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          'MAC: ${disc.macAddress ?? 'N/A'}',
+                          style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontFamily: 'monospace'),
+                        ),
+                        if (disc.ipAddress != null)
+                          Text(
+                            'IP: ${disc.ipAddress}',
+                            style: const TextStyle(color: Color(0xFF64748B), fontSize: 10),
+                          ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text('MAC: ${disc.macAddress ?? 'N/A'}  •  IP: ${disc.ipAddress ?? 'N/A'}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11)),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0284C7),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    ),
+                    onPressed: () => _showAssignDialog(disc),
+                    icon: const Icon(Icons.assignment_turned_in, size: 14),
+                    label: const Text('Assign ID', style: TextStyle(fontSize: 12)),
+                  ),
                 ],
               ),
             );
@@ -881,29 +1665,97 @@ class _OperationsScreenState extends State<OperationsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Client Tenant Vendors', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _clients.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, idx) {
-            final c = _clients[idx];
-            return Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF131B2E),
-                borderRadius: BorderRadius.circular(12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Client Tenant Vendors', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               ),
-              child: ListTile(
-                title: Text(c.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                subtitle: Text('Code: ${c.code}  •  ${c.allocatedDevices} Machines', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-                trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
-              ),
-            );
-          },
+              onPressed: _showCreateVendorDialog,
+              icon: const Icon(Icons.person_add, size: 14),
+              label: const Text('+ Create Vendor', style: TextStyle(fontSize: 12)),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
+        if (_clients.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(30),
+            decoration: BoxDecoration(color: const Color(0xFF131B2E), borderRadius: BorderRadius.circular(14)),
+            child: const Center(
+              child: Text('No vendor clients created yet', style: TextStyle(color: Colors.white54)),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _clients.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, idx) {
+              final c = _clients[idx];
+              return Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF131B2E),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            c.name,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${c.allocatedDevices} Machines',
+                            style: const TextStyle(color: Color(0xFFA5B4FC), fontSize: 11, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tenant Code: ${c.code}  •  Email: ${c.contactEmail}',
+                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF38BDF8),
+                            side: const BorderSide(color: Color(0xFF0284C7)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          ),
+                          onPressed: () => _showResetVendorPasswordDialog(c),
+                          icon: const Icon(Icons.key, size: 14),
+                          label: const Text('Reset Password', style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
       ],
     );
   }

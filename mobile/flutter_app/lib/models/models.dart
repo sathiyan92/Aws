@@ -58,6 +58,7 @@ class DeviceModel {
   final int? rssi;
   final bool isOnline;
   final String? lastSeen;
+  final bool stockManagementEnabled;
 
   DeviceModel({
     required this.id,
@@ -78,6 +79,7 @@ class DeviceModel {
     this.rssi,
     required this.isOnline,
     this.lastSeen,
+    this.stockManagementEnabled = true,
   });
 
   factory DeviceModel.fromJson(Map<String, dynamic> json) {
@@ -139,10 +141,11 @@ class DeviceModel {
       totalDispensed: json['total_dispensed'] is int ? json['total_dispensed'] : 0,
       ipAddress: json['ip_address'],
       macAddress: json['mac_address'],
-      firmwareVersion: json['current_firmware_version'] ?? '1.0.0',
+      firmwareVersion: json['current_firmware_version'] ?? json['firmware_version'] ?? 'v1.0.0',
       rssi: json['rssi'] is int ? json['rssi'] : null,
       isOnline: online,
       lastSeen: json['last_heartbeat_at'] ?? json['last_seen'],
+      stockManagementEnabled: json['stock_management_enabled'] != false,
     );
   }
 }
@@ -155,6 +158,14 @@ class QrConfigModel {
   final String productName;
   final bool isCoinEnabled;
   final double coinPrice;
+  final bool stockManagementEnabled;
+  final int currentStock;
+  final String paymentMode;
+  final String wifiSsid;
+  final String wifiPassword;
+  final String? trId;
+  final String? vpa;
+  final int configVersion;
 
   QrConfigModel({
     required this.deviceId,
@@ -164,17 +175,34 @@ class QrConfigModel {
     required this.productName,
     required this.isCoinEnabled,
     required this.coinPrice,
+    this.stockManagementEnabled = true,
+    this.currentStock = 50,
+    this.paymentMode = 'BOTH',
+    this.wifiSsid = '',
+    this.wifiPassword = '',
+    this.trId,
+    this.vpa,
+    this.configVersion = 1,
   });
 
   factory QrConfigModel.fromJson(String deviceId, Map<String, dynamic> json) {
+    final rawPayload = json['qr_payload'] ?? json['custom_qr_payload'] ?? json['standee_upi_link'] ?? json['active_custom_qr'] ?? '';
     return QrConfigModel(
       deviceId: deviceId,
-      standeeUpiLink: json['standee_upi_link'] ?? json['active_custom_qr'] ?? '',
-      activeCustomQr: json['active_custom_qr'],
-      amountRupees: (json['amount_rupees'] is num) ? (json['amount_rupees'] as num).toDouble() : 5.0,
-      productName: json['product_name'] ?? 'Sanitary Pad',
-      isCoinEnabled: json['is_coin_enabled'] != false,
+      standeeUpiLink: rawPayload.toString(),
+      activeCustomQr: json['active_custom_qr'] ?? rawPayload.toString(),
+      amountRupees: (json['amount_rupees'] is num) ? (json['amount_rupees'] as num).toDouble() : 2.0,
+      productName: json['product_name'] ?? 'Commercial Vending Item',
+      isCoinEnabled: json['has_coin_payment'] != false && json['is_coin_enabled'] != false,
       coinPrice: (json['coin_price'] is num) ? (json['coin_price'] as num).toDouble() : 5.0,
+      stockManagementEnabled: json['stock_management_enabled'] != false,
+      currentStock: json['current_stock'] is int ? json['current_stock'] : 50,
+      paymentMode: (json['payment_mode'] ?? 'BOTH').toString().toUpperCase(),
+      wifiSsid: json['wifi_ssid']?.toString() ?? '',
+      wifiPassword: json['wifi_password']?.toString() ?? '',
+      trId: json['tr_id']?.toString(),
+      vpa: json['razorpay_upi_vpa']?.toString() ?? json['vpa']?.toString(),
+      configVersion: json['config_version'] is int ? json['config_version'] : 1,
     );
   }
 }
@@ -199,13 +227,15 @@ class FirmwareModel {
   });
 
   factory FirmwareModel.fromJson(Map<String, dynamic> json) {
+    final rawUrl = json['binary_url']?.toString() ?? '';
+    final fname = rawUrl.isNotEmpty ? rawUrl.split('/').last : (json['filename'] ?? 'firmware.bin');
     return FirmwareModel(
       id: json['id']?.toString() ?? '',
-      version: json['version'] ?? '1.0.0',
+      version: json['version_string'] ?? json['version'] ?? 'v1.0.0',
       deviceTypeCode: json['device_type_code'] ?? 'VENDING_MACHINE',
-      filename: json['filename'] ?? 'firmware.bin',
+      filename: fname,
       fileSizeBytes: json['file_size_bytes'] is int ? json['file_size_bytes'] : 0,
-      description: json['description'],
+      description: json['changelog'] ?? json['description'],
       createdAt: json['created_at'] ?? '',
     );
   }
@@ -231,9 +261,9 @@ class OtaDeploymentModel {
   factory OtaDeploymentModel.fromJson(Map<String, dynamic> json) {
     return OtaDeploymentModel(
       id: json['id']?.toString() ?? '',
-      deviceId: json['device_id'] ?? '',
-      targetVersion: json['target_version'] ?? json['version'] ?? '',
-      status: json['status'] ?? 'QUEUED',
+      deviceId: json['device_code'] ?? json['device_id'] ?? '',
+      targetVersion: json['version_string'] ?? json['target_version'] ?? json['version'] ?? 'v1.0.0',
+      status: json['deployment_status'] ?? json['status'] ?? 'QUEUED',
       progressPercent: json['progress_percent'] is int ? json['progress_percent'] : 0,
       updatedAt: json['updated_at'] ?? json['created_at'],
     );

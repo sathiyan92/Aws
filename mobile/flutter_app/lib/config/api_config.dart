@@ -17,9 +17,18 @@ class ApiConfig {
 
   // Dynamic QR & Price Manager endpoints
   static String qrConfig(String deviceId) => '/orders/qr-config/$deviceId';
+  static const String decodeQr = '/vending/decode-qr';
+
+  // Client & Vendor Management
+  static const String createClient = '/clients';
+  static String clientUsers(String clientId) => '/clients/$clientId/users';
+
+  // Device Provisioning
+  static const String registerDevice = '/devices';
 
   // OTA Firmware & Deployment endpoints
   static const String firmwareList = '/ota/firmware';
+  static const String firmwareUpload = '/ota/firmware/upload';
   static const String otaDeploy = '/ota/deploy';
   static const String otaDeployments = '/ota/deployments';
 

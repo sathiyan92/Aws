@@ -213,11 +213,144 @@ class ApiService {
     }
   }
 
+  // Decode uploaded QR code image to UPI URI (/vending/decode-qr)
+  Future<Map<String, dynamic>> decodeQrImage(String base64Image) async {
+    final uri = Uri.parse('$_baseUrl${ApiConfig.decodeQr}');
+    final res = await http.post(
+      uri,
+      headers: _headers(),
+      body: jsonEncode({'image_data': base64Image}),
+    ).timeout(const Duration(seconds: 15));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('QR decode failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
+  // Create Client Tenant / Vendor (/clients)
+  Future<bool> createClient({
+    required String clientCode,
+    required String name,
+    required String contactEmail,
+    String? contactPhone,
+    String? address,
+    String? adminUsername,
+    String? adminPassword,
+    String? assignDeviceId,
+  }) async {
+    final uri = Uri.parse('$_baseUrl${ApiConfig.createClient}');
+    final res = await http.post(
+      uri,
+      headers: _headers(),
+      body: jsonEncode({
+        'client_code': clientCode,
+        'name': name,
+        'contact_email': contactEmail,
+        if (contactPhone != null && contactPhone.isNotEmpty) 'contact_phone': contactPhone,
+        if (address != null && address.isNotEmpty) 'address': address,
+        if (adminUsername != null && adminUsername.isNotEmpty) 'admin_username': adminUsername,
+        if (adminPassword != null && adminPassword.isNotEmpty) 'admin_password': adminPassword,
+        if (assignDeviceId != null && assignDeviceId.isNotEmpty) 'assign_device_id': assignDeviceId,
+      }),
+    ).timeout(const Duration(seconds: 15));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return true;
+    } else {
+      throw Exception('Create Vendor failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
+  // Create or Reset Vendor User Password (/clients/{clientId}/users)
+  Future<bool> createClientUser({
+    required String clientId,
+    required String username,
+    required String password,
+    String? email,
+    String? fullName,
+  }) async {
+    final uri = Uri.parse('$_baseUrl${ApiConfig.clientUsers(clientId)}');
+    final res = await http.post(
+      uri,
+      headers: _headers(),
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+        if (email != null && email.isNotEmpty) 'email': email,
+        if (fullName != null && fullName.isNotEmpty) 'full_name': fullName,
+      }),
+    ).timeout(const Duration(seconds: 12));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return true;
+    } else {
+      throw Exception('Set Vendor User failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
+  // Register / Provision Physical Device (/devices)
+  Future<bool> registerDevice({
+    required String deviceTypeCode,
+    required String hardwareId,
+    String? macAddress,
+    String? clientId,
+  }) async {
+    final uri = Uri.parse('$_baseUrl${ApiConfig.registerDevice}');
+    final res = await http.post(
+      uri,
+      headers: _headers(),
+      body: jsonEncode({
+        'device_type_code': deviceTypeCode,
+        'hardware_id': hardwareId,
+        if (macAddress != null && macAddress.isNotEmpty) 'mac_address': macAddress,
+        if (clientId != null && clientId.isNotEmpty) 'client_id': clientId,
+      }),
+    ).timeout(const Duration(seconds: 12));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return true;
+    } else {
+      throw Exception('Register Hardware failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
+  // Upload Firmware Artifact (.bin) (/ota/firmware/upload)
+  Future<bool> uploadFirmware({
+    required List<int> fileBytes,
+    required String filename,
+    required String versionString,
+    String deviceTypeCode = 'VENDING_MACHINE',
+    String? targetDeviceId,
+  }) async {
+    final uri = Uri.parse('$_baseUrl${ApiConfig.firmwareUpload}');
+    final req = http.MultipartRequest('POST', uri);
+    final headers = _headers();
+    headers.remove('Content-Type');
+    req.headers.addAll(headers);
+    req.fields['version_string'] = versionString;
+    req.fields['device_type_code'] = deviceTypeCode;
+    if (targetDeviceId != null && targetDeviceId.isNotEmpty) {
+      req.fields['target_device_id'] = targetDeviceId;
+    }
+    req.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+
+    final streamedRes = await req.send().timeout(const Duration(seconds: 45));
+    final res = await http.Response.fromStream(streamedRes);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return true;
+    } else {
+      throw Exception('Firmware Upload failed (${res.statusCode}): ${res.body}');
+    }
+  }
+
   Future<bool> updateQrConfig(String deviceId, {
     required double price,
     required String standeeUpiLink,
     String? productName,
     double? coinPrice,
+    bool? stockManagementEnabled,
+    int? currentStock,
+    String? paymentMode,
+    String? wifiSsid,
+    String? wifiPassword,
   }) async {
     final uri = Uri.parse('$_baseUrl${ApiConfig.qrConfig(deviceId)}');
     final res = await http.put(
@@ -225,9 +358,15 @@ class ApiService {
       headers: _headers(),
       body: jsonEncode({
         'amount_rupees': price,
+        'custom_qr_payload': standeeUpiLink,
         'standee_upi_link': standeeUpiLink,
-        'product_name': productName ?? 'Sanitary Pad',
+        'product_name': productName ?? 'Commercial Vending Item',
         if (coinPrice != null) 'coin_price': coinPrice,
+        if (stockManagementEnabled != null) 'stock_management_enabled': stockManagementEnabled,
+        if (currentStock != null) 'current_stock': currentStock,
+        if (paymentMode != null) 'payment_mode': paymentMode,
+        if (wifiSsid != null) 'wifi_ssid': wifiSsid,
+        if (wifiPassword != null) 'wifi_password': wifiPassword,
       }),
     ).timeout(const Duration(seconds: 12));
     return res.statusCode >= 200 && res.statusCode < 300;
