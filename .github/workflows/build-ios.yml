@@ -32,19 +32,28 @@ jobs:
       - name: Build iOS App (.app Bundle)
         working-directory: mobile/flutter_app
         run: |
-          flutter build ios --no-codesign --release -v
+          flutter build ios --config-only --release
+          xcodebuild build \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            -derivedDataPath build/DerivedData
 
       - name: Package .ipa File
         working-directory: mobile/flutter_app
         run: |
-          cd build/ios/iphoneos
           mkdir -p Payload
-          cp -r Runner.app Payload/
+          cp -r build/DerivedData/Build/Products/Release-iphoneos/Runner.app Payload/
           zip -r -y GTech-Fleet-iOS.ipa Payload
 
       - name: Upload iOS App Artifact (.ipa)
         uses: actions/upload-artifact@v4
         with:
           name: GTech-Fleet-iOS-App
-          path: mobile/flutter_app/build/ios/iphoneos/GTech-Fleet-iOS.ipa
+          path: mobile/flutter_app/GTech-Fleet-iOS.ipa
           retention-days: 14
