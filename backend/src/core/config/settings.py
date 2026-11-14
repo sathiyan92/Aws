@@ -19,8 +19,8 @@ class Settings(BaseSettings):
 
     # Security & Tokens
     SECRET_KEY: str = "dev-insecure-secret-key-change-in-production-min-32-bytes!"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 days for mobile & field telemetry sessions
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 60
     ALGORITHM: str = "HS256"
 
     # MQTT Gateway Configuration

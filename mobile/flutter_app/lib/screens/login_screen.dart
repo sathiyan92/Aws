@@ -5,7 +5,8 @@ import 'vendor_screen.dart';
 import 'settings_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool sessionExpired;
+  const LoginScreen({super.key, this.sessionExpired = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -18,6 +19,14 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.sessionExpired) {
+      _errorMessage = 'Session expired. Please enter your credentials to authenticate.';
+    }
+  }
 
   @override
   void dispose() {

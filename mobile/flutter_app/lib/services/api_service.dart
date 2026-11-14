@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../models/models.dart';
+import '../screens/login_screen.dart';
 
 class ApiService {
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
@@ -16,7 +19,39 @@ class ApiService {
   String get baseUrl => _baseUrl;
   String? get token => _token;
   UserModel? get currentUser => _currentUser;
-  bool get isAuthenticated => _token != null;
+  bool get isAuthenticated => _token != null && _token!.isNotEmpty;
+
+  void _handleAuthError() {
+    _token = null;
+    _currentUser = null;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.remove(ApiConfig.prefsTokenKey);
+      prefs.remove(ApiConfig.prefsUserKey);
+    });
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen(sessionExpired: true)),
+      (route) => false,
+    );
+  }
+
+  Future<bool> validateSession() async {
+    if (_token == null || _token!.isEmpty) return false;
+    try {
+      final uri = Uri.parse('$_baseUrl${ApiConfig.me}');
+      final res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        _currentUser = UserModel.fromJson(data);
+        return true;
+      }
+    } catch (_) {}
+    _token = null;
+    _currentUser = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(ApiConfig.prefsTokenKey);
+    await prefs.remove(ApiConfig.prefsUserKey);
+    return false;
+  }
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -112,6 +147,9 @@ class ApiService {
         rawList = data['devices'] ?? data['items'] ?? [];
       }
       return rawList.map((i) => DeviceModel.fromJson(i)).toList();
+    } else if (res.statusCode == 401) {
+      _handleAuthError();
+      throw Exception('Session expired (401). Please log in again.');
     } else {
       throw Exception('Failed to load fleet devices (${res.statusCode})');
     }

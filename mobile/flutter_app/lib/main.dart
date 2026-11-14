@@ -7,28 +7,31 @@ import 'screens/vendor_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiService().init();
-  runApp(const GTechIoTFleetApp());
+  final hasValidSession = await ApiService().validateSession();
+  runApp(GTechIoTFleetApp(hasValidSession: hasValidSession));
 }
 
 class GTechIoTFleetApp extends StatelessWidget {
-  const GTechIoTFleetApp({super.key});
+  final bool hasValidSession;
+  const GTechIoTFleetApp({super.key, this.hasValidSession = false});
 
   @override
   Widget build(BuildContext context) {
     final api = ApiService();
     Widget initialHome;
 
-    if (api.isAuthenticated && api.currentUser != null) {
+    if (hasValidSession && api.currentUser != null) {
       if (api.currentUser!.isManufacturerAdmin) {
         initialHome = const OperationsScreen();
       } else {
         initialHome = const VendorScreen();
       }
     } else {
-      initialHome = const LoginScreen();
+      initialHome = LoginScreen(sessionExpired: api.token != null);
     }
 
     return MaterialApp(
+      navigatorKey: ApiService.navigatorKey,
       title: 'G-TECH Fleet',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
