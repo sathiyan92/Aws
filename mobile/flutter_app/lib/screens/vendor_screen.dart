@@ -162,13 +162,16 @@ class _VendorScreenState extends State<VendorScreen> {
                 },
               ),
               const SizedBox(height: 18),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0284C7),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: () async {
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () async {
                   Navigator.pop(ctx);
                   final ok = await ApiService().updateDeviceConfig(
                     dev.deviceId,
@@ -184,8 +187,9 @@ class _VendorScreenState extends State<VendorScreen> {
                     _loadVendorData();
                   }
                 },
-                child: const Text('Save Machine Settings', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text('Save Machine Settings', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
               ),
+            ),
             ],
           ),
         ),

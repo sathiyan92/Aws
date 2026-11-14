@@ -1659,27 +1659,54 @@ class _OperationsScreenState extends State<OperationsScreen> {
                         children: [
                           Expanded(
                             child: ChoiceChip(
-                              label: const Text('⚡ Both (QR+Coin)', style: TextStyle(fontSize: 10)),
+                              label: Text(
+                                '⚡ Both',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _paymentMode == 'BOTH' ? Colors.white : const Color(0xFF94A3B8),
+                                ),
+                              ),
                               selected: _paymentMode == 'BOTH',
                               selectedColor: const Color(0xFF0284C7),
+                              backgroundColor: const Color(0xFF131B2E),
+                              checkmarkColor: Colors.white,
                               onSelected: (_) => setState(() => _paymentMode = 'BOTH'),
                             ),
                           ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: ChoiceChip(
-                              label: const Text('📱 QR Only', style: TextStyle(fontSize: 10)),
+                              label: Text(
+                                '📱 QR Only',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _paymentMode == 'QR_ONLY' ? Colors.white : const Color(0xFF94A3B8),
+                                ),
+                              ),
                               selected: _paymentMode == 'QR_ONLY',
                               selectedColor: const Color(0xFF0284C7),
+                              backgroundColor: const Color(0xFF131B2E),
+                              checkmarkColor: Colors.white,
                               onSelected: (_) => setState(() => _paymentMode = 'QR_ONLY'),
                             ),
                           ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: ChoiceChip(
-                              label: const Text('🪙 Coin Only', style: TextStyle(fontSize: 10)),
+                              label: Text(
+                                '🪙 Coin Only',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _paymentMode == 'COIN_ONLY' ? Colors.white : const Color(0xFF94A3B8),
+                                ),
+                              ),
                               selected: _paymentMode == 'COIN_ONLY',
                               selectedColor: const Color(0xFF0284C7),
+                              backgroundColor: const Color(0xFF131B2E),
+                              checkmarkColor: Colors.white,
                               onSelected: (_) => setState(() => _paymentMode = 'COIN_ONLY'),
                             ),
                           ),
@@ -1717,15 +1744,28 @@ class _OperationsScreenState extends State<OperationsScreen> {
                 const SizedBox(height: 16),
 
                 // Save & Sync Button
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0284C7),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0284C7),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 3,
+                    ),
+                    onPressed: _saveQrConfig,
+                    icon: const Icon(Icons.cloud_sync, color: Colors.white, size: 22),
+                    label: const Text(
+                      'Save & Sync to Machine',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ),
-                  onPressed: _saveQrConfig,
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Save & Sync to Machine', style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ],
             ),

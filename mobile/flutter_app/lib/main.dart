@@ -40,8 +40,17 @@ class GTechIoTFleetApp extends StatelessWidget {
         primaryColor: const Color(0xFF0284C7),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF0284C7),
+          onPrimary: Colors.white,
           secondary: Color(0xFF10B981),
+          onSecondary: Colors.white,
           surface: Color(0xFF131B2E),
+          onSurface: Colors.white,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            foregroundColor: Colors.white,
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF131B2E),
