@@ -249,7 +249,7 @@ function setupEventListeners() {
 }
 
 function showLoginModal() {
-    elements.loginModal.classList.add('open');
+    window.location.replace("/#signin-card");
 }
 
 function hideLoginModal() {
@@ -316,8 +316,7 @@ function handleLogout() {
     state.selectedDeviceId = null;
     localStorage.removeItem('iot_client_token');
     localStorage.removeItem('iot_client_user');
-    showLoginModal();
-    showToast('Signed out successfully.');
+    window.location.replace("/");
 }
 
 function updateUserInfo() {

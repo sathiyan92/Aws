@@ -15,6 +15,11 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+        <script>
+        if (!localStorage.getItem("mfg_token")) {
+            window.location.replace("/#signin-card");
+        }
+    </script>
     <link rel="stylesheet" href="styles.css?v=6.1">
 </head>
 <body>
@@ -1736,7 +1741,7 @@
     <!-- Modal: Login -->
     <div id="modalLogin" class="modal-overlay">
         <div class="modal-container" style="max-width: 400px; position: relative; padding: 2rem 1.75rem 1.5rem 1.75rem; text-align: center;">
-            <button class="modal-close" onclick="closeModal('modalLogin')" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; line-height: 1;">&times;</button>
+            <button class="modal-close" onclick="window.location.replace('/')" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; line-height: 1;">&times;</button>
             
             <!-- G-TECH Brand Showcase Card -->
             <div style="background: #ffffff; border-radius: 14px; padding: 12px 18px; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.35); margin-bottom: 1.25rem;">
@@ -1869,7 +1874,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=7.8"></script>
+    <script src="app.js?v=7.9"></script>
 
     <!-- Modal: Admin Add Single Card -->
     <div class="modal-overlay" id="modalAdminRfidAddCard">

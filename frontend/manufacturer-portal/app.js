@@ -996,16 +996,11 @@ function handleLogout() {
     state.user = null;
     localStorage.removeItem("mfg_token");
     localStorage.removeItem("mfg_user");
-    showToast("Logged out of operations portal");
-    showLoginModal();
+    window.location.replace("/");
 }
 
 function showLoginModal() {
-    const u = document.getElementById("loginUsername");
-    const p = document.getElementById("loginPassword");
-    if (u) u.value = "";
-    if (p) p.value = "";
-    openModal("modalLogin");
+    window.location.replace("/#signin-card");
 }
 
 function openModal(id) {
@@ -1013,6 +1008,10 @@ function openModal(id) {
 }
 
 function closeModal(id) {
+    if (id === "modalLogin") {
+        window.location.replace("/");
+        return;
+    }
     document.getElementById(id)?.classList.remove("open");
 }
 
