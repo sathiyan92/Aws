@@ -135,6 +135,7 @@ function switchTab(tabName) {
         devices: "All Connected Hardware",
         vending: "Vending Fleet & Modules",
         "qr-manager": "UPI QR Code & Price Manager",
+        payouts: "Vendor Split Payouts & Razorpay Route (Model 1)",
         rfid: "RFID Attendance Fleet",
         firmware: "Firmware Artifacts & OTA Distribution Hub",
         audit: "System Security & Audit Trail",
@@ -145,6 +146,7 @@ function switchTab(tabName) {
     if (tabName === "devices") renderDevicesTable();
     if (tabName === "vending") renderDevicesTable("VENDING_MACHINE");
     if (tabName === "qr-manager") renderQrManagerTab();
+    if (tabName === "payouts") renderPayoutsTab();
     if (tabName === "rfid") { renderDevicesTable("RFID_ATTENDANCE"); loadAdminRfidCards(); loadAdminRfidLogs(); }
     if (tabName === "firmware") renderFirmwareTab();
     if (tabName === "audit") renderAuditTable();
@@ -3094,3 +3096,264 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }, 8000);
 });
+
+
+// ==============================================================================
+// MODEL 1: RAZORPAY ROUTE / AUTOMATED VENDOR SPLIT PAYOUTS
+// ==============================================================================
+
+let cachedRouteVendors = [];
+
+async function renderPayoutsTab() {
+    await loadRouteSummary();
+    await loadRouteVendors();
+    await loadRoutePayouts();
+}
+window.renderPayoutsTab = renderPayoutsTab;
+
+async function loadRouteSummary() {
+    try {
+        const res = await apiFetch("/payments/route/summary");
+        if (!res.ok) throw new Error(await parseApiError(res));
+        const data = await res.json();
+        
+        const volEl = document.getElementById("routeTotalVolume");
+        if (volEl) volEl.textContent = `₹${(data.total_volume_rupees || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+        const vendorEl = document.getElementById("routeTotalVendorPayouts");
+        if (vendorEl) vendorEl.textContent = `₹${(data.total_vendor_payouts_rupees || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+        const commEl = document.getElementById("routeTotalCommission");
+        if (commEl) commEl.textContent = `₹${(data.total_platform_commission_rupees || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+        const countEl = document.getElementById("routeLinkedVendorsCount");
+        if (countEl) countEl.textContent = `${data.linked_vendors_count || 0} / ${data.total_vendors_count || 0}`;
+    } catch (err) {
+        console.error("Error loading route summary:", err);
+    }
+}
+window.loadRouteSummary = loadRouteSummary;
+
+async function loadRouteVendors() {
+    const tbody = document.getElementById("routeVendorsTableBody");
+    const vendorFilter = document.getElementById("routePayoutVendorFilter");
+    if (!tbody) return;
+
+    try {
+        const res = await apiFetch("/payments/route/vendors");
+        if (!res.ok) throw new Error(await parseApiError(res));
+        const vendors = await res.json();
+        cachedRouteVendors = vendors;
+
+        // Populate filter dropdown
+        if (vendorFilter) {
+            const currentVal = vendorFilter.value;
+            vendorFilter.innerHTML = '<option value="">All Vendors</option>' + vendors.map(v => 
+                `<option value="${v.client_id}">${escapeHtml(v.client_name)} (${v.client_code})</option>`
+            ).join("");
+            vendorFilter.value = currentVal;
+        }
+
+        if (!vendors || vendors.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:2rem; color:var(--text-muted);">No vendor clients found. Onboard clients first in the Clients tab.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = vendors.map(v => {
+            const isLinked = v.payout_status === "ACTIVE";
+            const statusBadge = isLinked
+                ? '<span class="badge badge-success" style="background:rgba(16,185,129,0.15); color:#34d399; font-weight:700;">ACTIVE</span>'
+                : '<span class="badge badge-warning" style="background:rgba(245,158,11,0.15); color:#fbbf24; font-weight:700;">UNLINKED</span>';
+
+            const splitText = `<span style="color:#818cf8; font-weight:700;">${v.vendor_percentage}%</span> Vendor / <span style="color:#fbbf24; font-weight:700;">${v.commission_percentage}%</span> G-TECH`;
+
+            return `
+                <tr>
+                    <td><strong>${escapeHtml(v.client_name)}</strong></td>
+                    <td><code>${escapeHtml(v.client_code)}</code></td>
+                    <td><span class="badge badge-info">${v.device_count || 0} Machines</span></td>
+                    <td><code style="color:#e2e8f0;">${escapeHtml(v.bank_account_masked || "-")}</code></td>
+                    <td><code>${escapeHtml(v.bank_ifsc || "-")}</code></td>
+                    <td>${escapeHtml(v.bank_beneficiary_name || "-")}</td>
+                    <td>${splitText}</td>
+                    <td><code style="font-size:0.75rem; color:#a5b4fc;">${escapeHtml(v.razorpay_account_id || "-")}</code></td>
+                    <td>${statusBadge}</td>
+                    <td><strong style="color:#34d399;">₹${(v.total_earned_rupees || 0).toFixed(2)}</strong></td>
+                    <td>
+                        <button class="btn btn-primary btn-xs" onclick="openRouteBankModal('${v.client_id}')" style="font-size:0.72rem; padding:0.25rem 0.5rem;">
+                            <span>⚙️</span> ${isLinked ? 'Edit Bank / Split' : 'Link Bank & Route'}
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#f87171; padding:1.5rem;">Error loading Route vendors: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+window.loadRouteVendors = loadRouteVendors;
+
+async function loadRoutePayouts() {
+    const tbody = document.getElementById("routePayoutsTableBody");
+    const vendorFilter = document.getElementById("routePayoutVendorFilter");
+    if (!tbody) return;
+
+    try {
+        const clientId = vendorFilter ? vendorFilter.value : "";
+        const url = clientId ? `/payments/route/payouts?client_id=${encodeURIComponent(clientId)}` : "/payments/route/payouts";
+        const res = await apiFetch(url);
+        if (!res.ok) throw new Error(await parseApiError(res));
+        const payouts = await res.json();
+
+        if (!payouts || payouts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:2rem; color:var(--text-muted);">No split payout transactions found yet. Payouts auto-generate on every QR vend payment!</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = payouts.map(p => {
+            const timeStr = p.transferred_at ? new Date(p.transferred_at).toLocaleString() : "-";
+            const statusBadge = p.status === "SETTLED"
+                ? '<span class="badge badge-success" style="background:rgba(16,185,129,0.15); color:#34d399;">SETTLED</span>'
+                : '<span class="badge badge-warning" style="background:rgba(245,158,11,0.15); color:#fbbf24;">PENDING</span>';
+
+            return `
+                <tr>
+                    <td style="font-size:0.8rem; color:var(--text-muted);">${timeStr}</td>
+                    <td><code>${escapeHtml(p.order_number)}</code></td>
+                    <td><strong style="color:var(--primary);">${escapeHtml(p.device_id)}</strong></td>
+                    <td>${escapeHtml(p.vendor_name)}</td>
+                    <td><strong>₹${(p.total_rupees || 0).toFixed(2)}</strong></td>
+                    <td><strong style="color:#34d399;">₹${(p.vendor_rupees || 0).toFixed(2)}</strong></td>
+                    <td><strong style="color:#fbbf24;">₹${(p.fee_rupees || 0).toFixed(2)}</strong></td>
+                    <td><span style="font-size:0.75rem; color:#818cf8;">${100 - p.commission_percentage}% / ${p.commission_percentage}%</span></td>
+                    <td><code style="font-size:0.72rem; color:#a5b4fc;">${escapeHtml(p.razorpay_transfer_id)}</code></td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#f87171; padding:1.5rem;">Error loading split ledger: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+window.loadRoutePayouts = loadRoutePayouts;
+
+function updateCommissionSplitNotice(pctVal) {
+    const comm = parseFloat(pctVal) || 0;
+    const vendorShare = Math.max(0, 100 - comm);
+    const vEl = document.getElementById("routePreviewVendorPct");
+    const pEl = document.getElementById("routePreviewPlatformPct");
+    if (vEl) vEl.textContent = `${vendorShare}%`;
+    if (pEl) pEl.textContent = `${comm}%`;
+}
+window.updateCommissionSplitNotice = updateCommissionSplitNotice;
+
+function openRouteBankModal(selectedClientId = null) {
+    const modal = document.getElementById("modalRouteBank");
+    const vendorSelect = document.getElementById("routeVendorSelect");
+    if (!modal || !vendorSelect) return;
+
+    // Populate vendors
+    vendorSelect.innerHTML = '<option value="">Choose vendor...</option>' + cachedRouteVendors.map(v => 
+        `<option value="${v.client_id}">${escapeHtml(v.client_name)} (${v.client_code})</option>`
+    ).join("");
+
+    if (selectedClientId) {
+        vendorSelect.value = selectedClientId;
+        handleRouteVendorSelected(selectedClientId);
+    } else {
+        document.getElementById("routeBeneficiaryName").value = "";
+        document.getElementById("routeAccountNumber").value = "";
+        document.getElementById("routeIfscCode").value = "";
+        document.getElementById("routeCommissionPct").value = "10.0";
+        document.getElementById("routeVendorUpi").value = "";
+        updateCommissionSplitNotice(10.0);
+    }
+
+    modal.classList.add("open");
+}
+window.openRouteBankModal = openRouteBankModal;
+
+function closeRouteBankModal() {
+    const modal = document.getElementById("modalRouteBank");
+    if (modal) modal.classList.remove("open");
+}
+window.closeRouteBankModal = closeRouteBankModal;
+
+function handleRouteVendorSelected(clientId) {
+    const v = cachedRouteVendors.find(item => item.client_id === clientId);
+    if (!v) return;
+
+    const bName = document.getElementById("routeBeneficiaryName");
+    const bAcc = document.getElementById("routeAccountNumber");
+    const bIfsc = document.getElementById("routeIfscCode");
+    const bComm = document.getElementById("routeCommissionPct");
+    const bUpi = document.getElementById("routeVendorUpi");
+
+    if (bName) bName.value = v.bank_beneficiary_name && v.bank_beneficiary_name !== "-" ? v.bank_beneficiary_name : v.client_name;
+    if (bAcc && v.bank_account_masked && !v.bank_account_masked.startsWith("•••")) bAcc.value = v.bank_account_masked;
+    if (bIfsc && v.bank_ifsc && v.bank_ifsc !== "-") bIfsc.value = v.bank_ifsc;
+    if (bComm) {
+        bComm.value = v.commission_percentage != null ? v.commission_percentage : 10.0;
+        updateCommissionSplitNotice(bComm.value);
+    }
+}
+window.handleRouteVendorSelected = handleRouteVendorSelected;
+
+async function handleRouteBankSubmit(e) {
+    e.preventDefault();
+    const clientId = document.getElementById("routeVendorSelect").value;
+    const beneficiaryName = document.getElementById("routeBeneficiaryName").value.trim();
+    const accountNumber = document.getElementById("routeAccountNumber").value.trim();
+    const ifsc = document.getElementById("routeIfscCode").value.trim().toUpperCase();
+    const commissionPct = parseFloat(document.getElementById("routeCommissionPct").value) || 10.0;
+    const upi = document.getElementById("routeVendorUpi").value.trim();
+    const btn = document.getElementById("routeBankSubmitBtn");
+
+    if (!clientId) {
+        showToast("Please choose a vendor tenant.", "error");
+        return;
+    }
+    if (!accountNumber || accountNumber.length < 6) {
+        showToast("Please enter a valid bank account number (at least 6 digits).", "error");
+        return;
+    }
+    if (!ifsc || ifsc.length < 5) {
+        showToast("Please enter a valid bank IFSC code (e.g. HDFC0001234).", "error");
+        return;
+    }
+
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span> Linking with Razorpay Route...';
+        }
+
+        const res = await apiFetch("/payments/route/link-vendor", {
+            method: "POST",
+            body: JSON.stringify({
+                client_id: clientId,
+                bank_account_number: accountNumber,
+                bank_ifsc: ifsc,
+                bank_beneficiary_name: beneficiaryName,
+                commission_percentage: commissionPct,
+                vendor_upi_id: upi || undefined,
+            }),
+        });
+
+        if (!res.ok) throw new Error(await parseApiError(res));
+        const data = await res.json();
+
+        showToast(`✅ ${data.message || 'Vendor bank linked successfully!'}`, "success");
+        closeRouteBankModal();
+        await loadRouteSummary();
+        await loadRouteVendors();
+    } catch (err) {
+        showToast(`Failed to link vendor bank: ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<span>💾</span> Save & Link Route Account';
+        }
+    }
+}
+window.handleRouteBankSubmit = handleRouteBankSubmit;

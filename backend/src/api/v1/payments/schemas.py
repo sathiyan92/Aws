@@ -42,3 +42,23 @@ class RazorpayVerifyPaymentRequest(BaseModel):
 class RazorpayVerifyPaymentResponse(BaseModel):
     valid: bool
     message: str
+
+
+# =========================================================================
+# MODEL 1: RAZORPAY ROUTE / VENDOR SPLIT PAYOUT SCHEMAS
+# =========================================================================
+
+class VendorRouteLinkRequest(BaseModel):
+    client_id: str = Field(..., description="Unique ID or client code of the vendor tenant")
+    bank_account_number: str = Field(..., min_length=6, description="Vendor bank account number")
+    bank_ifsc: str = Field(..., min_length=4, max_length=16, description="IFSC code of vendor bank branch")
+    bank_beneficiary_name: str = Field(..., min_length=2, description="Name as registered with the bank")
+    commission_percentage: Optional[float] = Field(10.0, ge=0.0, le=100.0, description="Platform commission % (e.g. 10.0% to G-TECH, 90.0% to Vendor)")
+    vendor_upi_id: Optional[str] = Field(None, description="Optional vendor UPI VPA for direct settlements")
+
+
+class VendorSelfBankUpdateRequest(BaseModel):
+    bank_account_number: str = Field(..., min_length=6, description="Vendor bank account number")
+    bank_ifsc: str = Field(..., min_length=4, max_length=16, description="IFSC code of vendor bank branch")
+    bank_beneficiary_name: str = Field(..., min_length=2, description="Name as registered with the bank")
+    vendor_upi_id: Optional[str] = Field(None, description="Optional vendor UPI VPA")

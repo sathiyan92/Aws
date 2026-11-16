@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 from src.db.session import get_db
 from src.core.config.settings import settings
 from src.core.exceptions.errors import NotFoundException
-from src.db.models.vending import RazorpayQRCode, WebhookEvent, Order, Payment
+from src.db.models.client import Client
+from src.db.models.device import Device
+from src.db.models.vending import RazorpayQRCode, WebhookEvent, Order, Payment, PayoutTransfer
 from src.db.base import utc_now
 from src.api.v1.payments.schemas import (
     RazorpayQRCreateRequest,
@@ -23,12 +25,16 @@ from src.api.v1.payments.schemas import (
     RazorpayConfigResponse,
     RazorpayVerifyPaymentRequest,
     RazorpayVerifyPaymentResponse,
+    VendorRouteLinkRequest,
+    VendorSelfBankUpdateRequest,
 )
 from src.services.razorpay_service import (
     process_webhook_event,
     create_razorpay_qr,
     verify_payment_signature,
     create_razorpay_order,
+    create_or_update_route_linked_account,
+    execute_route_split_transfer,
 )
 
 router = APIRouter(prefix="/payments", tags=["Razorpay Payments & Webhooks"])
@@ -505,3 +511,263 @@ def trigger_test_dispense(
     }
 
 
+
+
+
+# =========================================================================
+# MODEL 1: RAZORPAY ROUTE / VENDOR SPLIT PAYOUT ENDPOINTS
+# =========================================================================
+
+@router.post("/route/link-vendor")
+def link_vendor_route_account(
+    payload: VendorRouteLinkRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    [Model 1 - Manufacturer Admin]
+    Link a vendor tenant's bank account to Razorpay Route (Marketplace).
+    Configures split payout percentage (e.g. 10% platform fee, 90% vendor payout).
+    """
+    client = db.query(Client).filter(
+        (Client.id == payload.client_id) | (Client.client_code.ilike(payload.client_id.strip()))
+    ).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vendor client '{payload.client_id}' not found.",
+        )
+
+    res = create_or_update_route_linked_account(
+        db=db,
+        client=client,
+        bank_account_number=payload.bank_account_number,
+        bank_ifsc=payload.bank_ifsc,
+        bank_beneficiary_name=payload.bank_beneficiary_name,
+        commission_percentage=payload.commission_percentage if payload.commission_percentage is not None else 10.0,
+        vendor_upi_id=payload.vendor_upi_id,
+    )
+    return res
+
+
+@router.get("/route/vendors")
+def list_route_vendors(
+    db: Session = Depends(get_db),
+):
+    """
+    [Model 1 - Fleet Ledger]
+    Returns all vendors with their Route account IDs, commission %, bank summary,
+    and cumulative payout earnings.
+    """
+    from sqlalchemy import func
+    clients = db.query(Client).order_by(Client.name.asc()).all()
+    results = []
+
+    for c in clients:
+        dev_count = db.query(Device).filter(Device.client_id == c.id).count()
+        transfers = db.query(PayoutTransfer).filter_by(client_id=c.id).all()
+        total_payout_paise = sum(t.vendor_amount_paise for t in transfers)
+        total_fee_paise = sum(t.platform_fee_paise for t in transfers)
+        total_volume_paise = sum(t.total_amount_paise for t in transfers)
+
+        masked_acc = (
+            f"•••• {c.bank_account_number[-4:]}"
+            if c.bank_account_number and len(c.bank_account_number) >= 4
+            else (c.bank_account_number or "Not Linked")
+        )
+
+        results.append({
+            "client_id": c.id,
+            "client_code": c.client_code,
+            "client_name": c.name,
+            "contact_email": c.contact_email,
+            "razorpay_account_id": c.razorpay_account_id or "UNLINKED",
+            "bank_account_masked": masked_acc,
+            "bank_ifsc": c.bank_ifsc or "-",
+            "bank_beneficiary_name": c.bank_beneficiary_name or "-",
+            "commission_percentage": c.commission_percentage if c.commission_percentage is not None else 10.0,
+            "vendor_percentage": 100.0 - (c.commission_percentage if c.commission_percentage is not None else 10.0),
+            "payout_status": c.payout_status or "UNLINKED",
+            "device_count": dev_count,
+            "transfer_count": len(transfers),
+            "total_earned_rupees": round(total_payout_paise / 100.0, 2),
+            "total_fee_paid_rupees": round(total_fee_paise / 100.0, 2),
+            "total_volume_rupees": round(total_volume_paise / 100.0, 2),
+        })
+
+    return results
+
+
+@router.get("/route/summary")
+def get_route_settlements_summary(
+    db: Session = Depends(get_db),
+):
+    """
+    [Model 1 - Executive Summary]
+    Fleet-wide financial summary: Total Volume, Vendor Payouts, Platform Commissions,
+    Active Linked Vendors, and Total Payout Events.
+    """
+    transfers = db.query(PayoutTransfer).all()
+    total_volume_paise = sum(t.total_amount_paise for t in transfers)
+    total_vendor_paise = sum(t.vendor_amount_paise for t in transfers)
+    total_platform_fee_paise = sum(t.platform_fee_paise for t in transfers)
+
+    linked_vendors = db.query(Client).filter(
+        Client.razorpay_account_id.isnot(None),
+        Client.payout_status == "ACTIVE"
+    ).count()
+
+    total_vendors = db.query(Client).count()
+
+    return {
+        "total_volume_rupees": round(total_volume_paise / 100.0, 2),
+        "total_vendor_payouts_rupees": round(total_vendor_paise / 100.0, 2),
+        "total_platform_commission_rupees": round(total_platform_fee_paise / 100.0, 2),
+        "total_transfers_count": len(transfers),
+        "linked_vendors_count": linked_vendors,
+        "total_vendors_count": total_vendors,
+    }
+
+
+@router.get("/route/payouts")
+def list_route_payout_transfers(
+    limit: int = Query(100, ge=1, le=500),
+    client_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    [Model 1 - Live Split Ledger]
+    Returns atomic split payout records for each vending transaction.
+    """
+    query = db.query(PayoutTransfer)
+    if client_id:
+        c = db.query(Client).filter((Client.id == client_id) | (Client.client_code.ilike(client_id.strip()))).first()
+        if c:
+            query = query.filter(PayoutTransfer.client_id == c.id)
+
+    payouts = query.order_by(PayoutTransfer.transferred_at.desc()).limit(limit).all()
+
+    results = []
+    for p in payouts:
+        client = p.client or db.query(Client).filter_by(id=p.client_id).first()
+        device = p.device or db.query(Device).filter_by(id=p.device_id).first()
+        order = p.order or db.query(Order).filter_by(id=p.order_id).first()
+
+        results.append({
+            "id": p.id,
+            "order_id": p.order_id,
+            "order_number": order.order_number if order else "-",
+            "payment_id": p.payment_id or "-",
+            "razorpay_transfer_id": p.razorpay_transfer_id or "-",
+            "client_id": p.client_id,
+            "vendor_name": client.name if client else "Unknown Vendor",
+            "vendor_code": client.client_code if client else "-",
+            "device_id": device.device_id if device else "-",
+            "total_rupees": round(p.total_amount_paise / 100.0, 2),
+            "vendor_rupees": round(p.vendor_amount_paise / 100.0, 2),
+            "fee_rupees": round(p.platform_fee_paise / 100.0, 2),
+            "commission_percentage": p.commission_percentage,
+            "razorpay_account_id": p.razorpay_account_id or "-",
+            "status": p.status,
+            "error_message": p.error_message,
+            "transferred_at": p.transferred_at.isoformat() if p.transferred_at else None,
+        })
+    return results
+
+
+@router.get("/route/vendor/{client_id}")
+def get_vendor_route_details(
+    client_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Model 1 - Vendor Specific Portal Ledger]
+    Returns bank configuration, commission rate, and lifetime payouts for a specific client tenant.
+    """
+    client = db.query(Client).filter(
+        (Client.id == client_id) | (Client.client_code.ilike(client_id.strip()))
+    ).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vendor '{client_id}' not found.",
+        )
+
+    transfers = db.query(PayoutTransfer).filter_by(client_id=client.id).order_by(PayoutTransfer.transferred_at.desc()).all()
+    total_earned_paise = sum(t.vendor_amount_paise for t in transfers)
+    total_fee_paise = sum(t.platform_fee_paise for t in transfers)
+    total_volume_paise = sum(t.total_amount_paise for t in transfers)
+
+    masked_acc = (
+        f"•••• {client.bank_account_number[-4:]}"
+        if client.bank_account_number and len(client.bank_account_number) >= 4
+        else (client.bank_account_number or "")
+    )
+
+    transfer_list = []
+    for t in transfers[:50]:
+        dev = t.device or db.query(Device).filter_by(id=t.device_id).first()
+        ord_obj = t.order or db.query(Order).filter_by(id=t.order_id).first()
+        transfer_list.append({
+            "id": t.id,
+            "order_number": ord_obj.order_number if ord_obj else "-",
+            "device_id": dev.device_id if dev else "-",
+            "total_rupees": round(t.total_amount_paise / 100.0, 2),
+            "vendor_rupees": round(t.vendor_amount_paise / 100.0, 2),
+            "fee_rupees": round(t.platform_fee_paise / 100.0, 2),
+            "razorpay_transfer_id": t.razorpay_transfer_id or "-",
+            "status": t.status,
+            "transferred_at": t.transferred_at.isoformat() if t.transferred_at else None,
+        })
+
+    return {
+        "client_id": client.id,
+        "client_code": client.client_code,
+        "client_name": client.name,
+        "contact_email": client.contact_email,
+        "contact_phone": client.contact_phone,
+        "bank_account_number": client.bank_account_number or "",
+        "bank_account_masked": masked_acc,
+        "bank_ifsc": client.bank_ifsc or "",
+        "bank_beneficiary_name": client.bank_beneficiary_name or "",
+        "vendor_upi_id": client.razorpay_merchant_vpa or "",
+        "commission_percentage": client.commission_percentage if client.commission_percentage is not None else 10.0,
+        "vendor_percentage": 100.0 - (client.commission_percentage if client.commission_percentage is not None else 10.0),
+        "razorpay_account_id": client.razorpay_account_id or "UNLINKED",
+        "payout_status": client.payout_status or "UNLINKED",
+        "total_earned_rupees": round(total_earned_paise / 100.0, 2),
+        "total_fee_paid_rupees": round(total_fee_paise / 100.0, 2),
+        "total_volume_rupees": round(total_volume_paise / 100.0, 2),
+        "transfer_count": len(transfers),
+        "transfers": transfer_list,
+    }
+
+
+@router.post("/route/vendor-self-update/{client_id}")
+def vendor_self_update_bank_details(
+    client_id: str,
+    payload: VendorSelfBankUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    [Model 1 - Vendor Self-Service]
+    Allows a vendor tenant admin in the Client Portal to submit or update their bank settlement account.
+    """
+    client = db.query(Client).filter(
+        (Client.id == client_id) | (Client.client_code.ilike(client_id.strip()))
+    ).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vendor '{client_id}' not found.",
+        )
+
+    res = create_or_update_route_linked_account(
+        db=db,
+        client=client,
+        bank_account_number=payload.bank_account_number,
+        bank_ifsc=payload.bank_ifsc,
+        bank_beneficiary_name=payload.bank_beneficiary_name,
+        commission_percentage=client.commission_percentage if client.commission_percentage is not None else 10.0,
+        vendor_upi_id=payload.vendor_upi_id,
+    )
+    return res

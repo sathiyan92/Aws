@@ -69,6 +69,12 @@
                     <span>Wi-Fi Network</span>
                 </a>
 
+                <div class="nav-section-title">Settlements & Finance</div>
+                <a class="nav-item" data-tab="tab-payouts" id="navPayouts">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>💰 Bank & Settlements</span>
+                </a>
+
                 <div class="nav-section-title">Security & Verification</div>
                 <a class="nav-item" data-tab="tab-security" id="navSecurity">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -807,6 +813,117 @@
                     </div>
                 </section>
 
+                <!-- TAB: VENDOR BANK & SETTLEMENTS (Model 1) -->
+                <section id="tab-payouts" class="tab-pane">
+                    <!-- Stat Cards -->
+                    <div class="stats-grid" style="margin-bottom: 1.5rem; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem;">
+                        <div class="card-panel" style="padding:1.25rem;">
+                            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Lifetime Sales GMV</div>
+                            <div id="vendorPortalTotalVolume" style="font-size:1.5rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0;">₹0.00</div>
+                            <div style="font-size:0.75rem; color:var(--text-secondary);">Total collected at your machines</div>
+                        </div>
+                        <div class="card-panel" style="padding:1.25rem;">
+                            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Net Payouts Transferred</div>
+                            <div id="vendorPortalNetEarned" style="font-size:1.5rem; font-weight:800; color:#34d399; margin:0.35rem 0;">₹0.00</div>
+                            <div style="font-size:0.75rem; color:var(--text-secondary);">Direct bank settlements</div>
+                        </div>
+                        <div class="card-panel" style="padding:1.25rem;">
+                            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Platform Fee Paid</div>
+                            <div id="vendorPortalFeePaid" style="font-size:1.5rem; font-weight:800; color:#fbbf24; margin:0.35rem 0;">₹0.00</div>
+                            <div style="font-size:0.75rem; color:var(--text-secondary);">G-TECH platform commission</div>
+                        </div>
+                        <div class="card-panel" style="padding:1.25rem;">
+                            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Your Split Share</div>
+                            <div id="vendorPortalSplitPct" style="font-size:1.5rem; font-weight:800; color:#818cf8; margin:0.35rem 0;">90%</div>
+                            <div style="font-size:0.75rem; color:var(--text-secondary);">Retained on every transaction</div>
+                        </div>
+                    </div>
+
+                    <!-- Bank Setup Card -->
+                    <div class="card-panel" style="margin-bottom: 1.5rem;">
+                        <div class="panel-header" style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 1rem; margin-bottom: 1.25rem; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                                    <span>🏦</span> Registered Settlement Bank Account
+                                </h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">
+                                    All customer UPI QR payments are split in real time and transferred directly to this bank account via Razorpay Route.
+                                </p>
+                            </div>
+                            <span id="vendorRouteStatusBadge" class="badge badge-on">ACTIVE</span>
+                        </div>
+
+                        <form id="vendorBankSelfForm" onsubmit="handleVendorBankSelfSubmit(event)" style="max-width: 650px;">
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label for="vendorSelfBeneficiary">Account Holder / Beneficiary Name <span style="color:var(--danger);">*</span></label>
+                                <input type="text" id="vendorSelfBeneficiary" class="input-field" placeholder="e.g. Apex Vending Pvt Ltd" required>
+                            </div>
+
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom: 1rem;">
+                                <div class="form-group" style="margin:0;">
+                                    <label for="vendorSelfAccountNumber">Bank Account Number <span style="color:var(--danger);">*</span></label>
+                                    <input type="text" id="vendorSelfAccountNumber" class="input-field" placeholder="e.g. 50100234567890" required>
+                                </div>
+                                <div class="form-group" style="margin:0;">
+                                    <label for="vendorSelfIfsc">Bank IFSC Code <span style="color:var(--danger);">*</span></label>
+                                    <input type="text" id="vendorSelfIfsc" class="input-field" placeholder="e.g. HDFC0001234" style="text-transform:uppercase;" required>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 1.25rem;">
+                                <label for="vendorSelfUpi">Vendor UPI ID / VPA (Optional):</label>
+                                <input type="text" id="vendorSelfUpi" class="input-field" placeholder="e.g. apex@okhdfcbank">
+                            </div>
+
+                            <div style="background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.2); border-radius: var(--radius-md); padding: 0.85rem; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+                                <strong style="color: #818cf8;">⚡ Automated Model 1 Split:</strong> When a customer scans your machine's UPI QR code and pays ₹10.00, ₹9.00 (90%) is automatically sent to your linked bank account, and ₹1.00 (10%) is routed to G-TECH platform commission. No manual withdrawal or weekly reconciliation needed!
+                            </div>
+
+                            <div style="display:flex; justify-content:flex-end;">
+                                <button type="submit" class="btn btn-primary" id="btnSaveVendorBank">
+                                    <span>💾</span> Update Bank Settlement Account
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Settlement Ledger Card -->
+                    <div class="card-panel">
+                        <div class="panel-header" style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 1rem; margin-bottom: 1rem; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                                    <span>⚡</span> Live Settlements Ledger
+                                </h3>
+                                <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">
+                                    Individual automated split payouts credited for your machine transactions.
+                                </p>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" onclick="loadClientVendorSettlements()">
+                                <span>🔄</span> Refresh
+                            </button>
+                        </div>
+
+                        <div class="table-container" style="overflow-x:auto;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date & Time</th>
+                                        <th>Order #</th>
+                                        <th>Machine ID</th>
+                                        <th>Total Paid</th>
+                                        <th>Your Payout</th>
+                                        <th>G-TECH Fee</th>
+                                        <th>Transfer ID</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vendorPortalSettlementsTableBody">
+                                    <tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--text-muted);">Loading settlements...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </main>
         </div>
     </div>

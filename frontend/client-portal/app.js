@@ -552,6 +552,11 @@ function loadActiveTabData() {
     if (!state.selectedDeviceId && state.fleet && state.fleet.length > 0) {
         state.selectedDeviceId = state.fleet[0].device_id;
     }
+    if (state.currentTab === 'tab-payouts') {
+        loadClientVendorSettlements();
+        return;
+    }
+
     if (!state.selectedDeviceId) {
         return;
     }
@@ -2569,3 +2574,161 @@ function handleClientPaymentModeChange() {
         badge.style.color = "#a5b4fc";
     }
 }
+
+
+// ==============================================================================
+// MODEL 1: VENDOR BANK SETTLEMENTS & SPLIT PAYOUTS
+// ==============================================================================
+
+async function getActiveVendorClientId() {
+    if (state.user && state.user.tenant_id) {
+        return state.user.tenant_id;
+    }
+    if (state.fleet && state.fleet.length > 0) {
+        const dev = state.fleet.find(d => d.client_id);
+        if (dev) return dev.client_id;
+    }
+    // Fallback: fetch from /payments/route/vendors
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/payments/route/vendors`);
+        if (res.ok) {
+            const list = await res.json();
+            if (list && list.length > 0) return list[0].client_id;
+        }
+    } catch (_) {}
+    return null;
+}
+
+async function loadClientVendorSettlements() {
+    const tbody = document.getElementById("vendorPortalSettlementsTableBody");
+    const clientId = await getActiveVendorClientId();
+
+    if (!clientId) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--text-muted);">Please log in as a vendor to view settlements.</td></tr>';
+        return;
+    }
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/payments/route/vendor/${encodeURIComponent(clientId)}`);
+        if (!res.ok) throw new Error(await parseApiError(res));
+        const data = await res.json();
+
+        // 1. Update stat cards
+        const volEl = document.getElementById("vendorPortalTotalVolume");
+        if (volEl) volEl.textContent = `₹${(data.total_volume_rupees || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+        const earnedEl = document.getElementById("vendorPortalNetEarned");
+        if (earnedEl) earnedEl.textContent = `₹${(data.total_earned_rupees || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+        const feeEl = document.getElementById("vendorPortalFeePaid");
+        if (feeEl) feeEl.textContent = `₹${(data.total_fee_paid_rupees || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+        const splitEl = document.getElementById("vendorPortalSplitPct");
+        if (splitEl) splitEl.textContent = `${data.vendor_percentage || 90}%`;
+
+        // 2. Pre-fill bank form
+        const bName = document.getElementById("vendorSelfBeneficiary");
+        const bAcc = document.getElementById("vendorSelfAccountNumber");
+        const bIfsc = document.getElementById("vendorSelfIfsc");
+        const bUpi = document.getElementById("vendorSelfUpi");
+        const badge = document.getElementById("vendorRouteStatusBadge");
+
+        if (bName && (!bName.value || bName.value.trim() === '')) bName.value = data.bank_beneficiary_name || data.client_name || '';
+        if (bAcc && (!bAcc.value || bAcc.value.trim() === '')) bAcc.value = data.bank_account_number || '';
+        if (bIfsc && (!bIfsc.value || bIfsc.value.trim() === '')) bIfsc.value = data.bank_ifsc || '';
+        if (bUpi && (!bUpi.value || bUpi.value.trim() === '')) bUpi.value = data.vendor_upi_id || '';
+
+        if (badge) {
+            const isLinked = data.payout_status === "ACTIVE";
+            badge.textContent = isLinked ? "ACTIVE (AUTO-SPLIT ON)" : "UNLINKED";
+            badge.className = isLinked ? "badge badge-on" : "badge badge-off";
+        }
+
+        // 3. Populate settlements table
+        if (!tbody) return;
+        const transfers = data.transfers || [];
+        if (transfers.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:2rem; color:var(--text-muted);">No settlements recorded yet. Split payouts happen automatically on customer payments.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = transfers.map(t => {
+            const timeStr = t.transferred_at ? new Date(t.transferred_at).toLocaleString() : "-";
+            const statusBadge = t.status === "SETTLED"
+                ? '<span class="badge badge-on">SETTLED</span>'
+                : '<span class="badge badge-off">PENDING</span>';
+
+            return `
+                <tr>
+                    <td style="font-size:0.8rem; color:var(--text-muted);">${timeStr}</td>
+                    <td><code>${escapeHtml(t.order_number)}</code></td>
+                    <td><strong style="color:var(--primary);">${escapeHtml(t.device_id)}</strong></td>
+                    <td><strong>₹${(t.total_rupees || 0).toFixed(2)}</strong></td>
+                    <td><strong style="color:#34d399;">₹${(t.vendor_rupees || 0).toFixed(2)}</strong></td>
+                    <td><strong style="color:#fbbf24;">₹${(t.fee_rupees || 0).toFixed(2)}</strong></td>
+                    <td><code style="font-size:0.75rem; color:#a5b4fc;">${escapeHtml(t.razorpay_transfer_id)}</code></td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        console.error("Error loading vendor settlements:", err);
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#f87171; padding:1.5rem;">Error loading settlements: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+window.loadClientVendorSettlements = loadClientVendorSettlements;
+
+async function handleVendorBankSelfSubmit(e) {
+    e.preventDefault();
+    const clientId = await getActiveVendorClientId();
+    if (!clientId) {
+        showToast("Vendor tenant context not found.", "error");
+        return;
+    }
+
+    const beneficiary = document.getElementById("vendorSelfBeneficiary")?.value.trim();
+    const accNum = document.getElementById("vendorSelfAccountNumber")?.value.trim();
+    const ifsc = document.getElementById("vendorSelfIfsc")?.value.trim().toUpperCase();
+    const upi = document.getElementById("vendorSelfUpi")?.value.trim();
+    const btn = document.getElementById("btnSaveVendorBank");
+
+    if (!accNum || accNum.length < 6) {
+        showToast("Please enter a valid bank account number (at least 6 digits).", "error");
+        return;
+    }
+    if (!ifsc || ifsc.length < 5) {
+        showToast("Please enter a valid bank IFSC code (e.g. HDFC0001234).", "error");
+        return;
+    }
+
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span> Updating Bank Account...';
+        }
+
+        const res = await fetchWithAuth(`${API_BASE}/payments/route/vendor-self-update/${encodeURIComponent(clientId)}`, {
+            method: "POST",
+            body: JSON.stringify({
+                bank_account_number: accNum,
+                bank_ifsc: ifsc,
+                bank_beneficiary_name: beneficiary,
+                vendor_upi_id: upi || undefined,
+            }),
+        });
+
+        if (!res.ok) throw new Error(await parseApiError(res));
+        const data = await res.json();
+
+        showToast("✅ Bank settlement account updated successfully!", "success");
+        await loadClientVendorSettlements();
+    } catch (err) {
+        showToast(`Failed to update bank account: ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<span>💾</span> Update Bank Settlement Account';
+        }
+    }
+}
+window.handleVendorBankSelfSubmit = handleVendorBankSelfSubmit;

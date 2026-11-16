@@ -3,7 +3,7 @@ Vending machine subsystem models: Products, Slots, Orders, Payments, and Transac
 """
 from datetime import datetime
 from typing import List, Optional, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, Integer, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.db.base import Base, TimestampMixin, generate_uuid, utc_now
 
@@ -355,4 +355,55 @@ class RazorpayQRCode(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<RazorpayQRCode(qr_id='{self.razorpay_qr_id}', device_id='{self.device_id}', amount={self.amount})>"
+
+
+class PayoutTransfer(Base, TimestampMixin):
+    """
+    Razorpay Route automated vendor split transfer record.
+    Tracks each payment split into vendor payout vs G-TECH platform fee.
+    """
+    __tablename__ = "payout_transfers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    order_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("clients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    payment_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    total_amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    vendor_amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    platform_fee_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    commission_percentage: Mapped[float] = mapped_column(Float, default=10.0, nullable=False)
+    razorpay_transfer_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    razorpay_account_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="SETTLED", index=True, nullable=False)  # SETTLED, PENDING, FAILED
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    transferred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    client: Mapped["Client"] = relationship("Client", back_populates="payout_transfers")
+    order: Mapped[Optional["Order"]] = relationship("Order")
+    device: Mapped[Optional["Device"]] = relationship("Device")
+
+    __table_args__ = (
+        Index("idx_payout_transfers_client_status", "client_id", "status"),
+        Index("idx_payout_transfers_created", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PayoutTransfer(id='{self.id}', client='{self.client_id}', vendor_amt={self.vendor_amount_paise}, fee={self.platform_fee_paise})>"
 

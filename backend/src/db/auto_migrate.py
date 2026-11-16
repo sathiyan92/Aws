@@ -22,7 +22,7 @@ def run_auto_migrations(engine) -> None:
         except Exception as e:
             logger.warning(f"[AutoMigrate] Base.metadata.create_all notice: {e}")
 
-        # Explicitly ensure discovered_hardware table exists
+        # Explicitly ensure discovered_hardware and payout_transfers tables exist
         with engine.begin() as conn:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS discovered_hardware (
@@ -39,6 +39,27 @@ def run_auto_migrations(engine) -> None:
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_discovered_hardware_mac ON discovered_hardware (mac_address)"))
             conn.execute(text("DELETE FROM devices WHERE device_id IN ('PENDING', 'AUTO')"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS payout_transfers (
+                    id VARCHAR(36) PRIMARY KEY,
+                    order_id VARCHAR(36) NOT NULL,
+                    client_id VARCHAR(36) NOT NULL,
+                    device_id VARCHAR(36) NOT NULL,
+                    payment_id VARCHAR(128),
+                    total_amount_paise INTEGER NOT NULL,
+                    vendor_amount_paise INTEGER NOT NULL,
+                    platform_fee_paise INTEGER NOT NULL,
+                    commission_percentage FLOAT DEFAULT 10.0,
+                    razorpay_transfer_id VARCHAR(128),
+                    razorpay_account_id VARCHAR(128),
+                    status VARCHAR(32) DEFAULT 'SETTLED',
+                    error_message TEXT,
+                    transferred_at DATETIME NOT NULL
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payout_transfers_client ON payout_transfers (client_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payout_transfers_order ON payout_transfers (order_id)"))
 
         inspector = inspect(engine)
         existing_tables = set(inspector.get_table_names())
@@ -77,6 +98,11 @@ def run_auto_migrations(engine) -> None:
             "clients": {
                 "razorpay_account_id": "VARCHAR(64)",
                 "razorpay_merchant_vpa": "VARCHAR(128)",
+                "bank_account_number": "VARCHAR(64)",
+                "bank_ifsc": "VARCHAR(32)",
+                "bank_beneficiary_name": "VARCHAR(255)",
+                "commission_percentage": "FLOAT DEFAULT 10.0",
+                "payout_status": "VARCHAR(32) DEFAULT 'UNLINKED'",
             },
             "rfid_vending_cards": {
                 "daily_limit": "INTEGER DEFAULT 1",
