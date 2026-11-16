@@ -211,17 +211,30 @@ body {
 }
 
 .sidebar-footer {
-    padding: 1rem 1.25rem;
+    padding: 0.85rem 1rem;
     border-top: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    overflow: hidden;
+}
+
+.user-profile-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
 }
 
 .user-badge {
     display: flex;
     align-items: center;
     gap: 0.6rem;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
 }
 
 .avatar {
@@ -234,18 +247,39 @@ body {
     justify-content: center;
     font-weight: 700;
     font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+.user-meta {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
 }
 
 .user-meta .name {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .user-meta .role {
     font-size: 0.65rem;
     color: var(--success);
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#logoutBtn {
+    flex-shrink: 0;
+    padding: 0.4rem 0.55rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Main Content Area */

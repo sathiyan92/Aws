@@ -20,7 +20,7 @@
             window.location.replace("/#signin-card");
         }
     </script>
-    <link rel="stylesheet" href="styles.css?v=6.1">
+    <link rel="stylesheet" href="styles.css?v=6.2">
 </head>
 <body>
     <!-- Ambient Background Glows -->
@@ -88,19 +88,21 @@
             </nav>
 
             <div class="sidebar-footer">
-                <a href="/mobile/index.html" class="btn btn-secondary btn-sm" style="width:100%; justify-content:center; font-size:0.75rem; margin-bottom:0.75rem; border-color:var(--border-subtle); display:flex; align-items:center; gap:0.4rem;">
+                <a href="/mobile/index.html" class="btn btn-secondary btn-sm" style="width:100%; justify-content:center; font-size:0.75rem; border-color:var(--border-subtle); display:flex; align-items:center; gap:0.4rem;">
                     <span>📱</span> Switch / Mobile Launcher
                 </a>
-                <div class="user-badge">
-                    <div class="avatar" id="userAvatar">AD</div>
-                    <div class="user-meta">
-                        <div class="name" id="userName">Platform Admin</div>
-                        <div class="role" id="userRole">MANUFACTURER_ADMIN</div>
+                <div class="user-profile-row">
+                    <div class="user-badge">
+                        <div class="avatar" id="userAvatar">AD</div>
+                        <div class="user-meta">
+                            <div class="name" id="userName">Platform Admin</div>
+                            <div class="role" id="userRole">MANUFACTURER_ADMIN</div>
+                        </div>
                     </div>
+                    <button class="btn btn-secondary btn-sm" id="logoutBtn" title="Logout">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    </button>
                 </div>
-                <button class="btn btn-secondary btn-sm" id="logoutBtn" title="Logout">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                </button>
             </div>
         </aside>
 
