@@ -1,3 +1,14 @@
+function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+window.escapeHtml = escapeHtml;
+
 function setElText(id, text) {
     const el = document.getElementById(id);
     if (el) el.textContent = text != null ? text : "";
@@ -3248,34 +3259,49 @@ function updateCommissionSplitNotice(pctVal) {
 window.updateCommissionSplitNotice = updateCommissionSplitNotice;
 
 function openRouteBankModal(selectedClientId = null) {
-    const modal = document.getElementById("modalRouteBank");
-    const vendorSelect = document.getElementById("routeVendorSelect");
-    if (!modal || !vendorSelect) return;
+    try {
+        const modal = document.getElementById("modalRouteBank");
+        const vendorSelect = document.getElementById("routeVendorSelect");
+        if (!modal || !vendorSelect) {
+            console.error("modalRouteBank or routeVendorSelect not found!");
+            return;
+        }
 
-    // Populate vendors
-    vendorSelect.innerHTML = '<option value="">Choose vendor...</option>' + cachedRouteVendors.map(v => 
-        `<option value="${v.client_id}">${escapeHtml(v.client_name)} (${v.client_code})</option>`
-    ).join("");
+        const list = (cachedRouteVendors && cachedRouteVendors.length > 0)
+            ? cachedRouteVendors
+            : (state.clients && state.clients.length > 0 ? state.clients.map(c => ({ client_id: c.id, client_name: c.name, client_code: c.client_code })) : []);
 
-    if (selectedClientId) {
-        vendorSelect.value = selectedClientId;
-        handleRouteVendorSelected(selectedClientId);
-    } else {
-        document.getElementById("routeBeneficiaryName").value = "";
-        document.getElementById("routeAccountNumber").value = "";
-        document.getElementById("routeIfscCode").value = "";
-        document.getElementById("routeCommissionPct").value = "10.0";
-        document.getElementById("routeVendorUpi").value = "";
-        updateCommissionSplitNotice(10.0);
+        vendorSelect.innerHTML = '<option value="">Choose vendor...</option>' + list.map(v => 
+            `<option value="${v.client_id}">${escapeHtml(v.client_name || v.name)} (${v.client_code || '-'})</option>`
+        ).join("");
+
+        if (selectedClientId) {
+            vendorSelect.value = selectedClientId;
+            handleRouteVendorSelected(selectedClientId);
+        } else {
+            const bName = document.getElementById("routeBeneficiaryName");
+            const bAcc = document.getElementById("routeAccountNumber");
+            const bIfsc = document.getElementById("routeIfscCode");
+            const bComm = document.getElementById("routeCommissionPct");
+            const bUpi = document.getElementById("routeVendorUpi");
+            if (bName) bName.value = "";
+            if (bAcc) bAcc.value = "";
+            if (bIfsc) bIfsc.value = "";
+            if (bComm) bComm.value = "10.0";
+            if (bUpi) bUpi.value = "";
+            updateCommissionSplitNotice(10.0);
+        }
+
+        openModal("modalRouteBank");
+    } catch (err) {
+        console.error("Error in openRouteBankModal:", err);
+        showToast("Error opening modal: " + err.message, "error");
     }
-
-    modal.classList.add("open");
 }
 window.openRouteBankModal = openRouteBankModal;
 
 function closeRouteBankModal() {
-    const modal = document.getElementById("modalRouteBank");
-    if (modal) modal.classList.remove("open");
+    closeModal("modalRouteBank");
 }
 window.closeRouteBankModal = closeRouteBankModal;
 
