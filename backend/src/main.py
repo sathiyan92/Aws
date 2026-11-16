@@ -4,7 +4,7 @@ Configures middleware, exception handlers, and API v1 routing.
 """
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from src.core.config.settings import settings
 from src.core.exceptions.errors import PlatformException, NotFoundException
@@ -148,10 +148,90 @@ def startup_init_database():
         session.close()
 
 
+public_website_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/public-website"))
+
+
 @app.get("/", include_in_schema=False)
-def root_redirect():
-    """Redirect root domain traffic to Manufacturer Portal."""
+def root_page():
+    """Serve public business landing page for G-TECH (Mandatory for Payment Gateway Compliance)."""
+    idx = os.path.join(public_website_dir, "index.html")
+    if os.path.exists(idx):
+        return FileResponse(idx)
     return RedirectResponse(url="/portal")
+
+
+@app.get("/contact", include_in_schema=False)
+@app.get("/contact-us", include_in_schema=False)
+def contact_page():
+    """Serve Contact Us page."""
+    fpath = os.path.join(public_website_dir, "contact.html")
+    if os.path.exists(fpath):
+        return FileResponse(fpath)
+    return RedirectResponse(url="/")
+
+
+@app.get("/terms", include_in_schema=False)
+@app.get("/terms-and-conditions", include_in_schema=False)
+def terms_page():
+    """Serve Terms & Conditions page."""
+    fpath = os.path.join(public_website_dir, "terms.html")
+    if os.path.exists(fpath):
+        return FileResponse(fpath)
+    return RedirectResponse(url="/")
+
+
+@app.get("/privacy", include_in_schema=False)
+@app.get("/privacy-policy", include_in_schema=False)
+def privacy_page():
+    """Serve Privacy Policy page."""
+    fpath = os.path.join(public_website_dir, "privacy.html")
+    if os.path.exists(fpath):
+        return FileResponse(fpath)
+    return RedirectResponse(url="/")
+
+
+@app.get("/refund-policy", include_in_schema=False)
+@app.get("/cancellation-refund", include_in_schema=False)
+def refund_page():
+    """Serve Refund & Cancellation Policy page."""
+    fpath = os.path.join(public_website_dir, "refund-policy.html")
+    if os.path.exists(fpath):
+        return FileResponse(fpath)
+    return RedirectResponse(url="/")
+
+
+@app.get("/shipping-policy", include_in_schema=False)
+@app.get("/delivery-policy", include_in_schema=False)
+def shipping_page():
+    """Serve Shipping & Delivery Policy page."""
+    fpath = os.path.join(public_website_dir, "shipping-policy.html")
+    if os.path.exists(fpath):
+        return FileResponse(fpath)
+    return RedirectResponse(url="/")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def site_styles():
+    fpath = os.path.join(public_website_dir, "styles.css")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type="text/css")
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+
+@app.get("/gtech-icon.png", include_in_schema=False)
+def site_icon():
+    fpath = os.path.join(public_website_dir, "gtech-icon.png")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type="image/png")
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+
+@app.get("/gtech-logo.png", include_in_schema=False)
+def site_logo():
+    fpath = os.path.join(public_website_dir, "gtech-logo.png")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type="image/png")
+    return JSONResponse(status_code=404, content={"detail": "Not found"})
 
 
 @app.get("/health", tags=["Health"])
@@ -458,5 +538,8 @@ if os.path.exists(client_portal_dir):
 mobile_portal_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/mobile"))
 if os.path.exists(mobile_portal_dir):
     app.mount("/mobile", StaticFiles(directory=mobile_portal_dir, html=True), name="mobile_portal")
+
+if os.path.exists(public_website_dir):
+    app.mount("/site", StaticFiles(directory=public_website_dir, html=True), name="public_site")
 
 

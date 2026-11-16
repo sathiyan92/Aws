@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-TECH | Smart IoT Vending Machines & Industrial Automation</title>
+    <meta name="description" content="G-TECH manufactures next-generation commercial smart vending machines, reverse vending nodes, and cloud IoT telemetry hardware in Chennai, India.">
+    <link rel="icon" type="image/png" href="gtech-icon.png">
+    <link rel="stylesheet" href="styles.css?v=2.0">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="site-header">
+        <div class="container nav-wrapper">
+            <a href="/" class="brand-link">
+                <div class="brand-logo">
+                    <img src="gtech-icon.png" alt="G-TECH Logo">
+                </div>
+                <div>
+                    <div class="brand-name">G-TECH</div>
+                    <div class="brand-sub">Automations & Vending</div>
+                </div>
+            </a>
+            <nav>
+                <ul class="nav-links">
+                    <li><a href="/" class="active">Home</a></li>
+                    <li><a href="#products">Products</a></li>
+                    <li><a href="/contact">Contact Us</a></li>
+                    <li><a href="/terms">Terms</a></li>
+                    <li><a href="/privacy">Privacy</a></li>
+                    <li><a href="/refund-policy">Refund Policy</a></li>
+                    <li><a href="/shipping-policy">Delivery Policy</a></li>
+                    <li><a href="#signin-card" class="btn-header" onclick="focusSignIn()">🔐 Sign In</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Hero Section with Sign In -->
+        <section class="hero-section">
+            <div class="container">
+                <div class="hero-layout">
+                    <!-- Left Column: Company & Technology Intro -->
+                    <div>
+                        <div class="hero-badge">
+                            <span>⚡</span> Commercial Smart Vending & IoT Hardware Solutions
+                        </div>
+                        <h1 class="hero-title">Next-Generation IoT Smart Vending & Cloud Platform</h1>
+                        <p class="hero-desc">
+                            G-TECH engineers industrial-grade smart vending machines, contactless UPI QR payment controllers, and real-time cloud fleet telemetry. Powering retail automation across India.
+                        </p>
+
+                        <!-- Company Fast Facts (Mandatory for PhonePe Verification) -->
+                        <div class="hero-company-badges">
+                            <div class="hero-badge-row">
+                                <span>🏢</span>
+                                <span><strong>Entity:</strong> G-TECH (Chennai, Tamil Nadu)</span>
+                            </div>
+                            <div class="hero-badge-row">
+                                <span>📍</span>
+                                <span><strong>Registered Office:</strong> 32/10, sakthi vinayakar Koil street, Rajiv Gandhi nagar, nesapakkam, CHENNAI - 600078</span>
+                            </div>
+                            <div class="hero-badge-row">
+                                <span>📞</span>
+                                <span><strong>Helpline:</strong> <a href="tel:+919094929809" style="color:#38bdf8; text-decoration:none;">+91 9094929809</a> / <a href="tel:+919094929808" style="color:#38bdf8; text-decoration:none;">+91 9094929808</a></span>
+                            </div>
+                            <div class="hero-badge-row">
+                                <span>✉️</span>
+                                <span><strong>Email:</strong> <a href="mailto:info.gtech2016@gmail.com" style="color:#38bdf8; text-decoration:none;">info.gtech2016@gmail.com</a> • <strong>GSTIN:</strong> 33CBDPP5141B1Z6</span>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 2rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <a href="#contact-box" class="btn btn-secondary" style="font-size:0.85rem;">
+                                <span>🏢</span> Official Business Details
+                            </a>
+                            <a href="/contact" class="btn btn-secondary" style="font-size:0.85rem;">
+                                <span>📞</span> Contact Desk
+                            </a>
+                            <a href="#products" class="btn btn-secondary" style="font-size:0.85rem;">
+                                <span>🥤</span> Hardware Solutions
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Dedicated Interactive Sign-In Card -->
+                    <div>
+                        <div class="signin-card" id="signin-card">
+                            <div class="signin-header">
+                                <div style="display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:12px; background:rgba(2, 132, 199, 0.15); border:1px solid rgba(56, 189, 248, 0.3); font-size:1.4rem; margin-bottom:0.75rem;">
+                                    🔐
+                                </div>
+                                <h3>Portal Sign In</h3>
+                                <p>Enter your credentials to enter the operations or vendor portal.</p>
+                            </div>
+
+                            <!-- Portal Tabs -->
+                            <div class="signin-tabs">
+                                <button type="button" class="signin-tab active" id="tabAdmin" onclick="selectPortal('admin')">
+                                    ⚙️ Operations Admin
+                                </button>
+                                <button type="button" class="signin-tab" id="tabVendor" onclick="selectPortal('vendor')">
+                                    🏪 Client Vendor
+                                </button>
+                            </div>
+
+                            <!-- Alert Box for Feedback -->
+                            <div id="signinAlert" class="signin-alert"></div>
+
+                            <!-- Sign In Form -->
+                            <form id="signinForm" onsubmit="handleSignIn(event)" autocomplete="off">
+                                <div class="signin-form-group">
+                                    <label for="signinUsername">Username or Email</label>
+                                    <div class="signin-input-wrapper">
+                                        <input type="text" id="signinUsername" class="signin-input" placeholder="Enter username or email" required autocomplete="username">
+                                    </div>
+                                </div>
+
+                                <div class="signin-form-group">
+                                    <label for="signinPassword">Password</label>
+                                    <div class="signin-input-wrapper">
+                                        <input type="password" id="signinPassword" class="signin-input" placeholder="Enter password" required autocomplete="current-password" style="padding-right: 2.5rem;">
+                                        <button type="button" class="signin-eye-btn" onclick="togglePasswordVisibility()" title="Show/Hide Password" aria-label="Toggle password view">
+                                            👁️
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="signin-btn-submit" id="signinBtn">
+                                    <span id="signinBtnText">Sign In to Portal</span>
+                                    <span>&rarr;</span>
+                                </button>
+                            </form>
+
+                            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; font-size: 0.76rem; color: var(--text-muted);">
+                                🔒 Protected by enterprise 256-bit JWT authentication.<br>
+                                Access restricted to authorized personnel & vendors.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Registered Business & Contact Information (Mandatory for PhonePe Verification) -->
+        <section id="contact-box" class="container" style="padding-top: 2rem;">
+            <div class="business-info-box">
+                <div style="text-align: center; max-width: 700px; margin: 0 auto;">
+                    <span class="hero-badge">🏢 Official Registered Business Information</span>
+                    <h2 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff;">G-TECH Corporate Office & Contact Details</h2>
+                    <p style="color: var(--text-secondary); font-size: 0.95rem;">
+                        Registered manufacturer of smart vending systems, reverse vending machines, and industrial IoT embedded hardware.
+                    </p>
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-icon">📍</div>
+                        <div class="info-content">
+                            <strong>Physical Postal Address</strong>
+                            <span>G-TECH<br>32/10, sakthi vinayakar Koil street,<br>Rajiv Gandhi nagar, nesapakkam,<br>CHENNAI - 600078,<br>Tamil Nadu, India.</span>
+                        </div>
+                    </div>
+
+                    <div class="info-item">
+                        <div class="info-icon">📞</div>
+                        <div class="info-content">
+                            <strong>Customer Support & Inquiries</strong>
+                            <span>
+                                Primary: <a href="tel:+919094929809">+91 9094929809</a><br>
+                                Direct: <a href="tel:+919094929808">+91 9094929808</a><br>
+                                Alternative: <a href="tel:+919042814516">+91 9042814516</a>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="info-item">
+                        <div class="info-icon">✉️</div>
+                        <div class="info-content">
+                            <strong>Official Email Address</strong>
+                            <span><a href="mailto:info.gtech2016@gmail.com">info.gtech2016@gmail.com</a></span>
+                        </div>
+                    </div>
+
+                    <div class="info-item">
+                        <div class="info-icon">🧾</div>
+                        <div class="info-content">
+                            <strong>GSTIN Registration Number</strong>
+                            <span style="font-family: monospace; font-size: 1.05rem; color: #38bdf8;">33CBDPP5141B1Z6</span>
+                        </div>
+                    </div>
+
+                    <div class="info-item">
+                        <div class="info-icon">🕒</div>
+                        <div class="info-content">
+                            <strong>Business Working Hours</strong>
+                            <span>Monday to Saturday: 9:00 AM – 7:00 PM IST<br>Sunday: Closed</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Products Section -->
+        <section id="products" class="features-section container">
+            <h2 class="section-title">Industrial IoT Hardware & Vending Solutions</h2>
+            <p class="section-subtitle">Engineered in Chennai, India for commercial reliability and zero-touch operations.</p>
+
+            <div class="grid-3">
+                <div class="card">
+                    <div class="card-icon">🥤</div>
+                    <h3>Smart Snack & Beverage Vending</h3>
+                    <p>
+                        High-capacity spiral and vertical drop vending machines with dual payment support (Instant Dynamic UPI QR + Multi-Coin Acceptor). Built-in infrared drop sensors ensure guaranteed delivery.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="card-icon">♻️</div>
+                    <h3>Smart Reverse Vending Machines (RVM)</h3>
+                    <p>
+                        Automated bottle and can recycling collection kiosks with automated barcode scanning, weight validation, and instant UPI or discount coupon rewards.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="card-icon">⚡</div>
+                    <h3>G-TECH IoT Telemetry Controller Node</h3>
+                    <p>
+                        Custom ESP32 industrial embedded microcontrollers with 4G LTE/Wi-Fi fallback, WebSocket live push gateway, OTA firmware update distribution, and non-volatile NVS audit storage.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="card-icon">💳</div>
+                    <h3>Instant UPI & Split Payout Engine</h3>
+                    <p>
+                        Integrated with PhonePe and Razorpay for millisecond QR generation and real-time automated split payouts to vendor bank accounts.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="card-icon">🪪</div>
+                    <h3>RFID Attendance & Access Systems</h3>
+                    <p>
+                        NFC/RFID attendance terminals and campus vending cards with daily spending limits, live cloud sync, and enterprise multi-tenancy.
+                    </p>
+                </div>
+
+                <div class="card">
+                    <div class="card-icon">📊</div>
+                    <h3>Multi-Tenant Cloud Telemetry Hub</h3>
+                    <p>
+                        Real-time fleet dashboard for inventory tracking, slot pricing configuration, remote motor diagnostics, and automated vendor settlements.
+                    </p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Site Footer -->
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-col">
+                    <h4>G-TECH Automations & Vending</h4>
+                    <p>
+                        Leading manufacturer of commercial IoT smart vending kiosks, reverse vending systems, and automated retail telemetry solutions.
+                    </p>
+                    <p><strong>Registered Address:</strong> 32/10, sakthi vinayakar Koil street, Rajiv Gandhi nagar, nesapakkam, CHENNAI - 600078, Tamil Nadu, India.</p>
+                    <p><strong>GSTIN:</strong> 33CBDPP5141B1Z6</p>
+                    <p><strong>Phone:</strong> +91 9094929808 / +91 9094929809 / +91 9042814516</p>
+                    <p><strong>Email:</strong> <a href="mailto:info.gtech2016@gmail.com" style="color:#38bdf8;">info.gtech2016@gmail.com</a></p>
+                </div>
+
+                <div class="footer-col">
+                    <h4>Mandatory Policies</h4>
+                    <ul class="footer-links">
+                        <li><a href="/contact">Contact Us</a></li>
+                        <li><a href="/terms">Terms & Conditions</a></li>
+                        <li><a href="/privacy">Privacy Policy</a></li>
+                        <li><a href="/refund-policy">Refund & Cancellation Policy</a></li>
+                        <li><a href="/shipping-policy">Shipping & Delivery Policy</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-col">
+                    <h4>Fleet Portals</h4>
+                    <ul class="footer-links">
+                        <li><a href="#signin-card" onclick="selectPortal('admin'); focusSignIn();">Platform Admin Sign In</a></li>
+                        <li><a href="#signin-card" onclick="selectPortal('vendor'); focusSignIn();">Client Vendor Sign In</a></li>
+                        <li><a href="/mobile">Mobile Web Launcher</a></li>
+                        <li><a href="/health">Cloud System Health</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                &copy; 2026 G-TECH. All rights reserved. Registered in Chennai, Tamil Nadu, India.
+                <br>
+                GSTIN: 33CBDPP5141B1Z6 • Phone: +91 9094929808 / +91 9094929809 • Email: info.gtech2016@gmail.com
+            </div>
+        </div>
+    </footer>
+
+    <!-- Interactive Client Script for Sign In & Authentication -->
+    <script>
+        let currentPortal = 'admin';
+
+        function selectPortal(portal) {
+            currentPortal = portal;
+            const tabAdmin = document.getElementById('tabAdmin');
+            const tabVendor = document.getElementById('tabVendor');
+            const btnText = document.getElementById('signinBtnText');
+
+            if (portal === 'admin') {
+                tabAdmin.classList.add('active');
+                tabVendor.classList.remove('active');
+                if (btnText) btnText.textContent = 'Sign In to Operations Portal';
+            } else {
+                tabVendor.classList.add('active');
+                tabAdmin.classList.remove('active');
+                if (btnText) btnText.textContent = 'Sign In to Vendor Portal';
+            }
+        }
+
+        function focusSignIn() {
+            const u = document.getElementById('signinUsername');
+            if (u) {
+                u.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => u.focus(), 300);
+            }
+        }
+
+        function togglePasswordVisibility() {
+            const p = document.getElementById('signinPassword');
+            if (!p) return;
+            p.type = (p.type === 'password') ? 'text' : 'password';
+        }
+
+        function showAlert(message, type) {
+            const alertBox = document.getElementById('signinAlert');
+            if (!alertBox) return;
+            alertBox.className = 'signin-alert ' + type;
+            alertBox.innerHTML = message;
+        }
+
+        function clearAlert() {
+            const alertBox = document.getElementById('signinAlert');
+            if (!alertBox) return;
+            alertBox.className = 'signin-alert';
+            alertBox.innerHTML = '';
+        }
+
+        async function handleSignIn(e) {
+            e.preventDefault();
+            clearAlert();
+
+            const usernameInput = document.getElementById('signinUsername');
+            const passwordInput = document.getElementById('signinPassword');
+            const submitBtn = document.getElementById('signinBtn');
+
+            const username = usernameInput ? usernameInput.value.trim() : '';
+            const password = passwordInput ? passwordInput.value : '';
+
+            if (!username || !password) {
+                showAlert('⚠️ Please enter both username/email and password.', 'error');
+                return;
+            }
+
+            // Disable button during network call
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span>Verifying credentials...</span>';
+
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username_or_email: username,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    const detail = data.detail || 'Invalid username or password. Please verify your credentials.';
+                    showAlert('❌ ' + detail, 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<span>Sign In to Portal</span> <span>&rarr;</span>';
+                    return;
+                }
+
+                // Authentication Success!
+                const user = data.user || {};
+                const role = user.role || '';
+
+                if (currentPortal === 'admin' || role === 'MANUFACTURER_ADMIN') {
+                    // Store admin credentials for manufacturer-portal
+                    localStorage.setItem('mfg_token', data.access_token);
+                    localStorage.setItem('mfg_user', JSON.stringify(user));
+                    showAlert('✅ Authentication successful! Redirecting to Operations Portal...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/portal';
+                    }, 600);
+                } else {
+                    // Store client credentials for client-portal
+                    localStorage.setItem('iot_client_token', data.access_token);
+                    localStorage.setItem('iot_client_user', JSON.stringify(user));
+                    showAlert('✅ Authentication successful! Redirecting to Vendor Portal...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/client-portal';
+                    }, 600);
+                }
+
+            } catch (err) {
+                console.error('Sign-in error:', err);
+                showAlert('❌ Connection error. Unable to reach authentication server. Please check your network.', 'error');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>Sign In to Portal</span> <span>&rarr;</span>';
+            }
+        }
+    </script>
+</body>
+</html>
