@@ -1000,7 +1000,13 @@ function handleLogout() {
 }
 
 function showLoginModal() {
-    window.location.replace("/#signin-card");
+    const u = document.getElementById("loginUsername");
+    const p = document.getElementById("loginPassword");
+    if (u) u.value = "";
+    if (p) p.value = "";
+    const app = document.querySelector(".app-container");
+    if (app) app.style.visibility = "hidden";
+    openModal("modalLogin");
 }
 
 function openModal(id) {

@@ -249,7 +249,9 @@ function setupEventListeners() {
 }
 
 function showLoginModal() {
-    window.location.replace("/#signin-card");
+    const app = document.querySelector(".app-container");
+    if (app) app.style.visibility = "hidden";
+    elements.loginModal?.classList.add('open');
 }
 
 function hideLoginModal() {
@@ -301,6 +303,7 @@ async function handleLogin(e) {
         localStorage.setItem('iot_client_user', JSON.stringify(state.user));
 
         hideLoginModal();
+        const cAppEl = document.querySelector(".app-container"); if (cAppEl) cAppEl.style.visibility = "visible";
         updateUserInfo();
         showToast(`Welcome back, ${data.user.username}!`);
         await loadFleetCapabilities();

@@ -32,7 +32,7 @@
                     <li><a href="/privacy">Privacy</a></li>
                     <li><a href="/refund-policy">Refund Policy</a></li>
                     <li><a href="/shipping-policy">Delivery Policy</a></li>
-                    <li><a href="#signin-card" class="btn-header" onclick="focusSignIn()">🔐 Sign In</a></li>
+                    <li><a href="/contact" class="btn-header">Contact Us</a></li>
                 </ul>
             </nav>
         </div>
@@ -40,111 +40,52 @@
 
     <!-- Main Content -->
     <main>
-        <!-- Hero Section with Sign In -->
+        <!-- Hero Section -->
         <section class="hero-section">
-            <div class="container">
-                <div class="hero-layout">
-                    <!-- Left Column: Company & Technology Intro -->
-                    <div>
-                        <div class="hero-badge">
-                            <span>⚡</span> Commercial Smart Vending & IoT Hardware Solutions
-                        </div>
-                        <h1 class="hero-title">Next-Generation IoT Smart Vending & Cloud Platform</h1>
-                        <p class="hero-desc">
-                            G-TECH engineers industrial-grade smart vending machines, contactless UPI QR payment controllers, and real-time cloud fleet telemetry. Powering retail automation across India.
-                        </p>
+            <div class="container" style="max-width: 900px;">
+                <div class="hero-badge">
+                    <span>⚡</span> Commercial Smart Vending & IoT Hardware Solutions
+                </div>
+                <h1 class="hero-title">Next-Generation IoT Smart Vending & Cloud Platform</h1>
+                <p class="hero-desc">
+                    G-TECH engineers industrial-grade smart vending machines, contactless UPI QR payment controllers, and real-time cloud fleet telemetry. Powering retail automation across India.
+                </p>
 
-                        <!-- Company Fast Facts (Mandatory for PhonePe Verification) -->
-                        <div class="hero-company-badges">
-                            <div class="hero-badge-row">
-                                <span>🏢</span>
-                                <span><strong>Entity:</strong> G-TECH (Chennai, Tamil Nadu)</span>
-                            </div>
-                            <div class="hero-badge-row">
-                                <span>📍</span>
-                                <span><strong>Registered Office:</strong> 32/10, sakthi vinayakar Koil street, Rajiv Gandhi nagar, nesapakkam, CHENNAI - 600078</span>
-                            </div>
-                            <div class="hero-badge-row">
-                                <span>📞</span>
-                                <span><strong>Helpline:</strong> <a href="tel:09094929808" style="color:#38bdf8; text-decoration:none;">09094929808</a> / <a href="tel:09042814516" style="color:#38bdf8; text-decoration:none;">09042814516</a> / <a href="tel:9094929809" style="color:#38bdf8; text-decoration:none;">9094929809</a> (+91 9094929808 / +91 9094929809)</span>
-                            </div>
-                            <div class="hero-badge-row">
-                                <span>✉️</span>
-                                <span><strong>Email:</strong> <a href="mailto:info.gtech2016@gmail.com" style="color:#38bdf8; text-decoration:none;">info.gtech2016@gmail.com</a> • <strong>GSTIN:</strong> 33CBDPP5141B1Z6</span>
-                            </div>
+                <!-- Company Fast Facts (Mandatory for PhonePe Verification) -->
+                <div style="background: rgba(19, 28, 49, 0.75); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1.25rem 1.75rem; margin: 0 auto 2.25rem; max-width: 820px; text-align: left; backdrop-filter: blur(8px);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0.85rem; font-size: 0.88rem; color: var(--text-secondary);">
+                        <div class="hero-badge-row">
+                            <span>🏢</span>
+                            <span><strong>Entity:</strong> G-TECH (Chennai, Tamil Nadu)</span>
                         </div>
-
-                        <div style="margin-top: 2rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <a href="#services" class="btn btn-primary" style="font-size:0.85rem;">
-                                <span>🛠️</span> Our Services
-                            </a>
-                            <a href="#pricing" class="btn btn-secondary" style="font-size:0.85rem;">
-                                <span>🏷️</span> Pricing & Plans
-                            </a>
-                            <a href="#contact-box" class="btn btn-secondary" style="font-size:0.85rem;">
-                                <span>🏢</span> Business Info
-                            </a>
-                            <a href="/contact" class="btn btn-secondary" style="font-size:0.85rem;">
-                                <span>📞</span> Contact Desk
-                            </a>
+                        <div class="hero-badge-row">
+                            <span>📍</span>
+                            <span><strong>Registered Office:</strong> 32/10, sakthi vinayakar Koil street, Rajiv Gandhi nagar, nesapakkam, CHENNAI - 600078</span>
+                        </div>
+                        <div class="hero-badge-row">
+                            <span>📞</span>
+                            <span><strong>Helpline:</strong> <a href="tel:09094929808" style="color:#38bdf8; text-decoration:none;">09094929808</a> / <a href="tel:09042814516" style="color:#38bdf8; text-decoration:none;">09042814516</a> / <a href="tel:9094929809" style="color:#38bdf8; text-decoration:none;">9094929809</a> (+91 9094929808 / +91 9094929809)</span>
+                        </div>
+                        <div class="hero-badge-row">
+                            <span>✉️</span>
+                            <span><strong>Email:</strong> <a href="mailto:info.gtech2016@gmail.com" style="color:#38bdf8; text-decoration:none;">info.gtech2016@gmail.com</a> • <strong>GSTIN:</strong> 33CBDPP5141B1Z6</span>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Right Column: Dedicated Interactive Sign-In Card -->
-                    <div>
-                        <div class="signin-card" id="signin-card">
-                            <div class="signin-header">
-                                <div style="display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:12px; background:rgba(2, 132, 199, 0.15); border:1px solid rgba(56, 189, 248, 0.3); font-size:1.4rem; margin-bottom:0.75rem;">
-                                    🔐
-                                </div>
-                                <h3>Portal Sign In</h3>
-                                <p>Enter your credentials to enter the operations or vendor portal.</p>
-                            </div>
-
-                            <!-- Portal Tabs -->
-                            <div class="signin-tabs">
-                                <button type="button" class="signin-tab active" id="tabAdmin" onclick="selectPortal('admin')">
-                                    ⚙️ Operations Admin
-                                </button>
-                                <button type="button" class="signin-tab" id="tabVendor" onclick="selectPortal('vendor')">
-                                    🏪 Client Vendor
-                                </button>
-                            </div>
-
-                            <!-- Alert Box for Feedback -->
-                            <div id="signinAlert" class="signin-alert"></div>
-
-                            <!-- Sign In Form -->
-                            <form id="signinForm" onsubmit="handleSignIn(event)" autocomplete="off">
-                                <div class="signin-form-group">
-                                    <label for="signinUsername">Username or Email</label>
-                                    <div class="signin-input-wrapper">
-                                        <input type="text" id="signinUsername" class="signin-input" placeholder="Enter username or email" required autocomplete="username">
-                                    </div>
-                                </div>
-
-                                <div class="signin-form-group">
-                                    <label for="signinPassword">Password</label>
-                                    <div class="signin-input-wrapper">
-                                        <input type="password" id="signinPassword" class="signin-input" placeholder="Enter password" required autocomplete="current-password" style="padding-right: 2.5rem;">
-                                        <button type="button" class="signin-eye-btn" onclick="togglePasswordVisibility()" title="Show/Hide Password" aria-label="Toggle password view">
-                                            👁️
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <button type="submit" class="signin-btn-submit" id="signinBtn">
-                                    <span id="signinBtnText">Sign In to Portal</span>
-                                    <span>&rarr;</span>
-                                </button>
-                            </form>
-
-                            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; font-size: 0.76rem; color: var(--text-muted);">
-                                🔒 Protected by enterprise 256-bit JWT authentication.<br>
-                                Access restricted to authorized personnel & vendors.
-                            </div>
-                        </div>
-                    </div>
+                <div class="hero-actions">
+                    <a href="#services" class="btn btn-primary">
+                        <span>🛠️</span> Our Services
+                    </a>
+                    <a href="#pricing" class="btn btn-secondary">
+                        <span>🏷️</span> Pricing & Plans
+                    </a>
+                    <a href="#contact-box" class="btn btn-secondary">
+                        <span>🏢</span> Business Info
+                    </a>
+                    <a href="/contact" class="btn btn-secondary">
+                        <span>📞</span> Contact Desk
+                    </a>
                 </div>
             </div>
         </section>
@@ -404,14 +345,13 @@
                 </div>
 
                 <div class="footer-col">
-                    <h4>Services & Plans</h4>
+                    <h4>Quick Links</h4>
                     <ul class="footer-links">
+                        <li><a href="/">Home</a></li>
                         <li><a href="#services">Our Services</a></li>
                         <li><a href="#pricing">Pricing & Plans</a></li>
-                        <li><a href="#signin-card" onclick="selectPortal('admin'); focusSignIn();">Platform Admin Sign In</a></li>
-                        <li><a href="#signin-card" onclick="selectPortal('vendor'); focusSignIn();">Client Vendor Sign In</a></li>
-                        <li><a href="/mobile">Mobile Web Launcher</a></li>
-                        <li><a href="/health">Cloud System Health</a></li>
+                        <li><a href="#contact-box">Registered Business Info</a></li>
+                        <li><a href="/contact">Customer Support Desk</a></li>
                     </ul>
                 </div>
             </div>
@@ -424,127 +364,6 @@
         </div>
     </footer>
 
-    <!-- Interactive Client Script for Sign In & Authentication -->
-    <script>
-        let currentPortal = 'admin';
 
-        function selectPortal(portal) {
-            currentPortal = portal;
-            const tabAdmin = document.getElementById('tabAdmin');
-            const tabVendor = document.getElementById('tabVendor');
-            const btnText = document.getElementById('signinBtnText');
-
-            if (portal === 'admin') {
-                tabAdmin.classList.add('active');
-                tabVendor.classList.remove('active');
-                if (btnText) btnText.textContent = 'Sign In to Operations Portal';
-            } else {
-                tabVendor.classList.add('active');
-                tabAdmin.classList.remove('active');
-                if (btnText) btnText.textContent = 'Sign In to Vendor Portal';
-            }
-        }
-
-        function focusSignIn() {
-            const u = document.getElementById('signinUsername');
-            if (u) {
-                u.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                setTimeout(() => u.focus(), 300);
-            }
-        }
-
-        function togglePasswordVisibility() {
-            const p = document.getElementById('signinPassword');
-            if (!p) return;
-            p.type = (p.type === 'password') ? 'text' : 'password';
-        }
-
-        function showAlert(message, type) {
-            const alertBox = document.getElementById('signinAlert');
-            if (!alertBox) return;
-            alertBox.className = 'signin-alert ' + type;
-            alertBox.innerHTML = message;
-        }
-
-        function clearAlert() {
-            const alertBox = document.getElementById('signinAlert');
-            if (!alertBox) return;
-            alertBox.className = 'signin-alert';
-            alertBox.innerHTML = '';
-        }
-
-        async function handleSignIn(e) {
-            e.preventDefault();
-            clearAlert();
-
-            const usernameInput = document.getElementById('signinUsername');
-            const passwordInput = document.getElementById('signinPassword');
-            const submitBtn = document.getElementById('signinBtn');
-
-            const username = usernameInput ? usernameInput.value.trim() : '';
-            const password = passwordInput ? passwordInput.value : '';
-
-            if (!username || !password) {
-                showAlert('⚠️ Please enter both username/email and password.', 'error');
-                return;
-            }
-
-            // Disable button during network call
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span>Verifying credentials...</span>';
-
-            try {
-                const response = await fetch('/api/v1/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        username_or_email: username,
-                        password: password
-                    })
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    const detail = data.detail || 'Invalid username or password. Please verify your credentials.';
-                    showAlert('❌ ' + detail, 'error');
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<span>Sign In to Portal</span> <span>&rarr;</span>';
-                    return;
-                }
-
-                // Authentication Success!
-                const user = data.user || {};
-                const role = user.role || '';
-
-                if (currentPortal === 'admin' || role === 'MANUFACTURER_ADMIN') {
-                    // Store admin credentials for manufacturer-portal
-                    localStorage.setItem('mfg_token', data.access_token);
-                    localStorage.setItem('mfg_user', JSON.stringify(user));
-                    showAlert('✅ Authentication successful! Redirecting to Operations Portal...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/portal';
-                    }, 600);
-                } else {
-                    // Store client credentials for client-portal
-                    localStorage.setItem('iot_client_token', data.access_token);
-                    localStorage.setItem('iot_client_user', JSON.stringify(user));
-                    showAlert('✅ Authentication successful! Redirecting to Vendor Portal...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/client-portal';
-                    }, 600);
-                }
-
-            } catch (err) {
-                console.error('Sign-in error:', err);
-                showAlert('❌ Connection error. Unable to reach authentication server. Please check your network.', 'error');
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<span>Sign In to Portal</span> <span>&rarr;</span>';
-            }
-        }
-    </script>
 </body>
 </html>
