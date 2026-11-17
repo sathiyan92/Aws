@@ -25,7 +25,8 @@
             <nav>
                 <ul class="nav-links">
                     <li><a href="/" class="active">Home</a></li>
-                    <li><a href="#products">Products</a></li>
+                    <li><a href="#services">Services</a></li>
+                    <li><a href="#pricing">Pricing</a></li>
                     <li><a href="/contact">Contact Us</a></li>
                     <li><a href="/terms">Terms</a></li>
                     <li><a href="/privacy">Privacy</a></li>
@@ -74,14 +75,17 @@
                         </div>
 
                         <div style="margin-top: 2rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <a href="#services" class="btn btn-primary" style="font-size:0.85rem;">
+                                <span>🛠️</span> Our Services
+                            </a>
+                            <a href="#pricing" class="btn btn-secondary" style="font-size:0.85rem;">
+                                <span>🏷️</span> Pricing & Plans
+                            </a>
                             <a href="#contact-box" class="btn btn-secondary" style="font-size:0.85rem;">
-                                <span>🏢</span> Official Business Details
+                                <span>🏢</span> Business Info
                             </a>
                             <a href="/contact" class="btn btn-secondary" style="font-size:0.85rem;">
                                 <span>📞</span> Contact Desk
-                            </a>
-                            <a href="#products" class="btn btn-secondary" style="font-size:0.85rem;">
-                                <span>🥤</span> Hardware Solutions
                             </a>
                         </div>
                     </div>
@@ -203,15 +207,15 @@
             </div>
         </section>
 
-        <!-- Products Section -->
-        <section id="products" class="features-section container">
-            <h2 class="section-title">Industrial IoT Hardware & Vending Solutions</h2>
-            <p class="section-subtitle">Engineered in Chennai, India for commercial reliability and zero-touch operations.</p>
+        <!-- Services Section -->
+        <section id="services" class="features-section container">
+            <h2 class="section-title">Our Services & Commercial Vending Solutions</h2>
+            <p class="section-subtitle">Engineered by G-TECH in Chennai, India for reliable commercial operation, zero-touch dispensing, and cloud IoT telemetry.</p>
 
             <div class="grid-3">
                 <div class="card">
                     <div class="card-icon">🥤</div>
-                    <h3>Smart Snack & Beverage Vending</h3>
+                    <h3>Smart Snack & Beverage Vending Services</h3>
                     <p>
                         High-capacity spiral and vertical drop vending machines with dual payment support (Instant Dynamic UPI QR + Multi-Coin Acceptor). Built-in infrared drop sensors ensure guaranteed delivery.
                     </p>
@@ -219,7 +223,7 @@
 
                 <div class="card">
                     <div class="card-icon">♻️</div>
-                    <h3>Smart Reverse Vending Machines (RVM)</h3>
+                    <h3>Reverse Vending & Recycling Kiosks (RVM)</h3>
                     <p>
                         Automated bottle and can recycling collection kiosks with automated barcode scanning, weight validation, and instant UPI or discount coupon rewards.
                     </p>
@@ -235,9 +239,9 @@
 
                 <div class="card">
                     <div class="card-icon">💳</div>
-                    <h3>Instant UPI & Split Payout Engine</h3>
+                    <h3>Contactless Dynamic UPI Payment Integration</h3>
                     <p>
-                        Integrated with PhonePe and Razorpay for millisecond QR generation and real-time automated split payouts to vendor bank accounts.
+                        Seamless dynamic UPI QR code payments integrated directly into machine controllers for fast, secure, cashless checkout at the vending tray.
                     </p>
                 </div>
 
@@ -253,8 +257,121 @@
                     <div class="card-icon">📊</div>
                     <h3>Multi-Tenant Cloud Telemetry Hub</h3>
                     <p>
-                        Real-time fleet dashboard for inventory tracking, slot pricing configuration, remote motor diagnostics, and automated vendor settlements.
+                        Real-time fleet dashboard for inventory tracking, slot pricing configuration, remote motor diagnostics, and automated machine management.
                     </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pricing Section (Mandatory for Payment Gateway Compliance) -->
+        <section id="pricing" class="pricing-section">
+            <div class="container">
+                <div style="text-align: center; max-width: 700px; margin: 0 auto;">
+                    <span class="hero-badge">🏷️ Transparent Pricing & Plans</span>
+                    <h2 class="section-title">Services & Vending Pricing Plans</h2>
+                    <p class="section-subtitle">
+                        Clear, upfront pricing for consumers, commercial route operators, and corporate vending partners across India.
+                    </p>
+                </div>
+
+                <div class="pricing-grid">
+                    <!-- Plan 1: On-Demand Vending Purchases -->
+                    <div class="pricing-card">
+                        <div>
+                            <div class="pricing-header">
+                                <h3>On-Demand Vending</h3>
+                                <p>Consumer purchases at physical G-TECH smart vending machines.</p>
+                            </div>
+                            <div class="pricing-amount">
+                                <span class="currency">₹</span>
+                                <span class="price">10 – 100</span>
+                                <span class="period">/ item</span>
+                            </div>
+                            <ul class="pricing-features">
+                                <li><span class="check">✓</span> Bottled beverages, juices & mineral water</li>
+                                <li><span class="check">✓</span> Branded packaged snacks & confectionery</li>
+                                <li><span class="check">✓</span> Dynamic UPI QR payment at machine tray</li>
+                                <li><span class="check">✓</span> Optical drop-sensor dispense guarantee</li>
+                                <li><span class="check">✓</span> Automatic instant refund on failed vend</li>
+                            </ul>
+                        </div>
+                        <a href="#contact-box" class="btn btn-secondary">Machine Locations</a>
+                    </div>
+
+                    <!-- Plan 2: Telemetry & Cloud Service (Featured) -->
+                    <div class="pricing-card featured">
+                        <div class="pricing-badge">Popular</div>
+                        <div>
+                            <div class="pricing-header">
+                                <h3>Cloud Fleet Telemetry</h3>
+                                <p>Comprehensive remote monitoring & telemetry software service.</p>
+                            </div>
+                            <div class="pricing-amount">
+                                <span class="currency">₹</span>
+                                <span class="price">1,499</span>
+                                <span class="period">/ month / machine</span>
+                            </div>
+                            <ul class="pricing-features">
+                                <li><span class="check">✓</span> Real-time machine health & power telemetry</li>
+                                <li><span class="check">✓</span> Dynamic UPI payment gateway connectivity</li>
+                                <li><span class="check">✓</span> Remote inventory tracking & low-stock alerts</li>
+                                <li><span class="check">✓</span> Optical sensor audit logs & drop alarms</li>
+                                <li><span class="check">✓</span> Priority email & phone support (9 AM – 7 PM IST)</li>
+                            </ul>
+                        </div>
+                        <a href="#contact-box" class="btn btn-primary">Subscribe Now</a>
+                    </div>
+
+                    <!-- Plan 3: IoT Controller Retrofit Kit -->
+                    <div class="pricing-card">
+                        <div>
+                            <div class="pricing-header">
+                                <h3>IoT Retrofit Kit</h3>
+                                <p>Smart automation hardware upgrade for existing vending machines.</p>
+                            </div>
+                            <div class="pricing-amount">
+                                <span class="currency">₹</span>
+                                <span class="price">24,999</span>
+                                <span class="period">one-time</span>
+                            </div>
+                            <ul class="pricing-features">
+                                <li><span class="check">✓</span> Industrial ESP32 IoT controller board</li>
+                                <li><span class="check">✓</span> Drop sensor harness & multi-coin interface</li>
+                                <li><span class="check">✓</span> Dynamic UPI QR screen & LCD display panel</li>
+                                <li><span class="check">✓</span> Installation, motor calibration & technician demo</li>
+                                <li><span class="check">✓</span> 1-Year hardware warranty & free OTA updates</li>
+                            </ul>
+                        </div>
+                        <a href="/contact" class="btn btn-secondary">Request Installation</a>
+                    </div>
+
+                    <!-- Plan 4: Turnkey Smart Vending Machine -->
+                    <div class="pricing-card">
+                        <div>
+                            <div class="pricing-header">
+                                <h3>Turnkey Smart Machine</h3>
+                                <p>Complete commercial refrigerated smart vending kiosk unit.</p>
+                            </div>
+                            <div class="pricing-amount">
+                                <span class="currency">₹</span>
+                                <span class="price">1,45,000</span>
+                                <span class="period">one-time unit</span>
+                            </div>
+                            <ul class="pricing-features">
+                                <li><span class="check">✓</span> Commercial refrigerated machine (Snacks & Drinks)</li>
+                                <li><span class="check">✓</span> 30 to 60 product slots with dual-spiral motors</li>
+                                <li><span class="check">✓</span> Factory-fitted G-TECH IoT Controller & UPI screen</li>
+                                <li><span class="check">✓</span> Toughened double-glass anti-vandal door</li>
+                                <li><span class="check">✓</span> Delivery, on-site setup & 1-Year AMC included</li>
+                            </ul>
+                        </div>
+                        <a href="/contact" class="btn btn-secondary">Get Machine Quote</a>
+                    </div>
+                </div>
+
+                <div class="pricing-tax-note">
+                    * Applicable GST (18%) extra on commercial equipment and subscription services as per GSTIN: <strong>33CBDPP5141B1Z6</strong>.<br>
+                    All transactions are securely processed through RBI-authorized payment gateways. Read our <a href="/refund-policy" style="color:#38bdf8;">Cancellation & Refund Policy</a> and <a href="/terms" style="color:#38bdf8;">Terms & Conditions</a>.
                 </div>
             </div>
         </section>
@@ -287,8 +404,10 @@
                 </div>
 
                 <div class="footer-col">
-                    <h4>Fleet Portals</h4>
+                    <h4>Services & Plans</h4>
                     <ul class="footer-links">
+                        <li><a href="#services">Our Services</a></li>
+                        <li><a href="#pricing">Pricing & Plans</a></li>
                         <li><a href="#signin-card" onclick="selectPortal('admin'); focusSignIn();">Platform Admin Sign In</a></li>
                         <li><a href="#signin-card" onclick="selectPortal('vendor'); focusSignIn();">Client Vendor Sign In</a></li>
                         <li><a href="/mobile">Mobile Web Launcher</a></li>
