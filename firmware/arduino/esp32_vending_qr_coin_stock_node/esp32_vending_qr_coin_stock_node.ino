@@ -355,6 +355,7 @@ void uiDrawWiFiConnectedScreen(const String& ssid, const String& ip);
 void uiDrawWiFiSetupScreen(const String& apName, const String& ipAddress);
 void uiDrawVendingScreen(int slotNumber, float amount, String productName);
 void uiDrawCompleteScreen();
+void uiDrawCoinPendingScreen(int currentPulses, int targetPulses, float currentAmt, float targetAmt);
 void uiUpdateNetworkStatus(NetworkStatus newStatus);
 void uiDrawOfflineNotice(NetworkStatus status);
 void setMotor(int slotNumber, bool turnOn);
@@ -598,6 +599,60 @@ void uiDrawOutOfStockNotice() {
   TFT_display.setCursor(45, 338);
   TFT_display.setTextColor(COLOR_GREEN);
   TFT_display.print("Press SW 2 (GPIO 33) to save");
+}
+
+/**
+ * Screen: Coin Balance Pending Screen (Multi-coin pulse accumulation)
+ * Displayed when user inserts coins, showing current inserted vs required total.
+ */
+void uiDrawCoinPendingScreen(int currentPulses, int targetPulses, float currentAmt, float targetAmt) {
+  // Center Alert Box (x: 20, y: 144, w: 280, h: 236)
+  TFT_display.fillRect(20, 144, 280, 236, COLOR_CARD);
+  TFT_display.drawRect(20, 144, 280, 236, COLOR_YELLOW);
+  TFT_display.drawRect(21, 145, 278, 234, COLOR_YELLOW);
+  TFT_display.drawRect(23, 147, 274, 230, COLOR_CARD_BORDER);
+
+  int cx = 160;
+  int cy = 188;
+
+  // Draw Gold Coin Icon
+  TFT_display.drawCircle(cx, cy, 26, COLOR_YELLOW);
+  TFT_display.drawCircle(cx, cy, 27, COLOR_YELLOW);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(2);
+  TFT_display.setCursor(cx - 10, cy - 7);
+  TFT_display.print("Rs");
+
+  // Title
+  TFT_display.setTextSize(2);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setCursor(65, 225);
+  TFT_display.print("COIN INSERTED");
+
+  // Status amount
+  TFT_display.setTextSize(2);
+  TFT_display.setTextColor(COLOR_CYAN);
+  TFT_display.setCursor(65, 255);
+  TFT_display.printf("Rs %.0f / Rs %.0f", currentAmt, targetAmt);
+
+  // Remaining instructions
+  float remainingAmt = targetAmt - currentAmt;
+  if (remainingAmt < 0) remainingAmt = 0;
+  TFT_display.fillRect(35, 290, 250, 68, COLOR_DARK_GRAY);
+  TFT_display.drawRect(35, 290, 250, 68, COLOR_YELLOW);
+
+  TFT_display.setCursor(45, 300);
+  TFT_display.setTextColor(COLOR_YELLOW);
+  TFT_display.setTextSize(1);
+  TFT_display.print("BALANCE REQUIRED:");
+  TFT_display.setCursor(45, 315);
+  TFT_display.setTextColor(COLOR_GREEN);
+  TFT_display.setTextSize(2);
+  TFT_display.printf("INSERT Rs %.0f MORE", remainingAmt);
+  TFT_display.setCursor(45, 338);
+  TFT_display.setTextColor(COLOR_WHITE);
+  TFT_display.setTextSize(1);
+  TFT_display.print("(Waiting for next coin...)");
 }
 
 /**
@@ -2871,13 +2926,22 @@ void setup() {
 // ==============================================================================
 // 16. PHYSICAL COIN ACCEPTOR PULSE ENGINE (RECEIVES & ECHOES TO GPIO 25 & VENDS)
 // ==============================================================================
+int  accumulated_coin_pulses = 0;
+unsigned long coin_session_start_time = 0;
+const unsigned long COIN_SESSION_TIMEOUT_MS = 15000; // 15 seconds multi-coin insertion window
+
 void processCoinAcceptorInput() {
   if (millis() - boot_time_ms < BOOT_STABILIZATION_MS) {
     isr_coin_pulses_received = 0;
     isr_new_coin_pulse = false;
+    accumulated_coin_pulses = 0;
     return;
   }
   if (current_state == STATE_DISPENSING || is_refill_mode) return;
+
+  // Calculate required pulses based on the set price (e.g. Rs 3.00 = 3 pulses, Rs 1.00 = 1 pulse)
+  int required_pulses = (int)((pending_amount_rupee / COIN_VALUE_PER_PULSE) + 0.5f);
+  if (required_pulses < 1) required_pulses = 1;
 
   // 0. GUARD: If machine is set to QR_ONLY mode (Coin acceptance toggled OFF)
   if (payment_mode.equalsIgnoreCase("QR_ONLY")) {
@@ -2886,6 +2950,7 @@ void processCoinAcceptorInput() {
       Serial.printf("[! COIN IGNORED] Pulse on GPIO %d rejected: Machine is in QR_ONLY mode (Coin Acceptance Disabled).\n", PIN_COIN_INPUT);
     }
     isr_coin_pulses_received = 0; // Clear any pending pulses
+    accumulated_coin_pulses = 0;
     return;
   }
 
@@ -2902,29 +2967,65 @@ void processCoinAcceptorInput() {
                   isr_coin_pulses_received, PIN_COIN_INPUT, PIN_COIN_PULSE_OUT);
   }
 
-  // 2. Pulse Train Complete (Idle timeout reached after last pulse)
+  // 2. Pulse Train Complete (Idle timeout reached after last pulse of current coin)
   if (isr_coin_pulses_received > 0 && (millis() - isr_last_coin_pulse_time >= COIN_INPUT_IDLE_TIMEOUT_MS)) {
-    int totalPulses = isr_coin_pulses_received;
-    isr_coin_pulses_received = 0; // Reset for next insertion
+    int newPulses = isr_coin_pulses_received;
+    isr_coin_pulses_received = 0; // Reset ISR counter for next insertion
+
+    accumulated_coin_pulses += newPulses;
+    coin_session_start_time = millis();
 
     Serial.println("\n******************************************************************");
-    Serial.printf(">>> 🪙 COIN TRANSACTION RECEIVED! %d Pulse(s) on GPIO %d <<<\n", totalPulses, PIN_COIN_INPUT);
+    Serial.printf(">>> 🪙 COIN PULSES DETECTED: +%d Pulse(s) | Total: %d / %d (Item Price: Rs %.2f) <<<\n",
+                  newPulses, accumulated_coin_pulses, required_pulses, pending_amount_rupee);
     Serial.printf("    Payment Acceptance Mode: %s\n", payment_mode.c_str());
     Serial.println("******************************************************************");
 
     // Guard: Check Out of Stock
     if (stock_management_enabled && current_stock <= 0) {
       Serial.println("[! COIN REJECTED] Machine is OUT OF STOCK. Cannot dispense.");
+      accumulated_coin_pulses = 0;
       uiDrawOutOfStockNotice();
       delay(2500);
       uiDrawStandbyQRScreen();
       return;
     }
 
-    // Trigger Dispense! Whenever coin pulse is received, it vends!
-    String coinOrderId = "COIN-P" + String(totalPulses) + "-" + String(millis());
-    Serial.printf(">>> 🚀 Triggering Dispense Cycle for Coin Payment (OrderId: %s)...\n", coinOrderId.c_str());
-    dispenseProduct(1, pending_amount_rupee, coinOrderId, "", pending_product_name);
+    // Check if full price requirement has been satisfied!
+    if (accumulated_coin_pulses >= required_pulses) {
+      int totalPaidPulses = accumulated_coin_pulses;
+      accumulated_coin_pulses = 0; // Clear session
+
+      String coinOrderId = "COIN-P" + String(totalPaidPulses) + "-" + String(millis());
+      Serial.printf(">>> 🚀 PRICE REQUIREMENT SATISFIED (%d/%d Pulses for Rs %.2f)! Triggering Dispense Cycle (OrderId: %s)...\n",
+                    totalPaidPulses, required_pulses, pending_amount_rupee, coinOrderId.c_str());
+      dispenseProduct(1, pending_amount_rupee, coinOrderId, "", pending_product_name);
+      return;
+    } else {
+      // INSUFFICIENT COIN VALUE INSERTED (e.g., 1 pulse received, but price is Rs 3)
+      int remainingPulses = required_pulses - accumulated_coin_pulses;
+      float insertedAmt = (float)accumulated_coin_pulses * COIN_VALUE_PER_PULSE;
+      float remainingAmt = (float)remainingPulses * COIN_VALUE_PER_PULSE;
+
+      Serial.printf("[⚠️ INSUFFICIENT COIN VALUE] Inserted: Rs %.2f (%d pulses) | Item Price: Rs %.2f (%d pulses).\n",
+                    insertedAmt, accumulated_coin_pulses, pending_amount_rupee, required_pulses);
+      Serial.printf("    DISPENSE BLOCKED: %d more pulse(s) (Rs %.2f) required to vend!\n",
+                    remainingPulses, remainingAmt);
+      Serial.printf("    Waiting up to %lus for customer to insert remaining coins...\n\n",
+                    COIN_SESSION_TIMEOUT_MS / 1000);
+
+      uiDrawCoinPendingScreen(accumulated_coin_pulses, required_pulses, insertedAmt, pending_amount_rupee);
+    }
+  }
+
+  // 3. Multi-Coin Session Timeout: If customer didn't insert remaining coins within 15 seconds, cancel & return to Standby QR
+  if (accumulated_coin_pulses > 0 && (millis() - coin_session_start_time >= COIN_SESSION_TIMEOUT_MS)) {
+    float insertedAmt = (float)accumulated_coin_pulses * COIN_VALUE_PER_PULSE;
+    Serial.println("\n[⏳ COIN TIMEOUT] Insertion timed out after 15 seconds!");
+    Serial.printf("   Discarding %d partial pulse(s) (Rs %.2f). Required was %d pulses (Rs %.2f). Transaction OMITTED.\n\n",
+                  accumulated_coin_pulses, insertedAmt, required_pulses, pending_amount_rupee);
+    accumulated_coin_pulses = 0;
+    uiDrawStandbyQRScreen();
   }
 }
 
@@ -3139,6 +3240,11 @@ void loop() {
       } else if (cmd.equalsIgnoreCase("coin2") || cmd.equalsIgnoreCase("c2")) {
         Serial.println("\n[🪙 SIMULATE COIN] Simulating 2 Coin Pulses from Serial...");
         isr_coin_pulses_received = 2;
+        isr_new_coin_pulse = true;
+        isr_last_coin_pulse_time = millis() - 350;
+      } else if (cmd.equalsIgnoreCase("coin3") || cmd.equalsIgnoreCase("c3")) {
+        Serial.println("\n[🪙 SIMULATE COIN] Simulating 3 Coin Pulses from Serial (Rs 3.00)...");
+        isr_coin_pulses_received = 3;
         isr_new_coin_pulse = true;
         isr_last_coin_pulse_time = millis() - 350;
       } else if (cmd.equalsIgnoreCase("paymode:qr")) {
