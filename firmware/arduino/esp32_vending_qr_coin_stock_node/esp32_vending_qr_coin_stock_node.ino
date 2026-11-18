@@ -2954,23 +2954,35 @@ void processCoinAcceptorInput() {
     return;
   }
 
-  // 1. When a new pulse arrives from coin acceptor, mirror it immediately to PIN_COIN_PULSE_OUT!
+  // Clear single-pulse flag
   if (isr_new_coin_pulse) {
     isr_new_coin_pulse = false;
-    
-    // Echo pulse to PIN_COIN_PULSE_OUT (GPIO 25)
-    setCoinPulsePin(true);
-    delay(COIN_PULSE_WIDTH_MS);
-    setCoinPulsePin(false);
-    
-    Serial.printf("[🪙 Coin In] Pulse #%d received on GPIO %d -> Mirrored to GPIO %d!\n",
-                  isr_coin_pulses_received, PIN_COIN_INPUT, PIN_COIN_PULSE_OUT);
   }
 
-  // 2. Pulse Train Complete (Idle timeout reached after last pulse of current coin)
+  // 1. Pulse Train Complete (Idle timeout reached after last pulse of current coin)
   if (isr_coin_pulses_received > 0 && (millis() - isr_last_coin_pulse_time >= COIN_INPUT_IDLE_TIMEOUT_MS)) {
     int newPulses = isr_coin_pulses_received;
     isr_coin_pulses_received = 0; // Reset ISR counter for next insertion
+
+    // ========================================================================
+    // CRITICAL SINGLE-PULSE FILTER:
+    // If only 1 pulse is received, completely avoid & discard that pulse!
+    // Protects against power-on adapter spikes, relay kicks & noise pulses.
+    // ========================================================================
+    if (newPulses <= 1) {
+      Serial.printf("\n[🛡️ 1-PULSE FILTER] Avoided single pulse on GPIO %d (Discarded as noise/single pulse).\n\n", PIN_COIN_INPUT);
+      return;
+    }
+
+    // Mirror verified pulses (>= 2) to PIN_COIN_PULSE_OUT (GPIO 25)
+    for (int p = 0; p < newPulses; p++) {
+      setCoinPulsePin(true);
+      delay(COIN_PULSE_WIDTH_MS);
+      setCoinPulsePin(false);
+      if (p < newPulses - 1) delay(COIN_PULSE_GAP_MS);
+    }
+    Serial.printf("[🪙 Coin In] %d pulses received on GPIO %d -> Mirrored to GPIO %d!\n",
+                  newPulses, PIN_COIN_INPUT, PIN_COIN_PULSE_OUT);
 
     accumulated_coin_pulses += newPulses;
     coin_session_start_time = millis();
