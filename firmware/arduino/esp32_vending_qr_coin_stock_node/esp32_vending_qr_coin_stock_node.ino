@@ -255,9 +255,13 @@ String wifi_ssid        = "IOTHUB";
 String wifi_pass        = "IOTHUB07";
 String device_id        = "AUTO";                   // Dynamic Zero-Touch: Assigned by Cloud Gateway based on Hardware MAC
 String device_token     = "dev_token_generic";
-String server_base_url  = "http://35.154.219.82:8000";
+String server_base_url  = "http://www.gtechinfo.in";
 String razorpay_upi_vpa = "gtech282722.rzp@rxairtel"; // Default GTECH Standee Razorpay VPA
-String firmware_version = "v2.2.0-razorpay-ota";
+String firmware_version = "v2.2.1-hybrid-ota";
+
+// Power-On Hardware Stabilization Guard (Suppresses adapter inrush spikes / false triggers)
+unsigned long boot_time_ms = 0;
+const unsigned long BOOT_STABILIZATION_MS = 3500; // 3.5s power-on debounce guard
 
 // Cloud Session & Online State
 String session_jwt      = "";
@@ -278,6 +282,7 @@ volatile int isr_coin_pulses_received = 0;
 volatile bool isr_new_coin_pulse = false;
 
 void IRAM_ATTR isrCoinAcceptorPulse() {
+  if (millis() - boot_time_ms < BOOT_STABILIZATION_MS) return; // Discard power-on inrush spike pulses
   unsigned long now = millis();
   if (now - isr_last_coin_pulse_time >= COIN_INPUT_MIN_PULSE_MS) {
     isr_coin_pulses_received++;
@@ -1000,7 +1005,7 @@ void uiDrawPendingDiscoveryScreen() {
   Serial.println(">>> [DISCOVERY MODE] WAITING FOR MACHINE ID ASSIGNMENT <<<");
   Serial.printf("  Hardware MAC : %s\n", getDeviceMacAddress().c_str());
   Serial.printf("  Assigned IP  : %s\n", WiFi.localIP().toString().c_str());
-  Serial.println("  OPTION 1: Assign in Web Portal (http://35.154.219.82:8000/portal/)");
+  Serial.println("  OPTION 1: Assign in Web Portal (https://www.gtechinfo.in/portal/)");
   Serial.println("  OPTION 2: Type 'VM-000005' (or 'id:VM-000005') in Serial Monitor now!");
   Serial.println("==================================================================\n");
 }
@@ -1474,7 +1479,12 @@ void loadPersistentConfig() {
     wifi_pass = saved_pass;
   }
 
-  if (saved_url.length() > 0 && server_base_url == "http://35.154.219.82:8000") server_base_url = saved_url;
+  if (saved_url == "http://35.154.219.82:8000") {
+    saved_url = "http://www.gtechinfo.in";
+    prefs.putString("srv_url", saved_url);
+    Serial.println("[Config] 🔄 Migrated legacy server IP to domain: http://www.gtechinfo.in");
+  }
+  if (saved_url.length() > 0) server_base_url = saved_url;
   if (saved_vpa.length() > 0 && razorpay_upi_vpa == "rzp.vending.vm000001@icici") razorpay_upi_vpa = saved_vpa;
 
   // --- DYNAMIC FLEET IDENTITY RESOLUTION (ZERO-TOUCH) ---
@@ -2067,6 +2077,7 @@ void confirmDispenseToCloud(String orderId, String dispenseToken) {
 // 11. BACKGROUND CLOUD POLLING (CHECKS FOR RAZORPAY PAYMENT MATCH)
 // ==============================================================================
 void pollPendingDispense() {
+  if (millis() - boot_time_ms < BOOT_STABILIZATION_MS) return; // Wait for power adapter rails to stabilize
   // Guard: In COIN_ONLY mode, online QR check is bypassed
   if (payment_mode.equalsIgnoreCase("COIN_ONLY")) return;
 
@@ -2763,8 +2774,38 @@ void printHelpMenu() {
 // 17. ARDUINO SETUP
 // ==============================================================================
 void setup() {
+  // ============================================================================
+  // CRITICAL HARDWARE SAFETY LOCK (ZERO-LATENCY BOOT PROTECTION):
+  // When powering from a separate DC adapter or flipping the power switch,
+  // pins float during bootloader execution. We must IMMEDIATELY clamp relay pins
+  // to the safe inactive HIGH level (Active-LOW modules) BEFORE any delays,
+  // Serial initialization, Wi-Fi radio startup, or Flash NVS reads!
+  // ============================================================================
+  gpio_set_pull_mode((gpio_num_t)PIN_MOTOR_SLOT_1, GPIO_PULLUP_ONLY);
+  gpio_set_pull_mode((gpio_num_t)PIN_MOTOR_SLOT_2, GPIO_PULLUP_ONLY);
+  digitalWrite(PIN_MOTOR_SLOT_1, HIGH); // Default Active-LOW Relay OFF
+  digitalWrite(PIN_MOTOR_SLOT_2, HIGH); // Default Active-LOW Relay OFF
+  pinMode(PIN_MOTOR_SLOT_1, OUTPUT);
+  pinMode(PIN_MOTOR_SLOT_2, OUTPUT);
+  digitalWrite(PIN_MOTOR_SLOT_1, HIGH);
+  digitalWrite(PIN_MOTOR_SLOT_2, HIGH);
+
+  pinMode(PIN_COIN_PULSE_OUT, OUTPUT);
+  digitalWrite(PIN_COIN_PULSE_OUT, LOW);
+
+  // Setup input push switches & drop sensor with internal pull-ups immediately
+  pinMode(PIN_SETUP_BTN, INPUT_PULLUP);
+  pinMode(PIN_STOCK_INC_BTN, INPUT_PULLUP);
+  pinMode(PIN_STOCK_SAVE_BTN, INPUT_PULLUP);
+  pinMode(PIN_DISPENSE_SENSOR, INPUT_PULLUP);
+
+  // Coin Acceptor Pulse Input Pin with Interrupt
+  pinMode(PIN_COIN_INPUT, COIN_INPUT_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  attachInterrupt(digitalPinToInterrupt(PIN_COIN_INPUT), isrCoinAcceptorPulse, COIN_INPUT_ACTIVE_LOW ? FALLING : RISING);
+
+  boot_time_ms = millis();
+
   Serial.begin(115200);
-  delay(1000);
 
   // Initialize Wi-Fi station mode immediately so hardware MAC is loaded from eFuse
   WiFi.mode(WIFI_STA);
@@ -2776,28 +2817,12 @@ void setup() {
   // 1. Load Flash NVS Config first (so relay polarity & settings are active before pins init)
   loadPersistentConfig();
 
-  // 2. Initialize Motor, Coin Pulse, Push Buttons & Dispense Sensor Pins
-  // Safe initialization: pre-write inactive level BEFORE pinMode to eliminate relay click
+  // Re-verify safe motor state with loaded polarity
   digitalWrite(PIN_MOTOR_SLOT_1, relay_active_low ? HIGH : LOW);
   digitalWrite(PIN_MOTOR_SLOT_2, relay_active_low ? HIGH : LOW);
-  pinMode(PIN_MOTOR_SLOT_1, OUTPUT);
-  pinMode(PIN_MOTOR_SLOT_2, OUTPUT);
   setMotor(1, false);
   setMotor(2, false);
-
-  pinMode(PIN_COIN_PULSE_OUT, OUTPUT);
   setCoinPulsePin(false);
-
-  pinMode(PIN_SETUP_BTN, INPUT_PULLUP);
-  
-  // Stock Buttons & Drop Sensor
-  pinMode(PIN_STOCK_INC_BTN, INPUT_PULLUP);
-  pinMode(PIN_STOCK_SAVE_BTN, INPUT_PULLUP);
-  pinMode(PIN_DISPENSE_SENSOR, INPUT_PULLUP);
-
-  // Coin Acceptor Pulse Input Pin with Interrupt
-  pinMode(PIN_COIN_INPUT, COIN_INPUT_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
-  attachInterrupt(digitalPinToInterrupt(PIN_COIN_INPUT), isrCoinAcceptorPulse, COIN_INPUT_ACTIVE_LOW ? FALLING : RISING);
 
   // 2. Initialize ILI9488 TFT LCD Display in VERTICAL PORTRAIT MODE
   Serial.println("[TFT] Initializing 320x480 ILI9488 SPI LCD Display (Vertical Portrait)...");
@@ -2815,6 +2840,10 @@ void setup() {
   TFT_display.setCursor(45, 230);
   TFT_display.print("Vertical Node Active");
   delay(1200);
+
+  // Clear any spurious coin pulses received during power-on inrush or LCD splash delay
+  isr_coin_pulses_received = 0;
+  isr_new_coin_pulse = false;
 
   // (Flash NVS Config loaded at startup)
 
@@ -2843,6 +2872,11 @@ void setup() {
 // 16. PHYSICAL COIN ACCEPTOR PULSE ENGINE (RECEIVES & ECHOES TO GPIO 25 & VENDS)
 // ==============================================================================
 void processCoinAcceptorInput() {
+  if (millis() - boot_time_ms < BOOT_STABILIZATION_MS) {
+    isr_coin_pulses_received = 0;
+    isr_new_coin_pulse = false;
+    return;
+  }
   if (current_state == STATE_DISPENSING || is_refill_mode) return;
 
   // 0. GUARD: If machine is set to QR_ONLY mode (Coin acceptance toggled OFF)
@@ -2895,6 +2929,9 @@ void processCoinAcceptorInput() {
 }
 
 void loop() {
+  // Power-On Inrush Filter: Discard button transients during first 3.5 seconds
+  bool boot_stabilized = (millis() - boot_time_ms >= BOOT_STABILIZATION_MS);
+
   // ----------------------------------------------------------------------------
   // 0. PHYSICAL COIN ACCEPTOR PULSE ENGINE (Echoes to GPIO 25 & Triggers Vend)
   // ----------------------------------------------------------------------------
@@ -2904,7 +2941,7 @@ void loop() {
   // 1. PUSH SWITCH 1 (GPIO 32): CYCLE STOCK NUMBER (1 to 50, then wraps to 1)
   // ----------------------------------------------------------------------------
   static unsigned long last_inc_press = 0;
-  if (digitalRead(PIN_STOCK_INC_BTN) == LOW && (millis() - last_inc_press > 220)) {
+  if (boot_stabilized && digitalRead(PIN_STOCK_INC_BTN) == LOW && (millis() - last_inc_press > 220)) {
     last_inc_press = millis();
     if (!is_refill_mode) {
       is_refill_mode = true;
@@ -2922,7 +2959,7 @@ void loop() {
   // ----------------------------------------------------------------------------
   // 2. PUSH SWITCH 2 (GPIO 33): SAVE STOCK TO MACHINE OR HOLD 4S TO TOGGLE MODE
   // ----------------------------------------------------------------------------
-  if (digitalRead(PIN_STOCK_SAVE_BTN) == LOW) {
+  if (boot_stabilized && digitalRead(PIN_STOCK_SAVE_BTN) == LOW) {
     unsigned long savePressStart = millis();
     bool modeToggled = false;
 
@@ -2978,7 +3015,7 @@ void loop() {
   }
 
   // 4. Setup / Wi-Fi Hotspot Button Check: Hold BOOT (GPIO 0) for 3 seconds to launch Wi-Fi Setup Hotspot
-  if (digitalRead(PIN_SETUP_BTN) == LOW) {
+  if (boot_stabilized && digitalRead(PIN_SETUP_BTN) == LOW) {
     unsigned long pressStart = millis();
     while (digitalRead(PIN_SETUP_BTN) == LOW) {
       if (millis() - pressStart > 3000) {
