@@ -2644,12 +2644,14 @@ async function loadClientVendorSettlements() {
         const bAcc = document.getElementById("vendorSelfAccountNumber");
         const bIfsc = document.getElementById("vendorSelfIfsc");
         const bUpi = document.getElementById("vendorSelfUpi");
+        const bAccId = document.getElementById("vendorSelfRazorpayAccountId");
         const badge = document.getElementById("vendorRouteStatusBadge");
 
         if (bName && (!bName.value || bName.value.trim() === '')) bName.value = data.bank_beneficiary_name || data.client_name || '';
         if (bAcc && (!bAcc.value || bAcc.value.trim() === '')) bAcc.value = data.bank_account_number || '';
         if (bIfsc && (!bIfsc.value || bIfsc.value.trim() === '')) bIfsc.value = data.bank_ifsc || '';
         if (bUpi && (!bUpi.value || bUpi.value.trim() === '')) bUpi.value = data.vendor_upi_id || '';
+        if (bAccId) bAccId.value = (data.razorpay_account_id && data.razorpay_account_id.startsWith("acc_") && !data.razorpay_account_id.includes(" ")) ? data.razorpay_account_id : "";
 
         if (badge) {
             const isLinked = data.payout_status === "ACTIVE";
@@ -2703,6 +2705,7 @@ async function handleVendorBankSelfSubmit(e) {
     const accNum = document.getElementById("vendorSelfAccountNumber")?.value.trim();
     const ifsc = document.getElementById("vendorSelfIfsc")?.value.trim().toUpperCase();
     const upi = document.getElementById("vendorSelfUpi")?.value.trim();
+    const razorpayAccId = document.getElementById("vendorSelfRazorpayAccountId") ? document.getElementById("vendorSelfRazorpayAccountId").value.trim() : "";
     const btn = document.getElementById("btnSaveVendorBank");
 
     if (!accNum || accNum.length < 6) {
@@ -2727,6 +2730,7 @@ async function handleVendorBankSelfSubmit(e) {
                 bank_ifsc: ifsc,
                 bank_beneficiary_name: beneficiary,
                 vendor_upi_id: upi || undefined,
+                razorpay_account_id: razorpayAccId || undefined,
             }),
         });
 

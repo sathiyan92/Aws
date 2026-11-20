@@ -857,6 +857,7 @@ def create_or_update_route_linked_account(
     bank_beneficiary_name: str,
     commission_percentage: float = 10.0,
     vendor_upi_id: Optional[str] = None,
+    razorpay_account_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Onboard or link a vendor's bank account to Razorpay Route (Marketplace).
@@ -877,7 +878,10 @@ def create_or_update_route_linked_account(
         and settings.RAZORPAY_KEY_SECRET != "placeholder_secret"
     )
 
-    account_id = client.razorpay_account_id
+    if razorpay_account_id and razorpay_account_id.strip():
+        account_id = razorpay_account_id.strip()
+    else:
+        account_id = client.razorpay_account_id
     if has_live_keys and not account_id and not settings.RAZORPAY_TEST_MODE:
         try:
             resp = requests.post(
@@ -964,7 +968,15 @@ def execute_route_split_transfer(
     transfer_status = "SETTLED"
     error_msg = None
 
-    if has_live_keys and not settings.RAZORPAY_TEST_MODE and client.razorpay_account_id and not client.razorpay_account_id.startswith("acc_sim_") and not client.razorpay_account_id.startswith("acc_mock_"):
+    is_valid_route_account = (
+        client.razorpay_account_id
+        and client.razorpay_account_id.startswith("acc_")
+        and not client.razorpay_account_id.startswith("acc_sim_")
+        and not client.razorpay_account_id.startswith("acc_mock_")
+        and not client.razorpay_account_id.startswith("acc_client_")
+        and " " not in client.razorpay_account_id
+    )
+    if has_live_keys and not settings.RAZORPAY_TEST_MODE and is_valid_route_account:
         try:
             resp = requests.post(
                 f"{RAZORPAY_API_BASE}/payments/{payment_id}/transfers",

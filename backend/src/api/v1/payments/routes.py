@@ -545,6 +545,7 @@ def link_vendor_route_account(
         bank_beneficiary_name=payload.bank_beneficiary_name,
         commission_percentage=payload.commission_percentage if payload.commission_percentage is not None else 10.0,
         vendor_upi_id=payload.vendor_upi_id,
+        razorpay_account_id=payload.razorpay_account_id,
     )
     return res
 
@@ -769,5 +770,6 @@ def vendor_self_update_bank_details(
         bank_beneficiary_name=payload.bank_beneficiary_name,
         commission_percentage=client.commission_percentage if client.commission_percentage is not None else 10.0,
         vendor_upi_id=payload.vendor_upi_id,
+        razorpay_account_id=payload.razorpay_account_id,
     )
     return res

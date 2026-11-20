@@ -1872,7 +1872,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=7.9"></script>
+    <script src="app.js?v=8.0"></script>
 
     <!-- Modal: Admin Add Single Card -->
     <div class="modal-overlay" id="modalAdminRfidAddCard">
@@ -2123,6 +2123,14 @@
                     <div class="form-group">
                         <label for="routeVendorUpi">Vendor UPI ID / VPA (Optional):</label>
                         <input type="text" id="routeVendorUpi" class="input-field" placeholder="e.g. vendor@okhdfcbank">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routeRazorpayAccountId">Razorpay Route Linked Account ID (Optional):</label>
+                        <input type="text" id="routeRazorpayAccountId" class="input-field" placeholder="e.g. acc_U2MrLUWIQmlxws" style="font-family:monospace;">
+                        <small style="color:var(--text-muted); font-size:0.75rem; display:block; margin-top:0.25rem;">
+                            If you already created this vendor in Razorpay Route, paste their Linked Account ID (<code>acc_...</code>) here to route automated split payouts directly.
+                        </small>
                     </div>
 
                     <div class="modal-actions" style="margin-top:1.5rem; display:flex; justify-content:flex-end; gap:0.5rem;">

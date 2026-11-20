@@ -55,6 +55,7 @@ class VendorRouteLinkRequest(BaseModel):
     bank_beneficiary_name: str = Field(..., min_length=2, description="Name as registered with the bank")
     commission_percentage: Optional[float] = Field(10.0, ge=0.0, le=100.0, description="Platform commission % (e.g. 10.0% to G-TECH, 90.0% to Vendor)")
     vendor_upi_id: Optional[str] = Field(None, description="Optional vendor UPI VPA for direct settlements")
+    razorpay_account_id: Optional[str] = Field(None, description="Optional existing Razorpay Route Linked Account ID (e.g. acc_...)")
 
 
 class VendorSelfBankUpdateRequest(BaseModel):
@@ -62,3 +63,4 @@ class VendorSelfBankUpdateRequest(BaseModel):
     bank_ifsc: str = Field(..., min_length=4, max_length=16, description="IFSC code of vendor bank branch")
     bank_beneficiary_name: str = Field(..., min_length=2, description="Name as registered with the bank")
     vendor_upi_id: Optional[str] = Field(None, description="Optional vendor UPI VPA")
+    razorpay_account_id: Optional[str] = Field(None, description="Optional existing Razorpay Route Linked Account ID (e.g. acc_...)")

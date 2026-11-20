@@ -3289,11 +3289,13 @@ function openRouteBankModal(selectedClientId = null) {
             const bIfsc = document.getElementById("routeIfscCode");
             const bComm = document.getElementById("routeCommissionPct");
             const bUpi = document.getElementById("routeVendorUpi");
+            const bAccId = document.getElementById("routeRazorpayAccountId");
             if (bName) bName.value = "";
             if (bAcc) bAcc.value = "";
             if (bIfsc) bIfsc.value = "";
             if (bComm) bComm.value = "10.0";
             if (bUpi) bUpi.value = "";
+            if (bAccId) bAccId.value = "";
             updateCommissionSplitNotice(10.0);
         }
 
@@ -3319,10 +3321,17 @@ function handleRouteVendorSelected(clientId) {
     const bIfsc = document.getElementById("routeIfscCode");
     const bComm = document.getElementById("routeCommissionPct");
     const bUpi = document.getElementById("routeVendorUpi");
+    const bAccId = document.getElementById("routeRazorpayAccountId");
 
     if (bName) bName.value = v.bank_beneficiary_name && v.bank_beneficiary_name !== "-" ? v.bank_beneficiary_name : v.client_name;
     if (bAcc && v.bank_account_masked && !v.bank_account_masked.startsWith("•••")) bAcc.value = v.bank_account_masked;
     if (bIfsc && v.bank_ifsc && v.bank_ifsc !== "-") bIfsc.value = v.bank_ifsc;
+    if (bUpi) bUpi.value = v.vendor_upi_id || "";
+    if (bAccId) {
+        bAccId.value = (v.razorpay_account_id && v.razorpay_account_id.startsWith("acc_") && !v.razorpay_account_id.includes(" "))
+            ? v.razorpay_account_id
+            : "";
+    }
     if (bComm) {
         bComm.value = v.commission_percentage != null ? v.commission_percentage : 10.0;
         updateCommissionSplitNotice(bComm.value);
@@ -3338,6 +3347,7 @@ async function handleRouteBankSubmit(e) {
     const ifsc = document.getElementById("routeIfscCode").value.trim().toUpperCase();
     const commissionPct = parseFloat(document.getElementById("routeCommissionPct").value) || 10.0;
     const upi = document.getElementById("routeVendorUpi").value.trim();
+    const razorpayAccId = document.getElementById("routeRazorpayAccountId") ? document.getElementById("routeRazorpayAccountId").value.trim() : "";
     const btn = document.getElementById("routeBankSubmitBtn");
 
     if (!clientId) {
@@ -3368,6 +3378,7 @@ async function handleRouteBankSubmit(e) {
                 bank_beneficiary_name: beneficiaryName,
                 commission_percentage: commissionPct,
                 vendor_upi_id: upi || undefined,
+                razorpay_account_id: razorpayAccId || undefined,
             }),
         });
 
