@@ -589,8 +589,6 @@ def get_enroll_status(
         return {"enroll_active": False, "last_uid": None}
 
     last_uid = session_data.get("last_uid")
-    # Consume UID once read so UI only triggers once per tap
-    session_data["last_uid"] = None
 
     return {
         "enroll_active": True,
@@ -947,6 +945,12 @@ def verify_device_tap(
 
     # Check Method C Live Enroll Mode
     enroll_sess = _ENROLL_SESSIONS.get(dev_key) or _ENROLL_SESSIONS.get(str(dev.id))
+    if not enroll_sess or not enroll_sess.get("active"):
+        for s_k, s_v in _ENROLL_SESSIONS.items():
+            if s_v and s_v.get("active"):
+                enroll_sess = s_v
+                break
+
     if enroll_sess and enroll_sess.get("active"):
         enroll_sess["last_uid"] = clean_uid
         enroll_sess["timestamp"] = utc_now().isoformat()
@@ -962,6 +966,12 @@ def verify_device_tap(
 
     # Check Method D: Sequential Auto-Enroll & Card Writer Queue (100-Card Auto-Programmer)
     queue_data = _ENROLL_QUEUES.get(dev_key) or _ENROLL_QUEUES.get(str(dev.id))
+    if not queue_data or not queue_data.get("active"):
+        for q_k, q_v in _ENROLL_QUEUES.items():
+            if q_v and q_v.get("active"):
+                queue_data = q_v
+                break
+
     if queue_data and queue_data.get("active"):
         idx = queue_data.get("current_index", 0)
         items = queue_data.get("items", [])

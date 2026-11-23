@@ -2913,22 +2913,27 @@ window.openAdminRfidLiveEnroll = async function() {
         } catch (e) {}
     }
 
+    let lastHandledUid = null;
     if (adminEnrollTimer) clearInterval(adminEnrollTimer);
     adminEnrollTimer = setInterval(async () => {
         const currentDev = document.getElementById("adminLiveEnrollDeviceSelect")?.value || "RFID-000001";
-        if (!currentDev) return;
         try {
             const res = await apiRequest(`/rfid-vending/devices/${currentDev}/enroll-status`);
-            if (res && res.last_uid) {
+            if (res && res.last_uid && res.last_uid !== lastHandledUid) {
+                lastHandledUid = res.last_uid;
                 setElText("adminLiveDetectedUid", res.last_uid);
                 document.getElementById("adminLiveWaitingBox").style.display = "none";
                 document.getElementById("adminLiveDetectedBox").style.display = "block";
                 document.getElementById("btnAdminSaveLiveCard").style.display = "inline-block";
-                document.getElementById("adminLiveCardholderName")?.focus();
+                const nameInput = document.getElementById("adminLiveCardholderName");
+                if (nameInput) {
+                    nameInput.value = "";
+                    nameInput.focus();
+                }
                 showToast(`💳 Card ${res.last_uid} captured! Enter cardholder name.`, "success");
             }
         } catch (e) {}
-    }, 1000);
+    }, 800);
 };
 
 window.closeAdminRfidLiveEnroll = async function() {

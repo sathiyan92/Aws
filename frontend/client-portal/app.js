@@ -1872,26 +1872,29 @@ function initLiveEnrollEvents() {
             showToast(`📡 Machine ${state.selectedDeviceId} is now listening for RFID card swipes!`);
 
             // Start polling every second
+            let clientLastHandledUid = null;
             if (enrollPollingTimer) clearInterval(enrollPollingTimer);
             enrollPollingTimer = setInterval(async () => {
                 try {
-                    const res = await fetchWithAuth(`/api/v1/rfid-vending/devices/${state.selectedDeviceId}/enroll-status`);
+                    const devId = state.selectedDeviceId || "RFID-000001";
+                    const res = await fetchWithAuth(`/api/v1/rfid-vending/devices/${devId}/enroll-status`);
                     if (res.ok) {
                         const status = await res.json();
-                        if (status.last_uid) {
-                            // Card detected!
+                        if (status.last_uid && status.last_uid !== clientLastHandledUid) {
+                            clientLastHandledUid = status.last_uid;
                             detectedUidSpan.textContent = status.last_uid;
                             waitingBox.style.display = 'none';
                             detectedBox.style.display = 'block';
                             saveBtn.style.display = 'inline-block';
-                            document.getElementById('liveCardholderName').focus();
-                            showToast(`💳 Card ${status.last_uid} captured from machine! Enter cardholder name.`);
+                            const nameEl = document.getElementById('liveCardholderName');
+                            if (nameEl) { nameEl.value = ""; nameEl.focus(); }
+                            showToast(`💳 Card ${status.last_uid} captured! Enter cardholder name.`, "success");
                         }
                     }
                 } catch (e) {
                     console.warn("Enroll poll notice:", e);
                 }
-            }, 1000);
+            }, 800);
         });
     }
 
