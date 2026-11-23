@@ -1046,12 +1046,16 @@ def verify_device_tap(
             )
 
 
-    # Look up card in database for this client or machine
+    # Look up card in database for this client or machine (Resilient multi-tenant & machine matching)
     card = db.query(RFIDVendingCard).filter(
-        RFIDVendingCard.client_id == dev.client_id,
+        or_(
+            RFIDVendingCard.device_id == dev.id,
+            and_(RFIDVendingCard.client_id == dev.client_id, RFIDVendingCard.device_id == None),
+            and_(RFIDVendingCard.client_id == dev.client_id, RFIDVendingCard.device_id == dev.id),
+        ),
         RFIDVendingCard.card_uid == clean_uid,
-        or_(RFIDVendingCard.device_id == dev.id, RFIDVendingCard.device_id == None),
     ).first()
+
 
     # 1. Unregistered Card
     if not card:
