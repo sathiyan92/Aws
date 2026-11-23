@@ -1843,11 +1843,19 @@ function initLiveEnrollEvents() {
     const detectedBox = document.getElementById('liveEnrollDetectedBox');
     const detectedUidSpan = document.getElementById('liveDetectedUid');
 
+    window.openLiveEnrollModal = function() {
+        if (!state.selectedDeviceId) {
+            const rfidDev = (state.devices || []).find(d => d.device_id && d.device_id.startsWith("RFID-"));
+            state.selectedDeviceId = rfidDev ? rfidDev.device_id : (state.devices && state.devices[0] ? state.devices[0].device_id : "RFID-000001");
+        }
+        liveBtn?.click();
+    };
+
     if (liveBtn && modal) {
         liveBtn.addEventListener('click', async () => {
             if (!state.selectedDeviceId) {
-                showToast('Please select a vending machine first.', 'warning');
-                return;
+                const rfidDev = (state.devices || []).find(d => d.device_id && d.device_id.startsWith("RFID-"));
+                state.selectedDeviceId = rfidDev ? rfidDev.device_id : (state.devices && state.devices[0] ? state.devices[0].device_id : "RFID-000001");
             }
             modal.classList.add('open');
             waitingBox.style.display = 'block';

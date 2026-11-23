@@ -195,6 +195,7 @@ void uiDrawStandbyScreen();
 void uiDrawPendingDiscoveryScreen();
 bool writeSerialToCardSector(const char* serialText);
 void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* uid, const char* nextName, const char* nextEmpId, int qIndex, int qTotal);
+void uiDrawLiveCapturedScreen(const char* uid);
 
 
 // ==============================================================================
@@ -898,6 +899,47 @@ void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* u
 // 9. MOTOR RELAY CONTROL
 // ==============================================================================
 
+
+void uiDrawLiveCapturedScreen(const char* uid) {
+    selectTFT();
+
+    tft.fillRoundRect(16, 90, 288, 300, 12, COLOR_CARD);
+    tft.drawRoundRect(16, 90, 288, 300, 12, COLOR_CYAN);
+
+    tft.fillRoundRect(30, 110, 260, 45, 6, COLOR_CYAN);
+    tft.setCursor(45, 123);
+    tft.setTextColor(COLOR_BLACK);
+    tft.setTextSize(2);
+    tft.print("CARD CAPTURED!");
+
+    tft.setCursor(30, 175);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(1);
+    tft.print("Silicon Hardware UID:");
+
+    tft.setCursor(30, 195);
+    tft.setTextColor(COLOR_YELLOW);
+    tft.setTextSize(3);
+    tft.print(uid);
+
+    tft.drawFastHLine(30, 245, 260, COLOR_CARD_BORDER);
+
+    tft.setCursor(30, 265);
+    tft.setTextColor(COLOR_GREEN);
+    tft.setTextSize(2);
+    tft.print("CHECK BROWSER");
+
+    tft.setCursor(30, 295);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setTextSize(1);
+    tft.print("Forwarded to Live Enroll Portal.");
+
+    tft.setCursor(30, 315);
+    tft.print("Type staff name and click Save.");
+
+    deselectTFT();
+}
+
 void triggerDispenseMotor(int pulse_ms) {
     Serial.printf("[VEND] Activating Relay Motor for %d ms...\n", pulse_ms);
     digitalWrite(PIN_RELAY_MOTOR, HIGH);  // Energize motor relay
@@ -1357,6 +1399,19 @@ void processCardTap(const char* uid) {
                 playSuccessTone();
                 uiDrawDispenseScreen(username, used, limit, pulse);
                 triggerDispenseMotor(pulse);
+            } else if (strcmp(status, "ENROLL_CAPTURED") == 0 || (strstr(msg, "Enroll Mode") != NULL)) {
+                Serial.println("\n==================================================================");
+                Serial.printf(">>> [📡 CARD CAPTURED IN LIVE ENROLL MODE] UID: %s <<<\n", uid);
+                Serial.println("  Forwarded to Web Portal UI! Complete name/details in browser.");
+                Serial.println("==================================================================\n");
+
+                beep(2800, 80);
+                delay(40);
+                beep(3400, 120);
+
+                uiDrawLiveCapturedScreen(uid);
+                delay(2200);
+                uiDrawStandbyScreen();
             } else if (strcmp(status, "DAILY_LIMIT_EXCEEDED") == 0) {
                 Serial.printf("[VERIFY] ! QUOTA EXCEEDED! Limit: %d reached for %s\n", limit, username);
                 playWarningTone();

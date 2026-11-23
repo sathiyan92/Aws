@@ -2866,14 +2866,33 @@ window.submitAdminRfidBatchRange = async function(e) {
 let adminEnrollTimer = null;
 window.openAdminRfidLiveEnroll = async function() {
     const devSelect = document.getElementById("adminLiveEnrollDeviceSelect");
+    let preferredDev = null;
     if (devSelect && state.devices) {
         devSelect.innerHTML = '';
         state.devices.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
             opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            if (d.device_id.startsWith("RFID-") && !preferredDev) preferredDev = d.device_id;
             devSelect.appendChild(opt);
         });
+        if (preferredDev) devSelect.value = preferredDev;
+
+        devSelect.onchange = async () => {
+            const targetDev = devSelect.value;
+            if (targetDev) {
+                document.getElementById("adminLiveWaitingBox").style.display = "block";
+                document.getElementById("adminLiveDetectedBox").style.display = "none";
+                document.getElementById("btnAdminSaveLiveCard").style.display = "none";
+                try {
+                    await apiRequest(`/rfid-vending/devices/${targetDev}/enroll-mode`, {
+                        method: "POST",
+                        body: JSON.stringify({ enabled: true })
+                    });
+                    showToast(`📡 Machine ${targetDev} is now listening for RFID card swipes!`, "info");
+                } catch (e) {}
+            }
+        };
     }
 
     const modal = document.getElementById("modalAdminRfidLiveEnroll");
@@ -2883,18 +2902,20 @@ window.openAdminRfidLiveEnroll = async function() {
     document.getElementById("adminLiveDetectedBox").style.display = "none";
     document.getElementById("btnAdminSaveLiveCard").style.display = "none";
 
-    const devId = devSelect?.value;
+    const devId = devSelect?.value || "RFID-000001";
     if (devId) {
-        await apiRequest(`/rfid-vending/devices/${devId}/enroll-mode`, {
-            method: "POST",
-            body: JSON.stringify({ enabled: true })
-        });
-        showToast(`📡 Machine ${devId} is now listening for RFID card taps!`, "info");
+        try {
+            await apiRequest(`/rfid-vending/devices/${devId}/enroll-mode`, {
+                method: "POST",
+                body: JSON.stringify({ enabled: true })
+            });
+            showToast(`📡 Machine ${devId} is now listening for RFID card swipes!`, "info");
+        } catch (e) {}
     }
 
     if (adminEnrollTimer) clearInterval(adminEnrollTimer);
     adminEnrollTimer = setInterval(async () => {
-        const currentDev = document.getElementById("adminLiveEnrollDeviceSelect")?.value;
+        const currentDev = document.getElementById("adminLiveEnrollDeviceSelect")?.value || "RFID-000001";
         if (!currentDev) return;
         try {
             const res = await apiRequest(`/rfid-vending/devices/${currentDev}/enroll-status`);

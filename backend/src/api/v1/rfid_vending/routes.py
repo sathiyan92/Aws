@@ -550,14 +550,19 @@ def toggle_enroll_mode(
 
     key = dev.device_id
     if payload.enabled:
-        _ENROLL_SESSIONS[key] = {
+        session_obj = {
             "active": True,
             "last_uid": None,
             "timestamp": None,
             "started_at": utc_now(),
         }
+        _ENROLL_SESSIONS[key] = session_obj
+        if str(dev.id) != key:
+            _ENROLL_SESSIONS[str(dev.id)] = session_obj
     else:
         _ENROLL_SESSIONS.pop(key, None)
+        if dev and str(dev.id) in _ENROLL_SESSIONS:
+            _ENROLL_SESSIONS.pop(str(dev.id), None)
 
     return {
         "device_id": key,
@@ -579,7 +584,7 @@ def get_enroll_status(
     ).first()
     key = dev.device_id if dev else device_id
 
-    session_data = _ENROLL_SESSIONS.get(key)
+    session_data = _ENROLL_SESSIONS.get(key) or (dev and _ENROLL_SESSIONS.get(str(dev.id)))
     if not session_data or not session_data.get("active"):
         return {"enroll_active": False, "last_uid": None}
 
@@ -592,6 +597,7 @@ def get_enroll_status(
         "last_uid": last_uid,
         "timestamp": session_data.get("timestamp"),
     }
+
 
 
 # ==============================================================================
@@ -940,11 +946,19 @@ def verify_device_tap(
     dev_key = dev.device_id
 
     # Check Method C Live Enroll Mode
-    enroll_sess = _ENROLL_SESSIONS.get(dev_key)
+    enroll_sess = _ENROLL_SESSIONS.get(dev_key) or _ENROLL_SESSIONS.get(str(dev.id))
     if enroll_sess and enroll_sess.get("active"):
         enroll_sess["last_uid"] = clean_uid
         enroll_sess["timestamp"] = utc_now().isoformat()
         logger.info(f"[Enroll Mode] Captured card {clean_uid} on device {dev_key}")
+        return RFIDVerifyTapResponse(
+            authorized=False,
+            status="ENROLL_CAPTURED",
+            card_uid=clean_uid,
+            dispense_pulse_ms=0,
+            message="Card Captured in Live Enroll Mode! Check Web Portal.",
+        )
+
 
     # Check Method D: Sequential Auto-Enroll & Card Writer Queue (100-Card Auto-Programmer)
     queue_data = _ENROLL_QUEUES.get(dev_key) or _ENROLL_QUEUES.get(str(dev.id))
