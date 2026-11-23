@@ -2454,19 +2454,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
 let adminRfidCards = [];
 
+function getRfidDevicesList() {
+    const all = (typeof state !== 'undefined' && state.devices) ? state.devices : [];
+    const rfidList = all.filter(d => 
+        (d.device_id && d.device_id.startsWith("RFID-")) || 
+        d.device_type_code === "RFID_ATTENDANCE" ||
+        (d.device_type_name && d.device_type_name.toLowerCase().includes("rfid"))
+    );
+    if (rfidList.length === 0) {
+        return [{ device_id: "RFID-000001", client_name: "SM Traders" }];
+    }
+    return rfidList;
+}
+
 function initAdminRfidDateDefaults() {
     const s = document.getElementById("adminRfidStartDate");
     const e = document.getElementById("adminRfidEndDate");
     if (s && !s.value) s.value = new Date().toISOString().split("T")[0];
     if (e && !e.value) e.value = new Date().toISOString().split("T")[0];
 
-    // Populate device filter
+    // Populate device filter (RFID devices only - NO QR Vending Machines)
     const devSelect = document.getElementById("adminRfidDeviceFilter");
-    if (devSelect && state.devices && devSelect.options.length <= 1) {
-        state.devices.forEach(d => {
+    if (devSelect && devSelect.options.length <= 1) {
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
-            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
             devSelect.appendChild(opt);
         });
     }
@@ -2666,12 +2680,13 @@ function exportAdminRfidReport(format) {
 
 window.openAdminRfidAddCard = function() {
     const devSelect = document.getElementById("adminCardDeviceSelect");
-    if (devSelect && state.devices) {
-        devSelect.innerHTML = '<option value="">All Machines (Vendor Fleet)</option>';
-        state.devices.forEach(d => {
+    if (devSelect) {
+        devSelect.innerHTML = '<option value="">All RFID Fleet Machines</option>';
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
-            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
             devSelect.appendChild(opt);
         });
     }
@@ -2732,12 +2747,13 @@ window.saveAdminRfidCard = async function(e) {
 
 window.openAdminRfidBulkUpload = function() {
     const devSelect = document.getElementById("adminBulkDeviceSelect");
-    if (devSelect && state.devices) {
-        devSelect.innerHTML = '<option value="">All Machines (Vendor Fleet)</option>';
-        state.devices.forEach(d => {
+    if (devSelect) {
+        devSelect.innerHTML = '<option value="">All RFID Fleet Machines</option>';
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
-            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
             devSelect.appendChild(opt);
         });
     }
@@ -2801,12 +2817,13 @@ window.submitAdminRfidBulkUpload = async function() {
 
 window.openAdminRfidBatchRange = function() {
     const devSelect = document.getElementById("adminBatchDeviceSelect");
-    if (devSelect && state.devices) {
-        devSelect.innerHTML = '<option value="">All Machines (Vendor Fleet)</option>';
-        state.devices.forEach(d => {
+    if (devSelect) {
+        devSelect.innerHTML = '<option value="">All RFID Fleet Machines</option>';
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
-            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
             devSelect.appendChild(opt);
         });
     }
@@ -2866,32 +2883,30 @@ window.submitAdminRfidBatchRange = async function(e) {
 let adminEnrollTimer = null;
 window.openAdminRfidLiveEnroll = async function() {
     const devSelect = document.getElementById("adminLiveEnrollDeviceSelect");
-    let preferredDev = null;
-    if (devSelect && state.devices) {
+    if (devSelect) {
         devSelect.innerHTML = '';
-        state.devices.forEach(d => {
+        // Strictly RFID machines only - NO QR VENDING MACHINES!
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
-            opt.textContent = `${d.device_id} (${d.client_name || 'Unassigned'})`;
-            if (d.device_id.startsWith("RFID-") && !preferredDev) preferredDev = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
             devSelect.appendChild(opt);
         });
-        if (preferredDev) devSelect.value = preferredDev;
+        devSelect.value = rfidList[0].device_id;
 
         devSelect.onchange = async () => {
-            const targetDev = devSelect.value;
-            if (targetDev) {
-                document.getElementById("adminLiveWaitingBox").style.display = "block";
-                document.getElementById("adminLiveDetectedBox").style.display = "none";
-                document.getElementById("btnAdminSaveLiveCard").style.display = "none";
-                try {
-                    await apiRequest(`/rfid-vending/devices/${targetDev}/enroll-mode`, {
-                        method: "POST",
-                        body: JSON.stringify({ enabled: true })
-                    });
-                    showToast(`📡 Machine ${targetDev} is now listening for RFID card swipes!`, "info");
-                } catch (e) {}
-            }
+            const targetDev = devSelect.value || "RFID-000001";
+            document.getElementById("adminLiveWaitingBox").style.display = "block";
+            document.getElementById("adminLiveDetectedBox").style.display = "none";
+            document.getElementById("btnAdminSaveLiveCard").style.display = "none";
+            try {
+                await apiRequest(`/rfid-vending/devices/${targetDev}/enroll-mode`, {
+                    method: "POST",
+                    body: JSON.stringify({ enabled: true })
+                });
+                showToast(`📡 Machine ${targetDev} is now listening for RFID card swipes!`, "info");
+            } catch (e) {}
         };
     }
 
@@ -3438,19 +3453,15 @@ window.openSequentialCardProgrammer = function() {
     const devSelect = document.getElementById("seqProgrammerDeviceSelect");
     if (devSelect) {
         devSelect.innerHTML = '';
-        const devList = (typeof state !== 'undefined' && state.devices) ? state.devices : [];
-        devList.forEach(d => {
+        // Strictly RFID machines only - NO QR VENDING MACHINES!
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
             const opt = document.createElement("option");
             opt.value = d.device_id;
-            opt.textContent = `${d.device_id} (${d.client_name || d.device_type || 'RFID Node'})`;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
             devSelect.appendChild(opt);
         });
-        if (devList.length === 0) {
-            const opt = document.createElement("option");
-            opt.value = "RFID-000001";
-            opt.textContent = "RFID-000001 (Default RFID Vending Machine)";
-            devSelect.appendChild(opt);
-        }
+        devSelect.value = rfidList[0].device_id;
     }
 
     const clientSelect = document.getElementById("seqProgrammerClientSelect");

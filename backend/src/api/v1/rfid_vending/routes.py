@@ -545,10 +545,8 @@ def toggle_enroll_mode(
     dev = db.query(Device).filter(
         (Device.id == device_id) | (Device.device_id == device_id)
     ).first()
-    if not dev:
-        raise HTTPException(status_code=404, detail="Device not found.")
-
-    key = dev.device_id
+    key = dev.device_id if dev else (device_id or "RFID-000001")
+    
     if payload.enabled:
         session_obj = {
             "active": True,
@@ -557,12 +555,14 @@ def toggle_enroll_mode(
             "started_at": utc_now(),
         }
         _ENROLL_SESSIONS[key] = session_obj
-        if str(dev.id) != key:
+        if dev and str(dev.id) != key:
             _ENROLL_SESSIONS[str(dev.id)] = session_obj
+        logger.info(f"[Enroll Mode] Activated for device {key}")
     else:
         _ENROLL_SESSIONS.pop(key, None)
         if dev and str(dev.id) in _ENROLL_SESSIONS:
             _ENROLL_SESSIONS.pop(str(dev.id), None)
+        logger.info(f"[Enroll Mode] Deactivated for device {key}")
 
     return {
         "device_id": key,
@@ -585,14 +585,17 @@ def get_enroll_status(
     key = dev.device_id if dev else device_id
 
     session_data = _ENROLL_SESSIONS.get(key) or (dev and _ENROLL_SESSIONS.get(str(dev.id)))
-    if not session_data or not session_data.get("active"):
+    if not session_data:
         return {"enroll_active": False, "last_uid": None}
 
-    last_uid = session_data.get("last_uid")
+    # Auto-expire after 90 seconds if not deactivated
+    started_at = session_data.get("started_at")
+    if started_at and (utc_now() - started_at).total_seconds() > 90:
+        session_data["active"] = False
 
     return {
-        "enroll_active": True,
-        "last_uid": last_uid,
+        "enroll_active": session_data.get("active", False),
+        "last_uid": session_data.get("last_uid"),
         "timestamp": session_data.get("timestamp"),
     }
 
@@ -943,18 +946,23 @@ def verify_device_tap(
 
     dev_key = dev.device_id
 
-    # Check Method C Live Enroll Mode
+    # Check Method C Live Enroll Mode: STRICTLY check if THIS machine is actively listening
     enroll_sess = _ENROLL_SESSIONS.get(dev_key) or _ENROLL_SESSIONS.get(str(dev.id))
-    if not enroll_sess or not enroll_sess.get("active"):
-        for s_k, s_v in _ENROLL_SESSIONS.items():
-            if s_v and s_v.get("active"):
-                enroll_sess = s_v
-                break
+    
+    # Check if expired (TTL 90 seconds)
+    if enroll_sess and enroll_sess.get("active"):
+        started_at = enroll_sess.get("started_at")
+        if started_at and (utc_now() - started_at).total_seconds() > 90:
+            enroll_sess["active"] = False
+            enroll_sess = None
 
     if enroll_sess and enroll_sess.get("active"):
+        # Card Captured in Live Enroll Mode!
+        # Save captured UID and immediately DEACTIVATE active flag so normal taps are NOT intercepted!
         enroll_sess["last_uid"] = clean_uid
         enroll_sess["timestamp"] = utc_now().isoformat()
-        logger.info(f"[Enroll Mode] Captured card {clean_uid} on device {dev_key}")
+        enroll_sess["active"] = False  # Deactivate after single capture
+        logger.info(f"[Enroll Mode] Successfully captured card {clean_uid} on device {dev_key}. Deactivated enroll mode.")
         return RFIDVerifyTapResponse(
             authorized=False,
             status="ENROLL_CAPTURED",
