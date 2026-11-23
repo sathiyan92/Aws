@@ -3,16 +3,20 @@
  * GTECH SMART IOT FLEET PLATFORM
  * Node Type: ESP32 RFID Card-Based Vending Machine Controller
  * File: esp32_rfid_vending_node.ino
- * Firmware: v2.4.0-rfid-tft
+ * Firmware: v2.5.0-rfid-tft-nvs
  * ==============================================================================
  * Features:
  *   - 3.5" / 4.0" ILI9488 320x480 SPI TFT LCD Display (Vertical Portrait)
  *   - Matches the exact UI design and theme of the QR Vending Machine
  *   - MFRC522 SPI 13.56MHz RFID Reader driver (Shared SPI VSPI bus)
  *   - Supports up to 1,000 users/cards in local ESP32 RAM cache
+ *   - Flash NVS Persistence (<Preferences.h>): Wi-Fi, Device ID, Server URL
+ *   - Cloud Remote Configuration: Update Wi-Fi and Machine ID from Web Portal
+ *   - USB Serial Console for on-site bench configuration (id:, wifi:, sync, status, wipe)
  *   - Cloud Tap Verification & Dispense Authorization via REST API
  *   - Offline Resilient Vending: Dispenses even when Wi-Fi is lost
  *   - Offline Log Buffering: Syncs vends to cloud when Internet reconnects
+ *   - Heartbeat Telemetry: Keeps machine status permanently ONLINE in Portal
  *   - Motor Relay Pulse Control & Buzzer Audio Feedback
  *   - Live Cardholder Name, Quota Remaining, & Real-Time Status Screens
  * ==============================================================================
@@ -54,6 +58,7 @@
 #include <MFRC522.h>
 #include <ArduinoJson.h>
 #include <DIYables_TFT_SPI.h>
+#include <Preferences.h>
 
 // ==============================================================================
 // 1. HARDWARE PIN DEFINITIONS
@@ -81,17 +86,23 @@
 #define PIN_BUZZER         27    // Buzzer (Active HIGH)
 
 // ==============================================================================
-// 2. NETWORK & SERVER CONFIGURATION
+// 2. NETWORK, STORAGE & CLOUD SERVER CONFIGURATION
 // ==============================================================================
 
-const char* WIFI_SSID       = "GTech_Office_2.4G";
-const char* WIFI_PASSWORD   = "YourWifiPassword";
+Preferences prefs;
 
-// Production Cloud API URL
-const char* SERVER_BASE_URL = "http://www.gtechinfo.in";
+// Default compiled Wi-Fi credentials (100% matches QR code machine defaults)
+String wifi_ssid       = "IOTHUB";
+String wifi_pass       = "IOTHUB07";
 
-// Unique Machine Identifier mapped in cloud database
-const char* DEVICE_ID       = "VM-000001";
+// Production Cloud Server Base URL
+String server_base_url = "http://www.gtechinfo.in";
+
+// Machine Identifier mapped in cloud database (RFID-000001)
+String device_id       = "RFID-000001";
+String device_token    = "dev_token_RFID-000001";
+
+int current_config_version = 1;
 
 // Default dispense pulse time if cloud doesn't specify (in milliseconds)
 const int DEFAULT_DISPENSE_MS = 1500;
@@ -140,18 +151,110 @@ struct OfflineVendRecord {
 OfflineVendRecord offlineBuffer[MAX_OFFLINE_BUFFER];
 int offlineBufferCount = 0;
 
-// State flags
+// State flags and timing
 bool isWifiConnected = false;
 unsigned long lastHeartbeatTime = 0;
 unsigned long lastCardSyncTime = 0;
 const unsigned long SYNC_INTERVAL_MS = 300000; // Auto-sync whitelist every 5 minutes
+const unsigned long HEARTBEAT_INTERVAL_MS = 60000; // Heartbeat & remote config poll every 60 seconds
 
 // Hardware Driver Objects
 DIYables_ILI9488_SPI tft(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
 MFRC522 rfid(RFID_SS_PIN, RFID_RST_PIN);
 
+// Forward Declarations
+void printHelpMenu();
+void handleSerialCommand(String cmd);
+void syncWhitelistFromCloud();
+void checkForRemoteConfigUpdates();
+void sendHeartbeat();
+void uiDrawStandbyScreen();
+
 // ==============================================================================
-// 5. SPI BUS ARBITRATION HELPERS
+// 5. FLASH NVS PERSISTENCE HANDLERS (Preferences)
+// ==============================================================================
+
+void loadPersistentConfig() {
+    prefs.begin("vending_cfg", false);
+    String saved_ssid     = prefs.getString("ssid", "");
+    String saved_pass     = prefs.getString("pass", "");
+    String saved_url      = prefs.getString("srv_url", "");
+    String last_code_ssid = prefs.getString("code_ssid", "");
+    bool has_remote_wifi  = prefs.getBool("wifi_remote", false);
+    String saved_dev_id   = prefs.getString("dev_id", "");
+    current_config_version = prefs.getInt("cfg_ver", 1);
+
+    // --- SMART WI-FI SELECTION (Same as QR Machine) ---
+    // 1. If configured via Cloud Web Portal or Serial, always honor it:
+    if (has_remote_wifi && saved_ssid.length() > 0) {
+        wifi_ssid = saved_ssid;
+        wifi_pass = saved_pass;
+        Serial.printf("[Config] 📶 Cloud/Saved Wi-Fi active: %s\n", wifi_ssid.c_str());
+    } else if (wifi_ssid.length() > 0 && wifi_ssid != last_code_ssid) {
+        // 2. If developer updated credentials in sketch code, persist to Flash NVS:
+        prefs.putString("ssid", wifi_ssid);
+        prefs.putString("pass", wifi_pass);
+        prefs.putString("code_ssid", wifi_ssid);
+        Serial.printf("[Config] ⭐ New Wi-Fi from sketch code detected & applied: %s\n", wifi_ssid.c_str());
+    } else if (saved_ssid.length() > 0) {
+        // 3. Fallback to saved
+        wifi_ssid = saved_ssid;
+        wifi_pass = saved_pass;
+    }
+
+    if (saved_url.length() > 0) {
+        server_base_url = saved_url;
+    }
+
+    // Machine ID loading
+    if (saved_dev_id.length() > 0) {
+        device_id = saved_dev_id;
+        device_token = prefs.getString("token", "dev_token_" + device_id);
+        Serial.printf("[Config] 💾 Machine ID loaded from Flash NVS: %s\n", device_id.c_str());
+    } else {
+        // Save initial default
+        prefs.putString("dev_id", device_id);
+        prefs.putString("token", device_token);
+    }
+    prefs.end();
+
+    Serial.println("\n==================================================================");
+    Serial.println("  >>> ⚡ GTECH ESP32 RFID VENDING CONTROLLER NODE <<<            ");
+    Serial.println("==================================================================");
+    Serial.printf("  Device ID (Machine)  : %s\n", device_id.c_str());
+    Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.c_str());
+    Serial.printf("  Cloud Server Base URL: %s\n", server_base_url.c_str());
+    Serial.printf("  Local Cache Capacity : %d Cards\n", MAX_CACHED_CARDS);
+    Serial.println("==================================================================\n");
+}
+
+void savePersistentConfig(String ssid, String pass, String dev_id, String srv_url) {
+    prefs.begin("vending_cfg", false);
+    prefs.putString("ssid", ssid);
+    prefs.putString("pass", pass);
+    prefs.putBool("wifi_remote", true);
+    prefs.putString("dev_id", dev_id);
+    prefs.putString("token", "dev_token_" + dev_id);
+    prefs.putString("srv_url", srv_url);
+    prefs.putString("code_ssid", ssid);
+    prefs.end();
+
+    wifi_ssid = ssid;
+    wifi_pass = pass;
+    device_id = dev_id;
+    server_base_url = srv_url;
+    Serial.println("[✓] Settings saved to Flash NVS.");
+}
+
+void clearPersistentConfig() {
+    prefs.begin("vending_cfg", false);
+    prefs.clear();
+    prefs.end();
+    Serial.println("[!] Flash NVS wiped.");
+}
+
+// ==============================================================================
+// 6. SPI BUS ARBITRATION HELPERS
 // ==============================================================================
 
 void selectTFT() {
@@ -173,7 +276,7 @@ void deselectRFID() {
 }
 
 // ==============================================================================
-// 6. BUZZER AUDIO FEEDBACK HELPER
+// 7. BUZZER AUDIO FEEDBACK HELPER
 // ==============================================================================
 
 void beep(int frequency, int duration_ms) {
@@ -202,7 +305,7 @@ void playWarningTone() {
 }
 
 // ==============================================================================
-// 7. TFT LCD UI DRAWING FUNCTIONS
+// 8. TFT LCD UI DRAWING FUNCTIONS
 // ==============================================================================
 
 void uiDrawBootScreen() {
@@ -235,11 +338,11 @@ void uiDrawBootScreen() {
     tft.setTextSize(1);
     tft.print("Machine ID    : ");
     tft.setTextColor(COLOR_CYAN);
-    tft.println(DEVICE_ID);
+    tft.println(device_id);
 
     tft.setCursor(30, 245);
     tft.setTextColor(COLOR_WHITE);
-    tft.print("Firmware      : v2.4.0-rfid-tft");
+    tft.print("Firmware      : v2.5.0-rfid-tft-nvs");
 
     tft.setCursor(30, 270);
     tft.print("Capacity      : 1,000 Cards Cache");
@@ -278,6 +381,55 @@ void uiDrawWiFiConnectingScreen(const char* ssid) {
     deselectTFT();
 }
 
+void uiDrawWiFiUpdatingScreen(const String& newSsid) {
+    selectTFT();
+    tft.fillScreen(COLOR_BG);
+
+    // Top Header Banner
+    tft.fillRect(0, 0, TFT_WIDTH, 55, COLOR_HEADER);
+    tft.drawFastHLine(0, 55, TFT_WIDTH, COLOR_CYAN);
+
+    tft.setCursor(20, 18);
+    tft.setTextColor(COLOR_CYAN);
+    tft.setTextSize(2);
+    tft.print("CLOUD WI-FI UPDATE");
+
+    // Main Card
+    tft.fillRoundRect(16, 80, 288, 330, 12, COLOR_CARD);
+    tft.drawRoundRect(16, 80, 288, 330, 12, COLOR_CYAN);
+
+    tft.setCursor(30, 105);
+    tft.setTextColor(COLOR_YELLOW);
+    tft.setTextSize(2);
+    tft.print("NEW CONFIG RECEIVED");
+
+    tft.setCursor(30, 150);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(1);
+    tft.print("Credentials updated remotely from");
+    tft.setCursor(30, 170);
+    tft.print("G-TECH Cloud Management Portal.");
+
+    tft.setCursor(30, 215);
+    tft.setTextColor(COLOR_MUTED);
+    tft.print("New Network SSID:");
+
+    tft.setCursor(30, 240);
+    tft.setTextColor(COLOR_GREEN);
+    tft.setTextSize(2);
+    tft.print(newSsid);
+
+    tft.setCursor(30, 295);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(1);
+    tft.print("Saving credentials to Flash NVS...");
+    tft.setCursor(30, 320);
+    tft.setTextColor(COLOR_CYAN);
+    tft.print("Reconnecting to new network...");
+
+    deselectTFT();
+}
+
 void uiDrawStandbyScreen() {
     selectTFT();
     tft.fillScreen(COLOR_BG);
@@ -311,12 +463,12 @@ void uiDrawStandbyScreen() {
         tft.print("OFFLINE");
     }
 
-    // Machine ID Sub-bar
+    // Machine ID Sub-bar (Dynamic Device ID)
     tft.fillRect(0, 56, TFT_WIDTH, 28, COLOR_CARD);
     tft.setCursor(20, 64);
     tft.setTextColor(COLOR_MUTED);
     tft.setTextSize(1);
-    tft.printf("NODE: %s  |  MODE: RFID CARD TAP", DEVICE_ID);
+    tft.printf("NODE: %s  |  MODE: RFID CARD TAP", device_id.c_str());
 
     // Center Hero Card
     tft.fillRoundRect(16, 100, 288, 280, 12, COLOR_CARD);
@@ -376,7 +528,6 @@ void uiDrawStandbyScreen() {
 void uiDrawVerifyingScreen(const char* uid) {
     selectTFT();
 
-    // Overwrite Hero card with Verifying state
     tft.fillRoundRect(16, 100, 288, 280, 12, COLOR_CARD);
     tft.drawRoundRect(16, 100, 288, 280, 12, COLOR_YELLOW);
 
@@ -409,11 +560,9 @@ void uiDrawVerifyingScreen(const char* uid) {
 void uiDrawDispenseScreen(const char* name, int used, int limit, int pulse_ms) {
     selectTFT();
 
-    // Success Green Card
     tft.fillRoundRect(16, 100, 288, 280, 12, COLOR_CARD);
     tft.drawRoundRect(16, 100, 288, 280, 12, COLOR_GREEN);
 
-    // Green Header Tag
     tft.fillRoundRect(30, 120, 260, 45, 6, COLOR_GREEN);
     tft.setCursor(45, 132);
     tft.setTextColor(COLOR_BLACK);
@@ -430,7 +579,6 @@ void uiDrawDispenseScreen(const char* name, int used, int limit, int pulse_ms) {
     tft.setTextSize(2);
     tft.print(name);
 
-    // Quota Counter
     tft.setCursor(30, 255);
     tft.setTextColor(COLOR_MUTED);
     tft.setTextSize(1);
@@ -440,7 +588,6 @@ void uiDrawDispenseScreen(const char* name, int used, int limit, int pulse_ms) {
         tft.printf("Today's Allowance: %d of %d Used", used, limit);
     }
 
-    // Action banner
     tft.fillRoundRect(30, 290, 260, 65, 6, COLOR_BG);
     tft.drawRoundRect(30, 290, 260, 65, 6, COLOR_GREEN);
 
@@ -460,11 +607,9 @@ void uiDrawDispenseScreen(const char* name, int used, int limit, int pulse_ms) {
 void uiDrawDeniedScreen(const char* header, const char* reason) {
     selectTFT();
 
-    // Red Danger Card
     tft.fillRoundRect(16, 100, 288, 280, 12, COLOR_CARD);
     tft.drawRoundRect(16, 100, 288, 280, 12, COLOR_RED);
 
-    // Red Tag
     tft.fillRoundRect(30, 120, 260, 45, 6, COLOR_RED);
     tft.setCursor(55, 132);
     tft.setTextColor(COLOR_WHITE);
@@ -505,7 +650,7 @@ void uiDrawVendCompleteScreen() {
 }
 
 // ==============================================================================
-// 8. MOTOR RELAY CONTROL
+// 9. MOTOR RELAY CONTROL
 // ==============================================================================
 
 void triggerDispenseMotor(int pulse_ms) {
@@ -521,7 +666,7 @@ void triggerDispenseMotor(int pulse_ms) {
 }
 
 // ==============================================================================
-// 9. CACHE MANAGEMENT FUNCTIONS (1,000 Cards)
+// 10. CACHE MANAGEMENT & CLOUD SYNC (1,000 Cards)
 // ==============================================================================
 
 int findCardInCache(const char* uid) {
@@ -536,9 +681,9 @@ int findCardInCache(const char* uid) {
 void syncWhitelistFromCloud() {
     if (WiFi.status() != WL_CONNECTED) return;
 
-    Serial.println("[SYNC] Requesting 1,000-card whitelist from Cloud...");
+    Serial.println("[SYNC] Requesting authorized RFID card whitelist from Cloud...");
     HTTPClient http;
-    String url = String(SERVER_BASE_URL) + "/api/v1/rfid-vending/devices/" + String(DEVICE_ID) + "/sync-cards";
+    String url = server_base_url + "/api/v1/rfid-vending/devices/" + device_id + "/sync-cards";
     
     http.begin(url);
     http.setTimeout(10000);
@@ -552,6 +697,51 @@ void syncWhitelistFromCloud() {
         DeserializationError err = deserializeJson(doc, payload);
 
         if (!err) {
+            // Check for Remote Wi-Fi or Machine ID updates sent from Cloud Portal
+            if (doc.containsKey("device_id")) {
+                String cloudDev = doc["device_id"].as<String>();
+                if (cloudDev.length() > 0 && cloudDev != device_id) {
+                    Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDev.c_str());
+                    device_id = cloudDev;
+                    device_token = "dev_token_" + device_id;
+                    prefs.begin("vending_cfg", false);
+                    prefs.putString("dev_id", device_id);
+                    prefs.putString("token", device_token);
+                    prefs.end();
+                }
+            }
+
+            if (doc.containsKey("wifi_ssid")) {
+                String newWifiSsid = doc["wifi_ssid"].as<String>();
+                String newWifiPass = doc.containsKey("wifi_password") ? doc["wifi_password"].as<String>() : "";
+                int newVer = doc.containsKey("config_version") ? doc["config_version"].as<int>() : current_config_version;
+
+                if (newWifiSsid.length() > 0 && (newWifiSsid != wifi_ssid || newWifiPass != wifi_pass)) {
+                    Serial.println("\n==================================================================");
+                    Serial.println(">>> 📶 REMOTE WI-FI CREDENTIALS RECEIVED FROM CLOUD PORTAL! <<<");
+                    Serial.printf("  New SSID     : %s\n", newWifiSsid.c_str());
+                    Serial.printf("  New Password : %s\n", newWifiPass.length() > 0 ? "********" : "(None)");
+                    Serial.println("  Saving to Flash NVS & Reconnecting to Network...");
+                    Serial.println("==================================================================\n");
+
+                    wifi_ssid = newWifiSsid;
+                    wifi_pass = newWifiPass;
+                    current_config_version = newVer;
+
+                    prefs.begin("vending_cfg", false);
+                    prefs.putString("ssid", wifi_ssid);
+                    prefs.putString("pass", wifi_pass);
+                    prefs.putBool("wifi_remote", true);
+                    prefs.putString("code_ssid", wifi_ssid);
+                    prefs.putInt("cfg_ver", current_config_version);
+                    prefs.end();
+
+                    uiDrawWiFiUpdatingScreen(wifi_ssid);
+                    delay(2500);
+                    ESP.restart();
+                }
+            }
+
             JsonArray cards = doc["cards"].as<JsonArray>();
             totalCachedCards = 0;
 
@@ -575,7 +765,7 @@ void syncWhitelistFromCloud() {
                 totalCachedCards++;
             }
 
-            Serial.printf("[SYNC] * Success! Loaded %d authorized cards into ESP32 RAM cache.\n", totalCachedCards);
+            Serial.printf("[SYNC] ✓ Success! Loaded %d authorized cards into ESP32 RAM cache.\n", totalCachedCards);
             uiDrawStandbyScreen();
         } else {
             Serial.printf("[SYNC] JSON parse error: %s\n", err.c_str());
@@ -586,15 +776,83 @@ void syncWhitelistFromCloud() {
     http.end();
 }
 
+void checkForRemoteConfigUpdates() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    HTTPClient http;
+    String endpoint = server_base_url + "/api/v1/orders/qr-config/" + device_id;
+    http.setTimeout(4000);
+    http.begin(endpoint);
+
+    int httpCode = http.GET();
+    if (httpCode == 200) {
+        String resp = http.getString();
+        StaticJsonDocument<2048> doc;
+        DeserializationError err = deserializeJson(doc, resp);
+
+        if (!err) {
+            String newWifiSsid = doc.containsKey("wifi_ssid") ? doc["wifi_ssid"].as<String>() : "";
+            String newWifiPass = doc.containsKey("wifi_password") ? doc["wifi_password"].as<String>() : "";
+            int newVersion     = doc.containsKey("config_version") ? doc["config_version"].as<int>() : current_config_version;
+
+            if (doc.containsKey("device_id")) {
+                String cloudDev = doc["device_id"].as<String>();
+                if (cloudDev.length() > 0 && cloudDev != device_id) {
+                    Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDev.c_str());
+                    device_id = cloudDev;
+                    device_token = "dev_token_" + device_id;
+                    prefs.begin("vending_cfg", false);
+                    prefs.putString("dev_id", device_id);
+                    prefs.putString("token", device_token);
+                    prefs.end();
+                    uiDrawStandbyScreen();
+                }
+            }
+
+            bool wifiChanged = (newWifiSsid.length() > 0 && (newWifiSsid != wifi_ssid || newWifiPass != wifi_pass));
+            if (wifiChanged) {
+                Serial.println("\n==================================================================");
+                Serial.println(">>> 📶 REMOTE WI-FI CREDENTIALS RECEIVED FROM CLOUD PORTAL! <<<");
+                Serial.printf("  New SSID     : %s\n", newWifiSsid.c_str());
+                Serial.printf("  New Password : %s\n", newWifiPass.length() > 0 ? "********" : "(None)");
+                Serial.println("  Saving to Flash NVS & Reconnecting to Network...");
+                Serial.println("==================================================================\n");
+
+                current_config_version = newVersion;
+                wifi_ssid = newWifiSsid;
+                wifi_pass = newWifiPass;
+
+                prefs.begin("vending_cfg", false);
+                prefs.putString("ssid", wifi_ssid);
+                prefs.putString("pass", wifi_pass);
+                prefs.putBool("wifi_remote", true);
+                prefs.putString("code_ssid", wifi_ssid);
+                prefs.putInt("cfg_ver", current_config_version);
+                prefs.end();
+
+                uiDrawWiFiUpdatingScreen(wifi_ssid);
+                delay(2500);
+                ESP.restart();
+            }
+        }
+    }
+    http.end();
+}
+
+void sendHeartbeat() {
+    if (WiFi.status() != WL_CONNECTED) return;
+    checkForRemoteConfigUpdates();
+}
+
 void flushOfflineBufferToCloud() {
     if (offlineBufferCount == 0 || WiFi.status() != WL_CONNECTED) return;
 
     Serial.printf("[OFFLINE] Flushing %d buffered offline vends to Cloud...\n", offlineBufferCount);
     HTTPClient http;
-    String url = String(SERVER_BASE_URL) + "/api/v1/rfid-vending/offline-sync";
+    String url = server_base_url + "/api/v1/rfid-vending/offline-sync";
 
     DynamicJsonDocument doc(4096);
-    doc["device_id"] = DEVICE_ID;
+    doc["device_id"] = device_id;
     JsonArray logs = doc.createNestedArray("logs");
 
     for (int i = 0; i < offlineBufferCount; i++) {
@@ -611,7 +869,7 @@ void flushOfflineBufferToCloud() {
     int httpCode = http.POST(requestBody);
 
     if (httpCode == HTTP_CODE_OK || httpCode == 201) {
-        Serial.println("[OFFLINE] * Buffer successfully synced to Cloud database!");
+        Serial.println("[OFFLINE] ✓ Buffer successfully synced to Cloud database!");
         offlineBufferCount = 0; // Clear buffer
     } else {
         Serial.printf("[OFFLINE] Sync failed with status: %d\n", httpCode);
@@ -620,7 +878,7 @@ void flushOfflineBufferToCloud() {
 }
 
 // ==============================================================================
-// 10. CARD TAP PROCESSOR (ONLINE & OFFLINE)
+// 11. CARD TAP PROCESSOR (ONLINE & OFFLINE)
 // ==============================================================================
 
 void processOfflineTap(const char* uid) {
@@ -632,7 +890,7 @@ void processOfflineTap(const char* uid) {
         // Check local quota
         if (item.daily_limit <= 0 || item.used_today < item.daily_limit) {
             item.used_today++;
-            Serial.printf("[OFFLINE VEND] * Card Authorized! Welcome %s (Used: %d/%d)\n", 
+            Serial.printf("[OFFLINE VEND] ✓ Card Authorized! Welcome %s (Used: %d/%d)\n", 
                           item.name, item.used_today, item.daily_limit);
             playSuccessTone();
             uiDrawDispenseScreen(item.name, item.used_today, item.daily_limit, DEFAULT_DISPENSE_MS);
@@ -677,13 +935,13 @@ void processCardTap(const char* uid) {
         Serial.println("[ONLINE] Contacting Cloud Backend for verification...");
 
         HTTPClient http;
-        String url = String(SERVER_BASE_URL) + "/api/v1/rfid-vending/verify-tap";
+        String url = server_base_url + "/api/v1/rfid-vending/verify-tap";
         http.begin(url);
         http.addHeader("Content-Type", "application/json");
         http.setTimeout(4000);
 
         StaticJsonDocument<256> doc;
-        doc["device_id"] = DEVICE_ID;
+        doc["device_id"] = device_id;
         doc["card_uid"] = uid;
         doc["pulse_ms"] = DEFAULT_DISPENSE_MS;
 
@@ -706,7 +964,7 @@ void processCardTap(const char* uid) {
             int limit = resp["daily_limit"] | 1;
 
             if (authorized && strcmp(status, "DISPENSED_SUCCESS") == 0) {
-                Serial.printf("[VERIFY] * ACCESS GRANTED! Welcome %s (%d/%d)\n", username, used, limit);
+                Serial.printf("[VERIFY] ✓ ACCESS GRANTED! Welcome %s (%d/%d)\n", username, used, limit);
                 playSuccessTone();
                 uiDrawDispenseScreen(username, used, limit, pulse);
                 triggerDispenseMotor(pulse);
@@ -746,7 +1004,110 @@ void processCardTap(const char* uid) {
 }
 
 // ==============================================================================
-// 11. SETUP & INITIALIZATION
+// 12. SERIAL COMMAND CONSOLE HANDLER
+// ==============================================================================
+
+void handleSerialCommand(String cmd) {
+    if (cmd.startsWith("id:") || cmd.startsWith("ID:") || cmd.startsWith("dev:") || cmd.startsWith("DEV:")) {
+        int colonIdx = cmd.indexOf(':');
+        String newId = cmd.substring(colonIdx + 1);
+        newId.trim();
+        newId.toUpperCase();
+        if (newId.length() > 0) {
+            device_id = newId;
+            device_token = "dev_token_" + device_id;
+            prefs.begin("vending_cfg", false);
+            prefs.putString("dev_id", device_id);
+            prefs.putString("token", device_token);
+            prefs.end();
+            Serial.println("\n==================================================================");
+            Serial.printf("[✓ Machine Identity Set] Device ID updated to: %s\n", device_id.c_str());
+            Serial.println("  Saved permanently into Flash NVS! Whitelist sync starting...");
+            Serial.println("==================================================================\n");
+            if (WiFi.status() == WL_CONNECTED) {
+                syncWhitelistFromCloud();
+            }
+            uiDrawStandbyScreen();
+        }
+    } else if (cmd.startsWith("wifi:") || cmd.startsWith("WIFI:")) {
+        int colonIdx = cmd.indexOf(':');
+        String payload = cmd.substring(colonIdx + 1);
+        payload.trim();
+        int commaIdx = payload.indexOf(',');
+        if (commaIdx != -1) {
+            String newSsid = payload.substring(0, commaIdx);
+            String newPass = payload.substring(commaIdx + 1);
+            newSsid.trim();
+            newPass.trim();
+            wifi_ssid = newSsid;
+            wifi_pass = newPass;
+
+            prefs.begin("vending_cfg", false);
+            prefs.putString("ssid", wifi_ssid);
+            prefs.putString("pass", wifi_pass);
+            prefs.putBool("wifi_remote", true);
+            prefs.putString("code_ssid", wifi_ssid);
+            prefs.end();
+
+            Serial.println("\n==================================================================");
+            Serial.printf("[✓ Wi-Fi Updated] SSID: %s\n", wifi_ssid.c_str());
+            Serial.println("  Saved to Flash NVS! Rebooting to connect...");
+            Serial.println("==================================================================\n");
+            uiDrawWiFiUpdatingScreen(wifi_ssid);
+            delay(2000);
+            ESP.restart();
+        } else {
+            Serial.println("[!] Usage: wifi:SSID,PASSWORD");
+        }
+    } else if (cmd == "sync" || cmd == "SYNC") {
+        Serial.println("\n[⚡ SYNC] Triggering immediate whitelist & config sync from Cloud...");
+        syncWhitelistFromCloud();
+        checkForRemoteConfigUpdates();
+    } else if (cmd == "t" || cmd == "T" || cmd.equalsIgnoreCase("test")) {
+        Serial.println("\n[⚡ MOTOR TEST] Actuating dispense relay motor (1.5s)...");
+        triggerDispenseMotor(1500);
+    } else if (cmd == "c" || cmd == "C" || cmd.equalsIgnoreCase("wipe")) {
+        Serial.println("\n[🧹 NVS] Clearing all persistent settings from Flash NVS...");
+        prefs.begin("vending_cfg", false);
+        prefs.clear();
+        prefs.end();
+        Serial.println("[✓] NVS wiped clean! Rebooting ESP32...");
+        delay(500);
+        ESP.restart();
+    } else if (cmd == "status" || cmd == "s" || cmd == "S") {
+        Serial.println("\n==================================================================");
+        Serial.println(">>> 📊 MACHINE STATUS <<<");
+        Serial.printf("  Device ID       : %s\n", device_id.c_str());
+        Serial.printf("  Active Wi-Fi    : %s (Status: %s)\n", wifi_ssid.c_str(), WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.printf("  IP Address      : %s (RSSI: %d dBm)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        }
+        Serial.printf("  Server URL      : %s\n", server_base_url.c_str());
+        Serial.printf("  Cached Cards    : %d / %d\n", totalCachedCards, MAX_CACHED_CARDS);
+        Serial.printf("  Offline Buffered: %d / %d\n", offlineBufferCount, MAX_OFFLINE_BUFFER);
+        Serial.printf("  Free RAM Heap   : %u bytes\n", ESP.getFreeHeap());
+        Serial.println("==================================================================\n");
+    } else if (cmd == "h" || cmd == "H" || cmd == "?") {
+        printHelpMenu();
+    }
+}
+
+void printHelpMenu() {
+    Serial.println("\n==================================================================");
+    Serial.println("   GTECH RFID VENDING NODE - SERIAL COMMAND CONSOLE               ");
+    Serial.println("==================================================================");
+    Serial.println("  id:RFID-000001     - Set Device ID permanently into Flash NVS");
+    Serial.println("  wifi:SSID,PASSWORD - Set Wi-Fi credentials & restart");
+    Serial.println("  sync               - Force immediate Cloud Whitelist & Config sync");
+    Serial.println("  t                  - Test dispense relay motor hardware");
+    Serial.println("  status             - Display live network, IP, cache & heap status");
+    Serial.println("  wipe               - Clear all Flash NVS persistent config & reboot");
+    Serial.println("  ? or h             - Show this help menu");
+    Serial.println("==================================================================\n");
+}
+
+// ==============================================================================
+// 13. SETUP & INITIALIZATION
 // ==============================================================================
 
 void setup() {
@@ -756,7 +1117,6 @@ void setup() {
 
     pinMode(PIN_BUZZER, OUTPUT);
     digitalWrite(PIN_BUZZER, LOW);
-
 
     // Setup Chip Select pins to inactive (HIGH)
     pinMode(RFID_SS_PIN, OUTPUT);
@@ -768,18 +1128,16 @@ void setup() {
     Serial.begin(115200);
     delay(200);
 
-    Serial.println("\n==============================================");
-    Serial.println("   GTECH ESP32 RFID VENDING CONTROLLER NODE   ");
-    Serial.println("   Capacity: 1,000 Users / ILI9488 TFT LCD    ");
-    Serial.println("==============================================");
+    // 2. Load persistent configuration from Flash NVS
+    loadPersistentConfig();
 
     // Initial audio chirp
     beep(2000, 100);
 
-    // 2. Initialize Hardware SPI Bus
+    // 3. Initialize Hardware SPI Bus
     SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, RFID_SS_PIN);
 
-    // 3. Initialize ILI9488 TFT LCD Display
+    // 4. Initialize ILI9488 TFT LCD Display
     Serial.println("[TFT] Initializing 320x480 ILI9488 SPI LCD Display...");
     selectTFT();
     tft.begin();
@@ -790,7 +1148,7 @@ void setup() {
     uiDrawBootScreen();
     delay(1200);
 
-    // 4. Initialize MFRC522 RFID reader
+    // 5. Initialize MFRC522 RFID reader
     selectRFID();
     rfid.PCD_Init();
     delay(50);
@@ -804,11 +1162,11 @@ void setup() {
         Serial.println("[RFID] * MFRC522 RFID Reader successfully initialized!");
     }
 
-    // 5. Connect to Wi-Fi
-    uiDrawWiFiConnectingScreen(WIFI_SSID);
-    Serial.printf("[WIFI] Connecting to '%s'...\n", WIFI_SSID);
+    // 6. Connect to Wi-Fi
+    uiDrawWiFiConnectingScreen(wifi_ssid.c_str());
+    Serial.printf("[WIFI] Connecting to '%s'...\n", wifi_ssid.c_str());
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
 
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
@@ -822,8 +1180,9 @@ void setup() {
         Serial.printf("\n[WIFI] * Connected! IP: %s\n", WiFi.localIP().toString().c_str());
         playSuccessTone();
 
-        // Initial whitelist download
+        // Initial whitelist download & remote config check
         syncWhitelistFromCloud();
+        checkForRemoteConfigUpdates();
     } else {
         Serial.println("\n[WIFI] ! Wi-Fi Connection Failed. Running in OFFLINE CACHE MODE.");
         playWarningTone();
@@ -831,17 +1190,27 @@ void setup() {
 
     // Draw main operational standby screen
     uiDrawStandbyScreen();
+    printHelpMenu();
     Serial.println("\n[READY] Vending Machine is Ready. Tap an RFID card to vend!\n");
 }
 
 // ==============================================================================
-// 12. MAIN LOOP
+// 14. MAIN LOOP
 // ==============================================================================
 
 void loop() {
     unsigned long currentMillis = millis();
 
-    // 1. Maintain Wi-Fi and auto-sync
+    // 1. Interactive USB Serial Command Console
+    if (Serial.available()) {
+        String cmd = Serial.readStringUntil('\n');
+        cmd.trim();
+        if (cmd.length() > 0) {
+            handleSerialCommand(cmd);
+        }
+    }
+
+    // 2. Maintain Wi-Fi, Heartbeat & Remote Cloud Config Poll
     if (WiFi.status() == WL_CONNECTED) {
         if (!isWifiConnected) {
             isWifiConnected = true;
@@ -852,7 +1221,13 @@ void loop() {
             syncWhitelistFromCloud();
         }
 
-        // Periodic sync every 5 minutes
+        // Heartbeat & Remote Cloud Config Poll every 60 seconds
+        if (currentMillis - lastHeartbeatTime > HEARTBEAT_INTERVAL_MS) {
+            lastHeartbeatTime = currentMillis;
+            sendHeartbeat();
+        }
+
+        // Periodic whitelist sync every 5 minutes
         if (currentMillis - lastCardSyncTime > SYNC_INTERVAL_MS) {
             lastCardSyncTime = currentMillis;
             syncWhitelistFromCloud();
@@ -866,7 +1241,7 @@ void loop() {
         }
     }
 
-    // 2. Check for RFID Card Tap
+    // 3. Check for RFID Card Tap
     selectRFID();
     bool newCard = rfid.PICC_IsNewCardPresent();
     if (!newCard) {

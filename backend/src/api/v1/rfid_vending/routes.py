@@ -608,6 +608,14 @@ def verify_device_tap(
             message="Machine not recognized in fleet.",
         )
 
+    # Maintain real-time device online presence
+    dev.is_online = True
+    dev.last_heartbeat_at = utc_now()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
     dev_key = dev.device_id
 
     # Check Method C Live Enroll Mode
@@ -752,6 +760,14 @@ def sync_cards_to_device(
     if not dev:
         raise HTTPException(status_code=404, detail="Device not found.")
 
+    # Maintain real-time device online presence and heartbeat
+    dev.is_online = True
+    dev.last_heartbeat_at = utc_now()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
     cards = db.query(RFIDVendingCard).filter(
         RFIDVendingCard.client_id == dev.client_id,
         RFIDVendingCard.is_active == True,
@@ -769,8 +785,15 @@ def sync_cards_to_device(
             "used": used,
         })
 
+    settings = dev.config.config_payload.get("settings", {}) if (dev.config and dev.config.config_payload) else {}
+    wifi_ssid = settings.get("wifi_ssid", "")
+    wifi_password = settings.get("wifi_password", "")
+
     return {
         "device_id": dev.device_id,
+        "config_version": dev.current_config_version,
+        "wifi_ssid": wifi_ssid,
+        "wifi_password": wifi_password,
         "count": len(card_list),
         "timestamp": utc_now().isoformat(),
         "cards": card_list,
