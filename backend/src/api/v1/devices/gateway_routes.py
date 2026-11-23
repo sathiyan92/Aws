@@ -196,12 +196,13 @@ def authenticate_device(
             disc = db.query(DiscoveredHardware).filter(DiscoveredHardware.mac_address.ilike(clean_mac)).first()
             client_ip = request.client.host if request.client else None
             if not disc:
-                suggested = generate_next_device_id(db, "VENDING_MACHINE")
+                is_rfid = "rfid" in (payload.firmware_version or "").lower() or (payload.device_id and "rfid" in payload.device_id.lower())
+                suggested = generate_next_device_id(db, "RFID_ATTENDANCE" if is_rfid else "VENDING_MACHINE")
                 disc = DiscoveredHardware(
                     mac_address=clean_mac,
                     chip_id=clean_chip,
                     ip_address=client_ip,
-                    firmware_version=payload.firmware_version or "v2.2.0-razorpay-ota",
+                    firmware_version=payload.firmware_version or "v2.5.0-rfid-tft-nvs",
                     suggested_device_id=suggested,
                     last_seen_at=utc_now(),
                 )
@@ -281,7 +282,12 @@ def authenticate_device(
         if not m:
             return True
         val = m.strip().upper()
-        return val in placeholder_macs or val.startswith("3C:84:27:")
+        return (
+            val in placeholder_macs
+            or val.startswith("3C:84:27:")
+            or val.startswith("5C:84:27:")
+            or val.startswith("30:AE:A4:")
+        )
 
     def _is_placeholder_chip(c: Optional[str]) -> bool:
         if not c:

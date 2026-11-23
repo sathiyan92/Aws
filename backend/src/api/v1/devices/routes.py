@@ -204,9 +204,17 @@ def claim_discovered_hardware(
     # Check if a device with this target_id already exists
     existing_dev = db.query(Device).filter(Device.device_id == target_id).first()
     if existing_dev:
-        # Check if MAC matches or is placeholder
+        # Check if MAC matches or is placeholder / mock seed
         placeholder_macs = {'', 'AUTO', 'GENERIC', 'PENDING', 'PENDING_BINDING', '00:00:00:00:00:00'}
-        if existing_dev.mac_address and existing_dev.mac_address.strip().upper() not in placeholder_macs and existing_dev.mac_address.strip().upper() != clean_mac:
+        dev_mac = (existing_dev.mac_address or "").strip().upper()
+        is_placeholder = (
+            not dev_mac
+            or dev_mac in placeholder_macs
+            or dev_mac.startswith('5C:84:27:')
+            or dev_mac.startswith('30:AE:A4:')
+            or dev_mac.startswith('3C:84:27:')
+        )
+        if not is_placeholder and dev_mac != clean_mac:
             raise BadRequestException(f"Machine ID '{target_id}' is already assigned to MAC '{existing_dev.mac_address}'. Choose a different ID or edit that machine first.")
         # Bind this physical MAC to the existing device!
         existing_dev.mac_address = clean_mac

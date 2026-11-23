@@ -635,6 +635,15 @@ def get_device_qr_config(db: Session, device_id: str, mac: Optional[str] = None)
         device = db.query(Device).filter(
             (Device.device_id == clean_id) | (Device.mac_address.ilike(clean_id))
         ).first()
+        if device and clean_mac:
+            placeholder_macs = {'', 'AUTO', 'GENERIC', 'PENDING', 'PENDING_BINDING', '00:00:00:00:00:00'}
+            dev_mac = (device.mac_address or "").strip().upper()
+            if not dev_mac or dev_mac in placeholder_macs or dev_mac.startswith('5C:84:27:') or dev_mac.startswith('30:AE:A4:') or dev_mac.startswith('3C:84:27:'):
+                device.mac_address = clean_mac
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
 
     if not device:
         # Check if we have a physical MAC address to record in Discovery Queue
@@ -643,8 +652,9 @@ def get_device_qr_config(db: Session, device_id: str, mac: Optional[str] = None)
             from src.db.models.device import DiscoveredHardware
             from src.services.device_service import generate_next_device_id
             disc = db.query(DiscoveredHardware).filter(DiscoveredHardware.mac_address.ilike(disc_mac)).first()
+            is_rfid = "rfid" in clean_id.lower() or (mac and "rfid" in str(mac).lower())
             if not disc:
-                suggested = generate_next_device_id(db, "VENDING_MACHINE")
+                suggested = generate_next_device_id(db, "RFID_ATTENDANCE" if is_rfid else "VENDING_MACHINE")
                 disc = DiscoveredHardware(
                     mac_address=disc_mac,
                     suggested_device_id=suggested,

@@ -3,9 +3,12 @@
  * GTECH SMART IOT FLEET PLATFORM
  * Node Type: ESP32 RFID Card-Based Vending Machine Controller
  * File: esp32_rfid_vending_node.ino
- * Firmware: v2.5.0-rfid-tft-nvs
+ * Firmware: v2.5.0-rfid-zero-touch
  * ==============================================================================
  * Features:
+ *   - Zero-Touch Auto-Registration: Dynamic MAC-based Cloud Discovery (Like QR Machine!)
+ *   - Automatic Discovery Queue with On-Screen Silicon MAC & IP Pairing Screen
+ *   - Instant Claim Activation: Adopts Machine ID from Cloud within 3 seconds
  *   - 3.5" / 4.0" ILI9488 320x480 SPI TFT LCD Display (Vertical Portrait)
  *   - Matches the exact UI design and theme of the QR Vending Machine
  *   - MFRC522 SPI 13.56MHz RFID Reader driver (Shared SPI VSPI bus)
@@ -59,6 +62,25 @@
 #include <ArduinoJson.h>
 #include <DIYables_TFT_SPI.h>
 #include <Preferences.h>
+#include <esp_mac.h>
+
+// ------------------------------------------------------------------------------
+// HARDWARE MAC & SILICON CHIP ID UTILITY (ZERO-TOUCH)
+// ------------------------------------------------------------------------------
+String getDeviceMacAddress() {
+    WiFi.mode(WIFI_STA);
+    String mac = WiFi.macAddress();
+    if (mac.length() == 17 && mac != "00:00:00:00:00:00") {
+        mac.toUpperCase();
+        return mac;
+    }
+    uint64_t chipmac = ESP.getEfuseMac();
+    uint8_t* m = (uint8_t*)&chipmac;
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             m[0], m[1], m[2], m[3], m[4], m[5]);
+    return String(macStr);
+}
 
 // ==============================================================================
 // 1. HARDWARE PIN DEFINITIONS
@@ -98,9 +120,9 @@ String wifi_pass       = "IOTHUB07";
 // Production Cloud Server Base URL
 String server_base_url = "http://www.gtechinfo.in";
 
-// Machine Identifier mapped in cloud database (RFID-000001)
-String device_id       = "RFID-000001";
-String device_token    = "dev_token_RFID-000001";
+// Machine Identifier: Defaults to AUTO for Zero-Touch Dynamic MAC registration
+String device_id       = "AUTO";
+String device_token    = "dev_token_generic";
 
 int current_config_version = 1;
 
@@ -155,8 +177,9 @@ int offlineBufferCount = 0;
 bool isWifiConnected = false;
 unsigned long lastHeartbeatTime = 0;
 unsigned long lastCardSyncTime = 0;
-const unsigned long SYNC_INTERVAL_MS = 300000; // Auto-sync whitelist every 5 minutes
-const unsigned long HEARTBEAT_INTERVAL_MS = 60000; // Heartbeat & remote config poll every 60 seconds
+const unsigned long SYNC_INTERVAL_MS = 300000;      // Whitelist sync every 5 minutes
+const unsigned long HEARTBEAT_INTERVAL_MS = 60000;  // Normal poll every 60 seconds
+const unsigned long DISCOVERY_POLL_MS = 3000;       // Fast 3-second poll during Discovery mode
 
 // Hardware Driver Objects
 DIYables_ILI9488_SPI tft(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
@@ -167,8 +190,9 @@ void printHelpMenu();
 void handleSerialCommand(String cmd);
 void syncWhitelistFromCloud();
 void checkForRemoteConfigUpdates();
-void sendHeartbeat();
+bool authenticateWithCloud();
 void uiDrawStandbyScreen();
+void uiDrawPendingDiscoveryScreen();
 
 // ==============================================================================
 // 5. FLASH NVS PERSISTENCE HANDLERS (Preferences)
@@ -185,19 +209,16 @@ void loadPersistentConfig() {
     current_config_version = prefs.getInt("cfg_ver", 1);
 
     // --- SMART WI-FI SELECTION (Same as QR Machine) ---
-    // 1. If configured via Cloud Web Portal or Serial, always honor it:
     if (has_remote_wifi && saved_ssid.length() > 0) {
         wifi_ssid = saved_ssid;
         wifi_pass = saved_pass;
         Serial.printf("[Config] 📶 Cloud/Saved Wi-Fi active: %s\n", wifi_ssid.c_str());
     } else if (wifi_ssid.length() > 0 && wifi_ssid != last_code_ssid) {
-        // 2. If developer updated credentials in sketch code, persist to Flash NVS:
         prefs.putString("ssid", wifi_ssid);
         prefs.putString("pass", wifi_pass);
         prefs.putString("code_ssid", wifi_ssid);
         Serial.printf("[Config] ⭐ New Wi-Fi from sketch code detected & applied: %s\n", wifi_ssid.c_str());
     } else if (saved_ssid.length() > 0) {
-        // 3. Fallback to saved
         wifi_ssid = saved_ssid;
         wifi_pass = saved_pass;
     }
@@ -206,22 +227,24 @@ void loadPersistentConfig() {
         server_base_url = saved_url;
     }
 
-    // Machine ID loading
-    if (saved_dev_id.length() > 0) {
+    // --- DYNAMIC FLEET IDENTITY RESOLUTION (ZERO-TOUCH) ---
+    if (saved_dev_id.length() > 0 && saved_dev_id != "AUTO" && saved_dev_id != "PENDING") {
         device_id = saved_dev_id;
         device_token = prefs.getString("token", "dev_token_" + device_id);
         Serial.printf("[Config] 💾 Machine ID loaded from Flash NVS: %s\n", device_id.c_str());
     } else {
-        // Save initial default
-        prefs.putString("dev_id", device_id);
-        prefs.putString("token", device_token);
+        device_id = "AUTO";
+        device_token = "dev_token_generic";
+        Serial.printf("[Config] 🌐 Zero-Touch Mode: Machine ID will be assigned by Cloud Gateway from MAC: %s\n", 
+                      getDeviceMacAddress().c_str());
     }
     prefs.end();
 
     Serial.println("\n==================================================================");
-    Serial.println("  >>> ⚡ GTECH ESP32 RFID VENDING CONTROLLER NODE <<<            ");
+    Serial.println("  >>> ⚡ GTECH ESP32 RFID ZERO-TOUCH VENDING CONTROLLER <<<      ");
     Serial.println("==================================================================");
     Serial.printf("  Device ID (Machine)  : %s\n", device_id.c_str());
+    Serial.printf("  Hardware MAC Address : %s\n", getDeviceMacAddress().c_str());
     Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.c_str());
     Serial.printf("  Cloud Server Base URL: %s\n", server_base_url.c_str());
     Serial.printf("  Local Cache Capacity : %d Cards\n", MAX_CACHED_CARDS);
@@ -250,7 +273,7 @@ void clearPersistentConfig() {
     prefs.begin("vending_cfg", false);
     prefs.clear();
     prefs.end();
-    Serial.println("[!] Flash NVS wiped.");
+    Serial.println("[!] Flash NVS wiped clean.");
 }
 
 // ==============================================================================
@@ -336,22 +359,25 @@ void uiDrawBootScreen() {
     tft.setCursor(30, 220);
     tft.setTextColor(COLOR_WHITE);
     tft.setTextSize(1);
-    tft.print("Machine ID    : ");
+    tft.print("Hardware MAC  : ");
     tft.setTextColor(COLOR_CYAN);
-    tft.println(device_id);
+    tft.println(getDeviceMacAddress());
 
     tft.setCursor(30, 245);
     tft.setTextColor(COLOR_WHITE);
-    tft.print("Firmware      : v2.5.0-rfid-tft-nvs");
+    tft.print("Machine ID    : ");
+    tft.setTextColor(COLOR_GREEN);
+    tft.println(device_id);
 
     tft.setCursor(30, 270);
-    tft.print("Capacity      : 1,000 Cards Cache");
+    tft.setTextColor(COLOR_WHITE);
+    tft.print("Firmware      : v2.5.0-rfid-zero-touch");
 
     tft.setCursor(30, 295);
-    tft.print("Display       : ILI9488 320x480 SPI");
+    tft.print("Capacity      : 1,000 Cards Cache");
 
     tft.setCursor(30, 320);
-    tft.print("Reader        : MFRC522 13.56MHz");
+    tft.print("Display       : ILI9488 320x480 SPI");
 
     // Footer
     tft.setCursor(45, 430);
@@ -381,11 +407,101 @@ void uiDrawWiFiConnectingScreen(const char* ssid) {
     deselectTFT();
 }
 
+/**
+ * Screen: Hardware Discovery & Zero-Touch Web Pairing Screen (Matches QR Machine)
+ * Shown when an unassigned ESP32 connects and waits for admin claim in Web Portal.
+ */
+void uiDrawPendingDiscoveryScreen() {
+    selectTFT();
+    tft.fillScreen(COLOR_BG);
+
+    // Top Blue Header
+    tft.fillRect(0, 0, TFT_WIDTH, 50, COLOR_BLUE);
+    tft.setCursor(15, 14);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(2);
+    tft.print("G-TECH SMART FLEET");
+
+    // Center Card
+    tft.fillRect(15, 65, 290, 395, COLOR_CARD);
+    tft.drawRect(15, 65, 290, 395, COLOR_BLUE);
+
+    // Discovery Badge
+    tft.fillRect(25, 80, 270, 35, COLOR_BG);
+    tft.drawRect(25, 80, 270, 35, COLOR_CYAN);
+    tft.setCursor(32, 90);
+    tft.setTextColor(COLOR_CYAN);
+    tft.setTextSize(2);
+    tft.print("NEW RFID DETECTED");
+
+    // Hardware Details
+    tft.setCursor(25, 135);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setTextSize(1);
+    tft.print("SILICON MAC ADDRESS:");
+
+    tft.setCursor(25, 155);
+    tft.setTextColor(COLOR_YELLOW);
+    tft.setTextSize(2);
+    tft.print(getDeviceMacAddress().c_str());
+
+    tft.setCursor(25, 195);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setTextSize(1);
+    tft.print("ASSIGNED IP ADDRESS:");
+
+    tft.setCursor(25, 215);
+    tft.setTextColor(COLOR_GREEN);
+    tft.setTextSize(2);
+    tft.print(WiFi.localIP().toString().c_str());
+
+    // Call to action
+    tft.fillRect(25, 260, 270, 105, COLOR_BG);
+    tft.drawRect(25, 260, 270, 105, COLOR_CARD_BORDER);
+
+    tft.setCursor(35, 275);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(2);
+    tft.print("READY TO PAIR");
+
+    tft.setCursor(35, 305);
+    tft.setTextColor(COLOR_CYAN);
+    tft.setTextSize(1);
+    tft.print("Open Web Portal to claim or assign");
+    tft.setCursor(35, 322);
+    tft.print("Machine ID in Discovery Queue.");
+
+    tft.setCursor(35, 345);
+    tft.setTextColor(COLOR_MUTED);
+    tft.print("Auto-checking every 3 sec...");
+
+    // Serial monitor prompt
+    tft.fillRect(25, 375, 270, 70, COLOR_BG);
+    tft.drawRect(25, 375, 270, 70, COLOR_CARD_BORDER);
+    tft.setCursor(35, 388);
+    tft.setTextColor(COLOR_YELLOW);
+    tft.setTextSize(1);
+    tft.print("Or Enter in Serial Monitor:");
+    tft.setCursor(35, 410);
+    tft.setTextColor(COLOR_GREEN);
+    tft.setTextSize(2);
+    tft.print("id:RFID-000001");
+
+    deselectTFT();
+
+    Serial.println("\n==================================================================");
+    Serial.println(">>> [DISCOVERY MODE] WAITING FOR MACHINE ID ASSIGNMENT <<<");
+    Serial.printf("  Hardware MAC : %s\n", getDeviceMacAddress().c_str());
+    Serial.printf("  Assigned IP  : %s\n", WiFi.localIP().toString().c_str());
+    Serial.println("  OPTION 1: Assign in Web Portal (http://www.gtechinfo.in)");
+    Serial.println("  OPTION 2: Type 'id:RFID-000001' in Serial Monitor now!");
+    Serial.println("==================================================================\n");
+}
+
 void uiDrawWiFiUpdatingScreen(const String& newSsid) {
     selectTFT();
     tft.fillScreen(COLOR_BG);
 
-    // Top Header Banner
     tft.fillRect(0, 0, TFT_WIDTH, 55, COLOR_HEADER);
     tft.drawFastHLine(0, 55, TFT_WIDTH, COLOR_CYAN);
 
@@ -394,7 +510,6 @@ void uiDrawWiFiUpdatingScreen(const String& newSsid) {
     tft.setTextSize(2);
     tft.print("CLOUD WI-FI UPDATE");
 
-    // Main Card
     tft.fillRoundRect(16, 80, 288, 330, 12, COLOR_CARD);
     tft.drawRoundRect(16, 80, 288, 330, 12, COLOR_CYAN);
 
@@ -431,6 +546,11 @@ void uiDrawWiFiUpdatingScreen(const String& newSsid) {
 }
 
 void uiDrawStandbyScreen() {
+    if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) {
+        uiDrawPendingDiscoveryScreen();
+        return;
+    }
+
     selectTFT();
     tft.fillScreen(COLOR_BG);
 
@@ -666,7 +786,84 @@ void triggerDispenseMotor(int pulse_ms) {
 }
 
 // ==============================================================================
-// 10. CACHE MANAGEMENT & CLOUD SYNC (1,000 Cards)
+// 10. CLOUD HANDSHAKE & DYNAMIC IDENTITY (ZERO-TOUCH)
+// ==============================================================================
+
+bool authenticateWithCloud() {
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    WiFiClient client;
+    HTTPClient http;
+    String endpoint = server_base_url + "/api/v1/device-gateway/authenticate";
+
+    String realMac = getDeviceMacAddress();
+    String chipId = "ESP32-CHIP-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+
+    Serial.printf("\n[Cloud] Authenticating Machine '%s' (MAC: %s, Chip: %s) with Server: %s...\n",
+                  device_id.c_str(), realMac.c_str(), chipId.c_str(), endpoint.c_str());
+    http.setConnectTimeout(3000);
+    http.setTimeout(3000);
+    http.begin(client, endpoint);
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<768> doc;
+    doc["device_id"]        = device_id;
+    doc["chip_id"]          = chipId;
+    doc["mac_address"]      = realMac;
+    doc["device_token"]     = device_token;
+    doc["firmware_version"] = "v2.5.0-rfid-zero-touch";
+    doc["boot_count"]       = 1;
+
+    String reqBody;
+    serializeJson(doc, reqBody);
+    int httpCode = http.POST(reqBody);
+
+    if (httpCode == 200) {
+        String resp = http.getString();
+        StaticJsonDocument<1024> respDoc;
+        deserializeJson(respDoc, resp);
+
+        if (respDoc.containsKey("device_id")) {
+            String assignedId = respDoc["device_id"].as<String>();
+            if (assignedId.length() > 0 && assignedId != "AUTO" && assignedId != "PENDING") {
+                bool idChanged = (assignedId != device_id);
+                device_id = assignedId;
+                device_token = "dev_token_" + device_id;
+
+                prefs.begin("vending_cfg", false);
+                prefs.putString("dev_id", device_id);
+                prefs.putString("token", device_token);
+                prefs.end();
+
+                if (idChanged) {
+                    Serial.println("\n==================================================================");
+                    Serial.printf(">>> [✓ DYNAMIC FLEET IDENTITY ASSIGNED] Machine ID: %s <<<\n", device_id.c_str());
+                    Serial.printf("    Bound to Hardware MAC: %s\n", realMac.c_str());
+                    Serial.println("    Saved to Flash NVS. Pulling authorized card whitelist...");
+                    Serial.println("==================================================================\n");
+                    playSuccessTone();
+                    uiDrawStandbyScreen();
+                    syncWhitelistFromCloud();
+                }
+            } else if (assignedId == "PENDING") {
+                Serial.printf("[Cloud] Device MAC %s in Discovery Queue. Waiting for admin claim in Portal.\n", realMac.c_str());
+                if (device_id != "PENDING") {
+                    device_id = "PENDING";
+                    uiDrawPendingDiscoveryScreen();
+                }
+            }
+        }
+        http.end();
+        return true;
+    } else {
+        Serial.printf("[Cloud] Gateway authentication response code: %d\n", httpCode);
+    }
+    http.end();
+    return false;
+}
+
+// ==============================================================================
+// 11. CACHE MANAGEMENT & CLOUD SYNC (1,000 Cards)
 // ==============================================================================
 
 int findCardInCache(const char* uid) {
@@ -680,6 +877,7 @@ int findCardInCache(const char* uid) {
 
 void syncWhitelistFromCloud() {
     if (WiFi.status() != WL_CONNECTED) return;
+    if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) return;
 
     Serial.println("[SYNC] Requesting authorized RFID card whitelist from Cloud...");
     HTTPClient http;
@@ -700,7 +898,7 @@ void syncWhitelistFromCloud() {
             // Check for Remote Wi-Fi or Machine ID updates sent from Cloud Portal
             if (doc.containsKey("device_id")) {
                 String cloudDev = doc["device_id"].as<String>();
-                if (cloudDev.length() > 0 && cloudDev != device_id) {
+                if (cloudDev.length() > 0 && cloudDev != "AUTO" && cloudDev != "PENDING" && cloudDev != device_id) {
                     Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDev.c_str());
                     device_id = cloudDev;
                     device_token = "dev_token_" + device_id;
@@ -780,8 +978,9 @@ void checkForRemoteConfigUpdates() {
     if (WiFi.status() != WL_CONNECTED) return;
 
     HTTPClient http;
-    String endpoint = server_base_url + "/api/v1/orders/qr-config/" + device_id;
-    http.setTimeout(4000);
+    String queryIdentifier = (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) ? getDeviceMacAddress() : device_id;
+    String endpoint = server_base_url + "/api/v1/orders/qr-config/" + queryIdentifier + "?mac=" + getDeviceMacAddress();
+    http.setTimeout(3500);
     http.begin(endpoint);
 
     int httpCode = http.GET();
@@ -797,15 +996,28 @@ void checkForRemoteConfigUpdates() {
 
             if (doc.containsKey("device_id")) {
                 String cloudDev = doc["device_id"].as<String>();
-                if (cloudDev.length() > 0 && cloudDev != device_id) {
-                    Serial.printf("[Config] 🏷️ Machine ID updated from Cloud: %s -> %s\n", device_id.c_str(), cloudDev.c_str());
-                    device_id = cloudDev;
-                    device_token = "dev_token_" + device_id;
-                    prefs.begin("vending_cfg", false);
-                    prefs.putString("dev_id", device_id);
-                    prefs.putString("token", device_token);
-                    prefs.end();
-                    uiDrawStandbyScreen();
+                if (cloudDev.length() > 0 && cloudDev != "AUTO" && cloudDev != "PENDING" && cloudDev.indexOf(':') == -1) {
+                    if (cloudDev != device_id) {
+                        Serial.println("\n==================================================================");
+                        Serial.printf(">>> [✓ DYNAMIC FLEET IDENTITY ASSIGNED] Machine ID: %s <<<\n", cloudDev.c_str());
+                        Serial.printf("    Bound to Hardware MAC: %s\n", getDeviceMacAddress().c_str());
+                        Serial.println("    Saved to Flash NVS. Initializing whitelist...");
+                        Serial.println("==================================================================\n");
+                        device_id = cloudDev;
+                        device_token = "dev_token_" + device_id;
+                        prefs.begin("vending_cfg", false);
+                        prefs.putString("dev_id", device_id);
+                        prefs.putString("token", device_token);
+                        prefs.end();
+                        playSuccessTone();
+                        uiDrawStandbyScreen();
+                        syncWhitelistFromCloud();
+                    }
+                } else if (cloudDev == "PENDING") {
+                    if (device_id != "PENDING") {
+                        device_id = "PENDING";
+                        uiDrawPendingDiscoveryScreen();
+                    }
                 }
             }
 
@@ -839,13 +1051,9 @@ void checkForRemoteConfigUpdates() {
     http.end();
 }
 
-void sendHeartbeat() {
-    if (WiFi.status() != WL_CONNECTED) return;
-    checkForRemoteConfigUpdates();
-}
-
 void flushOfflineBufferToCloud() {
     if (offlineBufferCount == 0 || WiFi.status() != WL_CONNECTED) return;
+    if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) return;
 
     Serial.printf("[OFFLINE] Flushing %d buffered offline vends to Cloud...\n", offlineBufferCount);
     HTTPClient http;
@@ -878,7 +1086,7 @@ void flushOfflineBufferToCloud() {
 }
 
 // ==============================================================================
-// 11. CARD TAP PROCESSOR (ONLINE & OFFLINE)
+// 12. CARD TAP PROCESSOR (ONLINE & OFFLINE)
 // ==============================================================================
 
 void processOfflineTap(const char* uid) {
@@ -922,6 +1130,13 @@ void processOfflineTap(const char* uid) {
 }
 
 void processCardTap(const char* uid) {
+    if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) {
+        Serial.println("[!] Machine is waiting for Device ID claim in Web Portal.");
+        playWarningTone();
+        uiDrawPendingDiscoveryScreen();
+        return;
+    }
+
     Serial.println("\n------------------------------------------------");
     Serial.printf("[TAP] Card Detected! UID: %s\n", uid);
 
@@ -1004,13 +1219,14 @@ void processCardTap(const char* uid) {
 }
 
 // ==============================================================================
-// 12. SERIAL COMMAND CONSOLE HANDLER
+// 13. SERIAL COMMAND CONSOLE HANDLER
 // ==============================================================================
 
 void handleSerialCommand(String cmd) {
-    if (cmd.startsWith("id:") || cmd.startsWith("ID:") || cmd.startsWith("dev:") || cmd.startsWith("DEV:")) {
+    if (cmd.startsWith("id:") || cmd.startsWith("ID:") || cmd.startsWith("dev:") || cmd.startsWith("DEV:") ||
+        cmd.startsWith("rfid-") || cmd.startsWith("RFID-") || cmd.startsWith("vm-") || cmd.startsWith("VM-")) {
         int colonIdx = cmd.indexOf(':');
-        String newId = cmd.substring(colonIdx + 1);
+        String newId = (colonIdx != -1) ? cmd.substring(colonIdx + 1) : cmd;
         newId.trim();
         newId.toUpperCase();
         if (newId.length() > 0) {
@@ -1022,9 +1238,11 @@ void handleSerialCommand(String cmd) {
             prefs.end();
             Serial.println("\n==================================================================");
             Serial.printf("[✓ Machine Identity Set] Device ID updated to: %s\n", device_id.c_str());
-            Serial.println("  Saved permanently into Flash NVS! Whitelist sync starting...");
+            Serial.printf("  Bound to Hardware MAC: %s\n", getDeviceMacAddress().c_str());
+            Serial.println("  Saved permanently into Flash NVS! Cloud sync starting...");
             Serial.println("==================================================================\n");
             if (WiFi.status() == WL_CONNECTED) {
+                authenticateWithCloud();
                 syncWhitelistFromCloud();
             }
             uiDrawStandbyScreen();
@@ -1061,22 +1279,22 @@ void handleSerialCommand(String cmd) {
         }
     } else if (cmd == "sync" || cmd == "SYNC") {
         Serial.println("\n[⚡ SYNC] Triggering immediate whitelist & config sync from Cloud...");
-        syncWhitelistFromCloud();
+        authenticateWithCloud();
         checkForRemoteConfigUpdates();
+        syncWhitelistFromCloud();
     } else if (cmd == "t" || cmd == "T" || cmd.equalsIgnoreCase("test")) {
         Serial.println("\n[⚡ MOTOR TEST] Actuating dispense relay motor (1.5s)...");
         triggerDispenseMotor(1500);
     } else if (cmd == "c" || cmd == "C" || cmd.equalsIgnoreCase("wipe")) {
         Serial.println("\n[🧹 NVS] Clearing all persistent settings from Flash NVS...");
-        prefs.begin("vending_cfg", false);
-        prefs.clear();
-        prefs.end();
-        Serial.println("[✓] NVS wiped clean! Rebooting ESP32...");
+        clearPersistentConfig();
+        Serial.println("[✓] NVS wiped clean! Rebooting ESP32 into Zero-Touch mode...");
         delay(500);
         ESP.restart();
     } else if (cmd == "status" || cmd == "s" || cmd == "S") {
         Serial.println("\n==================================================================");
         Serial.println(">>> 📊 MACHINE STATUS <<<");
+        Serial.printf("  Hardware MAC    : %s\n", getDeviceMacAddress().c_str());
         Serial.printf("  Device ID       : %s\n", device_id.c_str());
         Serial.printf("  Active Wi-Fi    : %s (Status: %s)\n", wifi_ssid.c_str(), WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
         if (WiFi.status() == WL_CONNECTED) {
@@ -1098,16 +1316,16 @@ void printHelpMenu() {
     Serial.println("==================================================================");
     Serial.println("  id:RFID-000001     - Set Device ID permanently into Flash NVS");
     Serial.println("  wifi:SSID,PASSWORD - Set Wi-Fi credentials & restart");
-    Serial.println("  sync               - Force immediate Cloud Whitelist & Config sync");
+    Serial.println("  sync               - Force immediate Cloud Handshake & Whitelist sync");
     Serial.println("  t                  - Test dispense relay motor hardware");
-    Serial.println("  status             - Display live network, IP, cache & heap status");
+    Serial.println("  status             - Display live MAC, IP, network, cache & heap status");
     Serial.println("  wipe               - Clear all Flash NVS persistent config & reboot");
     Serial.println("  ? or h             - Show this help menu");
     Serial.println("==================================================================\n");
 }
 
 // ==============================================================================
-// 13. SETUP & INITIALIZATION
+// 14. SETUP & INITIALIZATION
 // ==============================================================================
 
 void setup() {
@@ -1180,22 +1398,23 @@ void setup() {
         Serial.printf("\n[WIFI] * Connected! IP: %s\n", WiFi.localIP().toString().c_str());
         playSuccessTone();
 
-        // Initial whitelist download & remote config check
-        syncWhitelistFromCloud();
+        // 7. Cloud Gateway Handshake (Authenticates via hardware MAC & binds correct Device ID dynamically)
+        authenticateWithCloud();
         checkForRemoteConfigUpdates();
+        syncWhitelistFromCloud();
     } else {
         Serial.println("\n[WIFI] ! Wi-Fi Connection Failed. Running in OFFLINE CACHE MODE.");
         playWarningTone();
     }
 
-    // Draw main operational standby screen
+    // Draw main operational standby screen or pending discovery pairing screen
     uiDrawStandbyScreen();
     printHelpMenu();
-    Serial.println("\n[READY] Vending Machine is Ready. Tap an RFID card to vend!\n");
+    Serial.println("\n[READY] Vending Machine Node Active.\n");
 }
 
 // ==============================================================================
-// 14. MAIN LOOP
+// 15. MAIN LOOP
 // ==============================================================================
 
 void loop() {
@@ -1216,19 +1435,23 @@ void loop() {
             isWifiConnected = true;
             Serial.println("[WIFI] * Reconnected to Internet!");
             playSuccessTone();
+            authenticateWithCloud();
             uiDrawStandbyScreen();
             flushOfflineBufferToCloud();
             syncWhitelistFromCloud();
         }
 
-        // Heartbeat & Remote Cloud Config Poll every 60 seconds
-        if (currentMillis - lastHeartbeatTime > HEARTBEAT_INTERVAL_MS) {
+        // Adaptive polling: Check every 3 seconds if waiting for Claim (Zero-Touch discovery),
+        // or every 60 seconds once active and registered!
+        unsigned long pollInterval = (device_id == "AUTO" || device_id == "PENDING") ? DISCOVERY_POLL_MS : HEARTBEAT_INTERVAL_MS;
+
+        if (currentMillis - lastHeartbeatTime >= pollInterval) {
             lastHeartbeatTime = currentMillis;
-            sendHeartbeat();
+            checkForRemoteConfigUpdates();
         }
 
-        // Periodic whitelist sync every 5 minutes
-        if (currentMillis - lastCardSyncTime > SYNC_INTERVAL_MS) {
+        // Periodic whitelist sync every 5 minutes (only when active)
+        if (device_id != "AUTO" && device_id != "PENDING" && (currentMillis - lastCardSyncTime > SYNC_INTERVAL_MS)) {
             lastCardSyncTime = currentMillis;
             syncWhitelistFromCloud();
             flushOfflineBufferToCloud();
@@ -1241,7 +1464,12 @@ void loop() {
         }
     }
 
-    // 3. Check for RFID Card Tap
+    // 3. Check for RFID Card Tap (Only when machine is active, not in discovery mode)
+    if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) {
+        delay(50);
+        return;
+    }
+
     selectRFID();
     bool newCard = rfid.PICC_IsNewCardPresent();
     if (!newCard) {
