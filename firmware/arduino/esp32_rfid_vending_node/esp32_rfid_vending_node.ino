@@ -147,7 +147,7 @@ unsigned long lastCardSyncTime = 0;
 const unsigned long SYNC_INTERVAL_MS = 300000; // Auto-sync whitelist every 5 minutes
 
 // Hardware Driver Objects
-DIYables_TFT_SPI tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
+DIYables_ILI9488_SPI tft(TFT_WIDTH, TFT_HEIGHT, TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
 MFRC522 rfid(RFID_SS_PIN, RFID_RST_PIN);
 
 // ==============================================================================
