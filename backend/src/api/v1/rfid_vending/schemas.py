@@ -74,6 +74,12 @@ class RFIDVerifyTapResponse(BaseModel):
     used_today: int = 0
     dispense_pulse_ms: int = 1500
     message: str
+    employee_id: Optional[str] = None
+    write_data: Optional[str] = None
+    queue_index: Optional[int] = None
+    queue_total: Optional[int] = None
+    next_person: Optional[str] = None
+    next_employee_id: Optional[str] = None
 
 
 class RFIDOfflineSyncItem(BaseModel):
@@ -106,4 +112,28 @@ class RFIDLogItem(BaseModel):
 
 class EnrollModeToggle(BaseModel):
     enabled: bool
+
+
+class RFIDEnrollQueueItemCreate(BaseModel):
+    name: str
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    daily_limit: int = 1
+
+
+class RFIDEnrollQueueStartRequest(BaseModel):
+    device_id: str
+    client_id: Optional[str] = None
+    mode: str = "pattern"  # "pattern" or "custom"
+    vendor_prefix: str = "GTECH"
+    client_code: str = "SMT"
+    start_num: int = 1
+    count: int = 100
+    pad_digits: int = 4
+    name_prefix: str = "Person"
+    designation: Optional[str] = None
+    daily_limit: int = 1
+    write_to_rfid_block: bool = True
+    items: Optional[List[RFIDEnrollQueueItemCreate]] = None
+
 

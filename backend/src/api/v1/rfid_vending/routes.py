@@ -34,6 +34,8 @@ from src.api.v1.rfid_vending.schemas import (
     RFIDOfflineSyncRequest,
     RFIDLogItem,
     EnrollModeToggle,
+    RFIDEnrollQueueItemCreate,
+    RFIDEnrollQueueStartRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,21 @@ router = APIRouter(prefix="/rfid-vending", tags=["RFID Vending Subsystem"])
 # In-memory storage for active Method C Live Tap Enroll sessions
 # device_id -> { "active": bool, "last_uid": str, "timestamp": datetime }
 _ENROLL_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+# In-memory storage for active Sequential Auto-Enroll Queues (Method D: 100-Card Programmer)
+# device_id -> {
+#     "device_id": str,
+#     "client_id": str,
+#     "total": int,
+#     "current_index": int,
+#     "active": bool,
+#     "started_at": str,
+#     "write_to_rfid_block": bool,
+#     "last_enrolled": dict,
+#     "items": list[dict]
+# }
+_ENROLL_QUEUES: Dict[str, Dict[str, Any]] = {}
+
 
 
 def _clean_uid(raw_uid: str) -> str:
@@ -578,6 +595,310 @@ def get_enroll_status(
 
 
 # ==============================================================================
+# 4B. METHOD D: SEQUENTIAL 100-CARD AUTO-PROGRAMMER & ENROLL QUEUE
+# ==============================================================================
+
+@router.post("/devices/{device_id}/enroll-queue")
+def start_enroll_queue(
+    device_id: str,
+    payload: RFIDEnrollQueueStartRequest,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+):
+    """
+    [Method D: Sequential Auto-Enroll & Writer]
+    Initializes a sequential card enrollment queue (up to 1,000 cards).
+    Supports:
+    - Pattern Generator: Vendor (GTECH) + Client (SMT) + Sequence (0001..0100)
+    - Custom list of people with Name, Designation, and Daily Limit
+    When active, tapping physical blank cards sequentially encodes and enrolls them 1-by-1.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="Device not found.")
+
+    target_client_id = context.client_id
+    if context.role == "MANUFACTURER_ADMIN" and payload.client_id:
+        target_client_id = payload.client_id
+    if not target_client_id:
+        target_client_id = dev.client_id
+
+    items = []
+    if payload.items and len(payload.items) > 0:
+        for idx, itm in enumerate(payload.items):
+            emp_id = itm.employee_id or f"{payload.vendor_prefix.strip()}-{payload.client_code.strip()}-{str(idx + 1).zfill(payload.pad_digits)}"
+            items.append({
+                "index": idx,
+                "name": itm.name.strip(),
+                "designation": (itm.designation or "").strip() or None,
+                "employee_id": emp_id,
+                "daily_limit": itm.daily_limit,
+                "card_uid": None,
+                "status": "pending",
+                "enrolled_at": None,
+            })
+    else:
+        # Pattern generator
+        count = min(max(payload.count, 1), 1000)
+        start = payload.start_num
+        for i in range(count):
+            seq = start + i
+            seq_str = str(seq).zfill(payload.pad_digits)
+            emp_id = f"{payload.vendor_prefix.strip()}-{payload.client_code.strip()}-{seq_str}"
+            p_name = f"{payload.name_prefix.strip()} {seq}"
+            items.append({
+                "index": i,
+                "name": p_name,
+                "designation": payload.designation,
+                "employee_id": emp_id,
+                "daily_limit": payload.daily_limit,
+                "card_uid": None,
+                "status": "pending",
+                "enrolled_at": None,
+            })
+
+    key = dev.device_id
+    queue_state = {
+        "device_id": key,
+        "client_id": target_client_id,
+        "vendor_prefix": payload.vendor_prefix,
+        "client_code": payload.client_code,
+        "total": len(items),
+        "current_index": 0,
+        "active": True,
+        "started_at": utc_now().isoformat(),
+        "write_to_rfid_block": payload.write_to_rfid_block,
+        "last_enrolled": None,
+        "items": items,
+    }
+    _ENROLL_QUEUES[key] = queue_state
+    if str(dev.id) != key:
+        _ENROLL_QUEUES[str(dev.id)] = queue_state
+
+    logger.info(f"[Enroll Queue] Started sequential programmer on {key} for {len(items)} cards.")
+
+    return {
+        "success": True,
+        "device_id": key,
+        "total": len(items),
+        "active": True,
+        "first_person": items[0] if items else None,
+        "message": f"Sequential Enroll Queue initialized with {len(items)} persons for {key}",
+    }
+
+
+@router.get("/devices/{device_id}/enroll-queue")
+def get_enroll_queue_status(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Method D] Polls live sequential enrollment progress for the physical RFID machine.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    key = dev.device_id if dev else device_id
+
+    q = _ENROLL_QUEUES.get(key) or _ENROLL_QUEUES.get(str(dev.id) if dev else "")
+    if not q:
+        return {
+            "active": False,
+            "device_id": key,
+            "total": 0,
+            "current_index": 0,
+            "completed": 0,
+            "remaining": 0,
+            "items": [],
+        }
+
+    idx = q.get("current_index", 0)
+    items = q.get("items", [])
+    current_person = items[idx] if idx < len(items) else None
+    completed = sum(1 for it in items if it.get("status") == "enrolled")
+
+    return {
+        "active": q.get("active", False),
+        "device_id": key,
+        "total": q.get("total", len(items)),
+        "current_index": idx,
+        "completed": completed,
+        "remaining": max(0, len(items) - completed),
+        "current_person": current_person,
+        "last_enrolled": q.get("last_enrolled"),
+        "write_to_rfid_block": q.get("write_to_rfid_block", True),
+        "items": items,
+    }
+
+
+@router.post("/devices/{device_id}/enroll-queue/cancel")
+def cancel_enroll_queue(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Method D] Pause or stop active sequential enrollment queue.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    key = dev.device_id if dev else device_id
+    if key in _ENROLL_QUEUES:
+        _ENROLL_QUEUES[key]["active"] = False
+    if dev and str(dev.id) in _ENROLL_QUEUES:
+        _ENROLL_QUEUES[str(dev.id)]["active"] = False
+
+    return {"success": True, "device_id": key, "message": f"Enrollment queue stopped for {key}"}
+
+
+@router.post("/devices/{device_id}/enroll-queue/upload")
+async def upload_enroll_queue_spreadsheet(
+    device_id: str,
+    file: UploadFile = File(...),
+    vendor_prefix: str = Query("GTECH"),
+    client_code: str = Query("SMT"),
+    write_to_rfid_block: bool = Query(True),
+    daily_limit: int = Query(1),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+):
+    """
+    [Method D] Upload an Excel (.xlsx) or CSV file with names/designations to initiate
+    the 100-card sequential programmer queue on the machine.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="Device not found.")
+
+    target_client_id = context.client_id or dev.client_id
+
+    content = await file.read()
+    filename = file.filename.lower() if file.filename else "upload.csv"
+
+    parsed_rows = []
+    if filename.endswith(".xlsx") or filename.endswith(".xls"):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+            sheet = wb.active
+            headers = [str(cell.value or "").strip().lower() for cell in next(sheet.iter_rows())]
+            for row_cells in sheet.iter_rows(min_row=2, values_only=True):
+                if not any(row_cells):
+                    continue
+                row_dict = {}
+                for idx, val in enumerate(row_cells):
+                    if idx < len(headers):
+                        row_dict[headers[idx]] = str(val or "").strip()
+                parsed_rows.append(row_dict)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse Excel file: {str(e)}")
+    else:
+        text_stream = io.StringIO(content.decode("utf-8-sig", errors="ignore"))
+        reader = csv.DictReader(text_stream)
+        for row in reader:
+            cleaned_row = {k.strip().lower(): (v or "").strip() for k, v in row.items() if k}
+            parsed_rows.append(cleaned_row)
+
+    if not parsed_rows:
+        raise HTTPException(status_code=400, detail="Spreadsheet contains no data rows.")
+
+    items = []
+    for idx, r in enumerate(parsed_rows):
+        name = r.get("name") or r.get("cardholder") or r.get("username") or r.get("employee_name") or f"Person {idx+1}"
+        designation = r.get("designation") or r.get("department") or r.get("role") or None
+        seq_str = str(idx + 1).zfill(4)
+        emp_id = r.get("employee_id") or r.get("empid") or r.get("id") or f"{vendor_prefix}-{client_code}-{seq_str}"
+        try:
+            lim = int(r.get("daily_limit") or r.get("limit") or daily_limit)
+        except Exception:
+            lim = daily_limit
+
+        items.append({
+            "index": idx,
+            "name": name,
+            "designation": designation,
+            "employee_id": emp_id,
+            "daily_limit": lim,
+            "card_uid": None,
+            "status": "pending",
+            "enrolled_at": None,
+        })
+
+    key = dev.device_id
+    queue_state = {
+        "device_id": key,
+        "client_id": target_client_id,
+        "vendor_prefix": vendor_prefix,
+        "client_code": client_code,
+        "total": len(items),
+        "current_index": 0,
+        "active": True,
+        "started_at": utc_now().isoformat(),
+        "write_to_rfid_block": write_to_rfid_block,
+        "last_enrolled": None,
+        "items": items,
+    }
+    _ENROLL_QUEUES[key] = queue_state
+    if str(dev.id) != key:
+        _ENROLL_QUEUES[str(dev.id)] = queue_state
+
+    return {
+        "success": True,
+        "device_id": key,
+        "total": len(items),
+        "active": True,
+        "first_person": items[0] if items else None,
+        "message": f"Loaded {len(items)} persons from {file.filename} into sequential programmer queue.",
+    }
+
+
+@router.get("/devices/{device_id}/enroll-queue/export")
+def export_enroll_queue_csv(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    [Method D] Downloads the sequential enrollment results as a clean CSV report.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    key = dev.device_id if dev else device_id
+
+    q = _ENROLL_QUEUES.get(key) or _ENROLL_QUEUES.get(str(dev.id) if dev else "")
+    if not q or not q.get("items"):
+        raise HTTPException(status_code=404, detail="No enrollment queue found for this machine.")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["#", "Name", "Employee ID", "Designation", "Card UID", "Daily Limit", "Status", "Enrolled At"])
+
+    for itm in q["items"]:
+        writer.writerow([
+            itm.get("index", 0) + 1,
+            itm.get("name", ""),
+            itm.get("employee_id", ""),
+            itm.get("designation", ""),
+            itm.get("card_uid", "") or "NOT_TAPPED",
+            itm.get("daily_limit", 1),
+            itm.get("status", "pending"),
+            itm.get("enrolled_at", ""),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=enrolled_cards_{key}.csv"},
+    )
+
+
+
+# ==============================================================================
 # 5. HARDWARE ENDPOINTS: TAP VERIFICATION & FULL 1,000-CARD SYNC FOR ESP32
 # ==============================================================================
 
@@ -624,6 +945,106 @@ def verify_device_tap(
         enroll_sess["last_uid"] = clean_uid
         enroll_sess["timestamp"] = utc_now().isoformat()
         logger.info(f"[Enroll Mode] Captured card {clean_uid} on device {dev_key}")
+
+    # Check Method D: Sequential Auto-Enroll & Card Writer Queue (100-Card Auto-Programmer)
+    queue_data = _ENROLL_QUEUES.get(dev_key) or _ENROLL_QUEUES.get(str(dev.id))
+    if queue_data and queue_data.get("active"):
+        idx = queue_data.get("current_index", 0)
+        items = queue_data.get("items", [])
+        if idx < len(items):
+            current_person = items[idx]
+            current_person["card_uid"] = clean_uid
+            current_person["status"] = "enrolled"
+            current_person["enrolled_at"] = utc_now().isoformat()
+
+            target_client = queue_data.get("client_id") or dev.client_id
+            emp_id = current_person.get("employee_id") or f"EMP-{idx+1:04d}"
+            person_name = current_person.get("name") or f"Person {idx+1}"
+            dept_str = current_person.get("designation") or "Sequential Enrolled"
+            daily_limit = int(current_person.get("daily_limit", 1))
+
+            # Upsert into database
+            existing_card = db.query(RFIDVendingCard).filter(
+                RFIDVendingCard.client_id == target_client,
+                RFIDVendingCard.card_uid == clean_uid
+            ).first()
+
+            if existing_card:
+                existing_card.username = person_name
+                existing_card.department = f"{dept_str} ({emp_id})".strip()
+                existing_card.daily_limit = daily_limit
+                existing_card.is_active = True
+                existing_card.device_id = dev.id
+                existing_card.notes = f"Sequential Programmer: {emp_id}"
+            else:
+                new_card = RFIDVendingCard(
+                    client_id=target_client,
+                    device_id=dev.id,
+                    card_uid=clean_uid,
+                    username=person_name,
+                    department=f"{dept_str} ({emp_id})".strip(),
+                    daily_limit=daily_limit,
+                    is_active=True,
+                    notes=f"Sequential Programmer: {emp_id}",
+                )
+                db.add(new_card)
+
+            # Log to RFID telemetry
+            log_entry = RFIDVendingLog(
+                client_id=target_client,
+                device_id=dev.id,
+                card_uid=clean_uid,
+                username=person_name,
+                department=dept_str,
+                status="ENROLL_SUCCESS",
+                pulse_duration_ms=0,
+                notes=f"Auto-Programmed #{idx+1}/{queue_data['total']}: {emp_id}",
+            )
+            db.add(log_entry)
+
+            # Advance pointer
+            queue_data["current_index"] = idx + 1
+            queue_data["last_enrolled"] = {
+                "name": person_name,
+                "employee_id": emp_id,
+                "card_uid": clean_uid,
+                "index": idx + 1,
+                "total": queue_data["total"],
+                "timestamp": utc_now().isoformat(),
+            }
+
+            next_person = None
+            next_emp_id = None
+            if queue_data["current_index"] < len(items):
+                next_p = items[queue_data["current_index"]]
+                next_person = next_p.get("name")
+                next_emp_id = next_p.get("employee_id")
+            else:
+                queue_data["active"] = False
+
+            db.commit()
+
+            write_str = emp_id if queue_data.get("write_to_rfid_block", True) else None
+            logger.info(f"[Queue Programmer] {dev_key} tapped card {clean_uid} -> Enrolled #{idx+1}/{queue_data['total']} {person_name} ({emp_id})")
+
+            return RFIDVerifyTapResponse(
+                authorized=True,
+                status="ENROLL_SUCCESS",
+                card_uid=clean_uid,
+                username=person_name,
+                employee_id=emp_id,
+                write_data=write_str,
+                department=dept_str,
+                daily_limit=daily_limit,
+                used_today=0,
+                dispense_pulse_ms=0,
+                message=f"Enrolled #{idx+1}/{queue_data['total']}: {person_name} ({emp_id})",
+                queue_index=idx + 1,
+                queue_total=queue_data["total"],
+                next_person=next_person,
+                next_employee_id=next_emp_id,
+            )
+
 
     # Look up card in database for this client or machine
     card = db.query(RFIDVendingCard).filter(

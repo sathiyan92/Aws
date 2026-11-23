@@ -193,6 +193,9 @@ void checkForRemoteConfigUpdates();
 bool authenticateWithCloud();
 void uiDrawStandbyScreen();
 void uiDrawPendingDiscoveryScreen();
+bool writeSerialToCardSector(const char* serialText);
+void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* uid, const char* nextName, const char* nextEmpId, int qIndex, int qTotal);
+
 
 // ==============================================================================
 // 5. FLASH NVS PERSISTENCE HANDLERS (Preferences)
@@ -770,6 +773,128 @@ void uiDrawVendCompleteScreen() {
 }
 
 // ==============================================================================
+// 8B. MIFARE CLASSIC SECTOR DATA WRITER & ENROLLMENT UI
+// ==============================================================================
+
+bool writeSerialToCardSector(const char* serialText) {
+    if (!serialText || strlen(serialText) == 0) return false;
+
+    MFRC522::MIFARE_Key key;
+    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF; // Factory default Key A
+
+    byte blockAddr = 4; // Sector 1 Block 0 (Block 4: Standard user data block)
+    byte buffer[16];
+    memset(buffer, ' ', 16); // Pad 16-byte block with spaces
+    int len = strlen(serialText);
+    if (len > 16) len = 16;
+    memcpy(buffer, serialText, len);
+
+    selectRFID();
+    MFRC522::StatusCode status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
+        MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockAddr, &key, &(rfid.uid)
+    );
+
+    if (status != MFRC522::STATUS_OK) {
+        Serial.printf("[RFID WRITE] ! Auth Key A for block %d returned: %s\n", blockAddr, rfid.GetStatusCodeName(status));
+        deselectRFID();
+        return false;
+    }
+
+    status = (MFRC522::StatusCode) rfid.MIFARE_Write(blockAddr, buffer, 16);
+    if (status != MFRC522::STATUS_OK) {
+        Serial.printf("[RFID WRITE] ! MIFARE_Write to block %d returned: %s\n", blockAddr, rfid.GetStatusCodeName(status));
+        deselectRFID();
+        return false;
+    }
+
+    Serial.printf("[RFID WRITE] ✓ SUCCESS! Permanently wrote '%s' into Sector 1 Block 4\n", serialText);
+    deselectRFID();
+    return true;
+}
+
+void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* uid, const char* nextName, const char* nextEmpId, int qIndex, int qTotal) {
+    selectTFT();
+
+    // Main Card Panel
+    tft.fillRoundRect(16, 80, 288, 380, 12, COLOR_CARD);
+    tft.drawRoundRect(16, 80, 288, 380, 12, COLOR_GREEN);
+
+    // Green Header Banner
+    tft.fillRoundRect(30, 95, 260, 42, 6, COLOR_GREEN);
+    tft.setCursor(45, 107);
+    tft.setTextColor(COLOR_BLACK);
+    tft.setTextSize(2);
+    tft.print("CARD PROGRAMMED!");
+
+    // Sequence / Queue Badge
+    tft.setCursor(30, 152);
+    tft.setTextColor(COLOR_CYAN);
+    tft.setTextSize(2);
+    tft.printf("CARD #%d OF %d", qIndex, qTotal);
+
+    // Enrolled Cardholder Name
+    tft.setCursor(30, 185);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(2);
+    tft.print(name);
+
+    // Employee ID / Written Serial Pattern
+    tft.setCursor(30, 215);
+    tft.setTextColor(COLOR_YELLOW);
+    tft.setTextSize(2);
+    tft.printf("ID: %s", empId);
+
+    // Hardware Card UID
+    tft.setCursor(30, 245);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setTextSize(1);
+    tft.printf("Physical UID: %s", uid);
+
+    // Divider Line
+    tft.drawFastHLine(30, 265, 260, COLOR_CARD_BORDER);
+
+    // Next Card Box or Completion Box
+    if (nextName && nextName[0] != '\0') {
+        tft.fillRoundRect(30, 280, 260, 100, 6, COLOR_BG);
+        tft.drawRoundRect(30, 280, 260, 100, 6, COLOR_CYAN);
+
+        tft.setCursor(40, 292);
+        tft.setTextColor(COLOR_CYAN);
+        tft.setTextSize(1);
+        tft.print(">>> NEXT IN QUEUE <<<");
+
+        tft.setCursor(40, 310);
+        tft.setTextColor(COLOR_WHITE);
+        tft.setTextSize(2);
+        tft.print(nextName);
+
+        tft.setCursor(40, 335);
+        tft.setTextColor(COLOR_YELLOW);
+        tft.setTextSize(1);
+        tft.printf("Target ID: %s", nextEmpId ? nextEmpId : "");
+
+        tft.setCursor(40, 355);
+        tft.setTextColor(COLOR_GREEN);
+        tft.setTextSize(1);
+        tft.print("TAP BLANK CARD NOW...");
+    } else {
+        tft.fillRoundRect(30, 285, 260, 90, 6, COLOR_GREEN);
+        tft.setCursor(45, 305);
+        tft.setTextColor(COLOR_BLACK);
+        tft.setTextSize(2);
+        tft.print("ALL CARDS DONE!");
+
+        tft.setCursor(45, 335);
+        tft.setTextColor(COLOR_BLACK);
+        tft.setTextSize(1);
+        tft.printf("Successfully enrolled %d cards.", qTotal);
+    }
+
+    deselectTFT();
+}
+
+
+// ==============================================================================
 // 9. MOTOR RELAY CONTROL
 // ==============================================================================
 
@@ -1167,7 +1292,7 @@ void processCardTap(const char* uid) {
 
         if (httpCode == HTTP_CODE_OK) {
             String responseStr = http.getString();
-            StaticJsonDocument<512> resp;
+            StaticJsonDocument<1024> resp;
             deserializeJson(resp, responseStr);
 
             bool authorized = resp["authorized"] | false;
@@ -1178,7 +1303,56 @@ void processCardTap(const char* uid) {
             int used = resp["used_today"] | 0;
             int limit = resp["daily_limit"] | 1;
 
-            if (authorized && strcmp(status, "DISPENSED_SUCCESS") == 0) {
+            // Scenario A: Sequential 100-Card Enrollment / Hardware Encoding
+            if (strcmp(status, "ENROLL_SUCCESS") == 0) {
+                const char* empId = resp["employee_id"] | "";
+                const char* writeData = resp["write_data"] | "";
+                const char* nextName = resp["next_person"] | "";
+                const char* nextEmpId = resp["next_employee_id"] | "";
+                int qIndex = resp["queue_index"] | 1;
+                int qTotal = resp["queue_total"] | 1;
+
+                Serial.println("\n==================================================================");
+                Serial.printf(">>> [✓ SEQUENTIAL CARD PROGRAMMED] Card #%d of %d <<<\n", qIndex, qTotal);
+                Serial.printf("  Person Name   : %s\n", username);
+                Serial.printf("  Employee ID   : %s\n", empId);
+                Serial.printf("  Hardware UID  : %s\n", uid);
+                if (nextName[0]) {
+                    Serial.printf("  Next In Queue : %s (%s)\n", nextName, nextEmpId);
+                } else {
+                    Serial.println("  Queue Status  : ALL CARDS FULLY ENROLLED!");
+                }
+                Serial.println("==================================================================\n");
+
+                // Write sequence data to card sector 1 block 4 if enabled
+                if (writeData && writeData[0] != '\0') {
+                    writeSerialToCardSector(writeData);
+                }
+
+                // Add to local RAM whitelist immediately so card works offline
+                if (totalCachedCards < MAX_CACHED_CARDS) {
+                    int existingIdx = findCardInCache(uid);
+                    int targetIdx = (existingIdx >= 0) ? existingIdx : totalCachedCards;
+                    strncpy(localCardCache[targetIdx].uid, uid, sizeof(localCardCache[0].uid) - 1);
+                    strncpy(localCardCache[targetIdx].name, username, sizeof(localCardCache[0].name) - 1);
+                    localCardCache[targetIdx].daily_limit = limit;
+                    localCardCache[targetIdx].used_today = 0;
+                    if (existingIdx < 0) totalCachedCards++;
+                }
+
+                // Distinct Happy Double-Chirp Tone
+                beep(2400, 80);
+                delay(50);
+                beep(3200, 140);
+
+                uiDrawCardEnrolledScreen(username, empId, uid, nextName, nextEmpId, qIndex, qTotal);
+                delay(2200);
+
+                if (!nextName || nextName[0] == '\0') {
+                    uiDrawStandbyScreen();
+                }
+            } else if (authorized && strcmp(status, "DISPENSED_SUCCESS") == 0) {
+
                 Serial.printf("[VERIFY] ✓ ACCESS GRANTED! Welcome %s (%d/%d)\n", username, used, limit);
                 playSuccessTone();
                 uiDrawDispenseScreen(username, used, limit, pulse);
@@ -1492,14 +1666,17 @@ void loop() {
         sprintf(byteHex, "%02X", rfid.uid.uidByte[i]);
         strcat(uidString, byteHex);
     }
+    deselectRFID();
 
-    // Halt PICC and stop encryption on PCD
+    // Process the tapped card with full TFT display feedback and auto-enrollment
+    processCardTap(uidString);
+
+    // Halt PICC and stop crypto after tap processing and writing is finished
+    selectRFID();
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
     deselectRFID();
 
-    // Process the tapped card with full TFT display feedback
-    processCardTap(uidString);
 
     // Debounce pause so single tap doesn't double-trigger
     delay(1000);

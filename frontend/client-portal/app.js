@@ -2749,3 +2749,252 @@ async function handleVendorBankSelfSubmit(e) {
     }
 }
 window.handleVendorBankSelfSubmit = handleVendorBankSelfSubmit;
+
+
+// ==============================================================================
+// METHOD D: SEQUENTIAL 100-CARD AUTO-PROGRAMMER & WRITER
+// ==============================================================================
+
+let seqProgrammerTimer = null;
+let currentSeqQueueData = null;
+
+window.openSequentialCardProgrammer = function() {
+    const devSelect = document.getElementById("seqProgrammerDeviceSelect");
+    if (devSelect) {
+        devSelect.innerHTML = '';
+        const devList = (typeof state !== 'undefined' && state.devices) ? state.devices : [];
+        devList.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || d.device_type || 'RFID Node'})`;
+            devSelect.appendChild(opt);
+        });
+        if (devList.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "RFID-000001";
+            opt.textContent = "RFID-000001 (Default RFID Vending Machine)";
+            devSelect.appendChild(opt);
+        }
+    }
+
+    document.getElementById("seqProgrammerConfigView").style.display = "block";
+    document.getElementById("seqProgrammerActiveView").style.display = "none";
+    updateSeqPatternPreview();
+
+    document.getElementById("modalSequentialCardProgrammer")?.classList.add("open");
+};
+
+window.closeSequentialCardProgrammer = function() {
+    if (seqProgrammerTimer) {
+        clearInterval(seqProgrammerTimer);
+        seqProgrammerTimer = null;
+    }
+    document.getElementById("modalSequentialCardProgrammer")?.classList.remove("open");
+};
+
+window.switchSeqProgrammerMode = function(mode) {
+    const isPattern = (mode === 'pattern');
+    document.getElementById("seqModePatternForm").style.display = isPattern ? "block" : "none";
+    document.getElementById("seqModeUploadForm").style.display = isPattern ? "none" : "block";
+
+    document.getElementById("seqTabPatternBtn").className = isPattern ? "btn btn-sm btn-primary" : "btn btn-sm btn-secondary";
+    document.getElementById("seqTabUploadBtn").className = isPattern ? "btn btn-sm btn-secondary" : "btn btn-sm btn-primary";
+};
+
+window.updateSeqPatternPreview = function() {
+    const v = (document.getElementById("seqVendorPrefix")?.value || "GTECH").trim();
+    const c = (document.getElementById("seqClientCode")?.value || "SMT").trim();
+    const start = parseInt(document.getElementById("seqStartNum")?.value) || 1;
+    const count = parseInt(document.getElementById("seqTotalCount")?.value) || 100;
+    const pad = parseInt(document.getElementById("seqPadDigits")?.value) || 4;
+
+    const startStr = String(start).padStart(pad, '0');
+    const endStr = String(start + count - 1).padStart(pad, '0');
+    const preview = `${v}-${c}-${startStr} through ${v}-${c}-${endStr} (${count} cards)`;
+    const el = document.getElementById("seqPatternPreviewText");
+    if (el) el.textContent = preview;
+};
+
+window.downloadSeqTemplate = function() {
+    const csvContent = "data:text/csv;charset=utf-8,Name,Designation,Employee ID,Daily Limit\nRajesh Kumar,Operations,GTECH-SMT-0001,1\nPriya Sharma,Quality Control,GTECH-SMT-0002,1\nSuresh Raina,Production,GTECH-SMT-0003,1\nAnita Desai,Engineering,GTECH-SMT-0004,1\n";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "100_person_enroll_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
+window.launchSequentialEnrollQueue = async function() {
+    const devId = document.getElementById("seqProgrammerDeviceSelect")?.value || "RFID-000001";
+    const isPattern = (document.getElementById("seqModePatternForm").style.display !== "none");
+    const writeBlock = document.getElementById("seqWriteBlockCheck")?.checked ?? true;
+
+    try {
+        if (isPattern) {
+            const v = (document.getElementById("seqVendorPrefix")?.value || "GTECH").trim();
+            const c = (document.getElementById("seqClientCode")?.value || "SMT").trim();
+            const start = parseInt(document.getElementById("seqStartNum")?.value) || 1;
+            const count = parseInt(document.getElementById("seqTotalCount")?.value) || 100;
+            const pad = parseInt(document.getElementById("seqPadDigits")?.value) || 4;
+            const namePrefix = (document.getElementById("seqNamePrefix")?.value || "Employee").trim();
+            const designation = (document.getElementById("seqDesignation")?.value || "").trim() || undefined;
+            const limit = parseInt(document.getElementById("seqDailyLimit")?.value) || 1;
+
+            const payload = {
+                device_id: devId,
+                mode: "pattern",
+                vendor_prefix: v,
+                client_code: c,
+                start_num: start,
+                count: count,
+                pad_digits: pad,
+                name_prefix: namePrefix,
+                designation: designation,
+                daily_limit: limit,
+                write_to_rfid_block: writeBlock
+            };
+
+            const res = await apiRequest(`/rfid-vending/devices/${devId}/enroll-queue`, {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+
+            if (res && res.success) {
+                showToast(`🚀 ${count}-Card Sequential Programmer initialized on ${devId}!`, "success");
+                enterSeqActiveMonitor(devId);
+            }
+        } else {
+            const fileInput = document.getElementById("seqSpreadsheetFile");
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                showToast("Please select a spreadsheet file (.xlsx or .csv)", "danger");
+                return;
+            }
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const v = (document.getElementById("seqVendorPrefix")?.value || "GTECH").trim();
+            const c = (document.getElementById("seqClientCode")?.value || "SMT").trim();
+            const limit = parseInt(document.getElementById("seqDailyLimit")?.value) || 1;
+
+            const token = (typeof state !== 'undefined' && state.token) ? state.token : localStorage.getItem("auth_token");
+            const res = await fetch(`/api/v1/rfid-vending/devices/${devId}/enroll-queue/upload?vendor_prefix=${encodeURIComponent(v)}&client_code=${encodeURIComponent(c)}&write_to_rfid_block=${writeBlock}&daily_limit=${limit}`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${token}` },
+                body: formData
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast(`🚀 Loaded ${data.total} people into Sequential Programmer queue!`, "success");
+                enterSeqActiveMonitor(devId);
+            } else {
+                showToast(data.detail || "Failed to parse spreadsheet", "danger");
+            }
+        }
+    } catch (e) {
+        showToast("Error launching programmer session: " + (e.message || e), "danger");
+    }
+};
+
+window.enterSeqActiveMonitor = function(deviceId) {
+    document.getElementById("seqProgrammerConfigView").style.display = "none";
+    document.getElementById("seqProgrammerActiveView").style.display = "block";
+    setElText("seqListeningMachineLabel", deviceId);
+
+    if (seqProgrammerTimer) clearInterval(seqProgrammerTimer);
+    pollSeqQueueStatus(deviceId);
+    seqProgrammerTimer = setInterval(() => pollSeqQueueStatus(deviceId), 1000);
+};
+
+window.pollSeqQueueStatus = async function(deviceId) {
+    try {
+        const res = await apiRequest(`/rfid-vending/devices/${deviceId}/enroll-queue`);
+        if (!res) return;
+        currentSeqQueueData = res;
+
+        const total = res.total || 0;
+        const completed = res.completed || 0;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        setElText("seqProgressCount", `${completed} / ${total} Cards`);
+        setElText("seqProgressPct", `${pct}%`);
+        const bar = document.getElementById("seqProgressBar");
+        if (bar) bar.style.width = `${pct}%`;
+
+        const curr = res.current_person;
+        const targetBox = document.getElementById("seqActiveTargetCardBox");
+
+        if (curr) {
+            setElText("seqTargetPersonName", curr.name);
+            setElText("seqTargetEmpId", `ID: ${curr.employee_id}`);
+            setElText("seqTargetDept", `Dept: ${curr.designation || 'General'}`);
+            setElText("seqTargetCardIndex", (curr.index + 1));
+            if (targetBox) {
+                targetBox.style.borderColor = "#38bdf8";
+                targetBox.style.background = "linear-gradient(135deg, rgba(30,58,138,0.25), rgba(16,185,129,0.15))";
+            }
+        } else if (completed >= total && total > 0) {
+            setElText("seqTargetPersonName", "🎉 ALL CARDS ENROLLED!");
+            setElText("seqTargetEmpId", `Total: ${total} Cards Programmed`);
+            setElText("seqTargetDept", "Fleet Synchronization 100% Complete");
+            if (targetBox) {
+                targetBox.style.borderColor = "#10b981";
+                targetBox.style.background = "rgba(16,185,129,0.2)";
+            }
+        }
+
+        const tbody = document.getElementById("seqQueueTableBody");
+        if (tbody && res.items) {
+            tbody.innerHTML = res.items.map((it, idx) => {
+                const isCurr = (idx === res.current_index);
+                const isDone = (it.status === "enrolled");
+                const rowBg = isCurr ? "rgba(56,189,248,0.12)" : (isDone ? "rgba(16,185,129,0.06)" : "transparent");
+                const badge = isDone 
+                    ? '<span class="badge" style="background:#10b981; color:#fff;">✓ Enrolled</span>'
+                    : (isCurr ? '<span class="badge" style="background:#38bdf8; color:#000; font-weight:700;">📡 Tap Next</span>' : '<span class="badge" style="background:#475569; color:#cbd5e1;">Pending</span>');
+                const uidDisplay = it.card_uid ? `<code style="color:#fbbf24; font-weight:700;">${it.card_uid}</code>` : '<span style="color:var(--text-muted);">Waiting...</span>';
+
+                return `
+                    <tr style="background:${rowBg};">
+                        <td><strong>#${idx + 1}</strong></td>
+                        <td><strong>${it.name}</strong></td>
+                        <td><span style="color:#38bdf8; font-family:monospace;">${it.employee_id}</span></td>
+                        <td>${uidDisplay}</td>
+                        <td>${badge}</td>
+                    </tr>
+                `;
+            }).join("");
+        }
+    } catch (e) {}
+};
+
+window.resetSeqProgrammerToConfig = function() {
+    if (seqProgrammerTimer) {
+        clearInterval(seqProgrammerTimer);
+        seqProgrammerTimer = null;
+    }
+    document.getElementById("seqProgrammerActiveView").style.display = "none";
+    document.getElementById("seqProgrammerConfigView").style.display = "block";
+};
+
+window.stopSequentialEnrollSession = async function() {
+    const devId = document.getElementById("seqProgrammerDeviceSelect")?.value || "RFID-000001";
+    if (seqProgrammerTimer) {
+        clearInterval(seqProgrammerTimer);
+        seqProgrammerTimer = null;
+    }
+    try {
+        await apiRequest(`/rfid-vending/devices/${devId}/enroll-queue/cancel`, { method: "POST" });
+        showToast("Sequential programmer session paused/stopped.", "info");
+    } catch (e) {}
+    closeSequentialCardProgrammer();
+};
+
+window.exportSeqQueueResults = function() {
+    const devId = document.getElementById("seqProgrammerDeviceSelect")?.value || "RFID-000001";
+    const token = (typeof state !== 'undefined' && state.token) ? state.token : localStorage.getItem("auth_token");
+    window.location.href = `/api/v1/rfid-vending/devices/${devId}/enroll-queue/export?token=${token || ''}`;
+};
