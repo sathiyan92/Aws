@@ -23,24 +23,28 @@
  *     GPIO 23  ->  MOSI (Shared to MFRC522 MOSI & ILI9488 TFT SDI/MOSI)
  *     GPIO 19  ->  MISO (To MFRC522 MISO only; TFT does not need MISO)
  *
- *   MFRC522 RFID READER:
- *     GPIO 5   ->  SDA / SS (Dedicated RFID Chip Select)
- *     GPIO 22  ->  RST (RFID Reset)
- *     3.3V     ->  3.3V (Do NOT connect MFRC522 to 5V!)
+ *   ILI9488 TFT LCD (320x480 SPI) - 100% IDENTICAL TO QR MACHINE:
+ *     GPIO 5   ->  CS (TFT Chip Select - Same as QR Machine!)
+ *     GPIO 2   ->  DC / RS (Data / Command - Same as QR Machine!)
+ *     GPIO 4   ->  RESET (TFT Reset - Same as QR Machine!)
+ *     GPIO 18  ->  SCK (Hardware SPI Clock - Shared with RFID)
+ *     GPIO 23  ->  SDI / MOSI (Hardware SPI MOSI - Shared with RFID)
+ *     NC       ->  SDO / MISO (LEAVE DISCONNECTED!)
+ *     3.3V     ->  VCC & LED / BL (Do NOT connect to 5V!)
  *     GND      ->  GND
  *
- *   ILI9488 TFT LCD (320x480 SPI):
- *     GPIO 15  ->  CS (Dedicated TFT Chip Select)
- *     GPIO 4   ->  DC / RS (Data / Command)
- *     GPIO 16  ->  RESET (TFT Reset)
- *     3.3V     ->  VCC (Do NOT connect to 5V!)
- *     3.3V     ->  LED / BL (Backlight Power)
+ *   MFRC522 RFID READER:
+ *     GPIO 15  ->  SDA / SS (Dedicated RFID Chip Select)
+ *     GPIO 22  ->  RST (RFID Reset)
+ *     GPIO 18  ->  SCK (Hardware SPI Clock - Shared with TFT)
+ *     GPIO 23  ->  MOSI (Hardware SPI MOSI - Shared with TFT)
+ *     GPIO 19  ->  MISO (Hardware SPI MISO - Dedicated to RFID!)
+ *     3.3V     ->  3.3V (Do NOT connect to 5V!)
  *     GND      ->  GND
  *
  *   ACTUATORS & INDICATORS:
  *     GPIO 26  ->  Motor Dispense Relay (Active HIGH)
  *     GPIO 27  ->  Piezo Buzzer (Active HIGH)
- *     GPIO 2   ->  Onboard Status LED
  * ==============================================================================
  */
 
@@ -60,22 +64,21 @@
 #define SPI_MISO_PIN       19    // Hardware SPI MISO (RFID)
 #define SPI_MOSI_PIN       23    // Hardware SPI MOSI (RFID & TFT)
 
-// MFRC522 RFID Dedicated Pins
-#define RFID_SS_PIN        5     // Chip Select / SDA
-#define RFID_RST_PIN       22    // Reset Pin
-
-// ILI9488 320x480 TFT LCD Dedicated Pins
-#define TFT_CS_PIN         15    // TFT Chip Select
-#define TFT_DC_PIN         4     // TFT Data / Command
-#define TFT_RST_PIN        16    // TFT Reset Pin
+// ILI9488 320x480 TFT LCD Dedicated Pins (100% IDENTICAL TO QR MACHINE)
+#define TFT_CS_PIN         5     // TFT Chip Select (Exact same as QR Machine)
+#define TFT_DC_PIN         2     // TFT Data / Command (Exact same as QR Machine)
+#define TFT_RST_PIN        4     // TFT Reset Pin (Exact same as QR Machine)
 #define TFT_WIDTH          320
 #define TFT_HEIGHT         480
 #define TFT_ROTATION       0     // 0 = Vertical Portrait (320w x 480h)
 
+// MFRC522 RFID Dedicated Pins
+#define RFID_SS_PIN        15    // RFID Chip Select / SDA (Assigned to GPIO 15)
+#define RFID_RST_PIN       22    // RFID Reset Pin (GPIO 22)
+
 // Actuators & Indicators
 #define PIN_RELAY_MOTOR    26    // Dispense Motor Relay (Active HIGH)
 #define PIN_BUZZER         27    // Buzzer (Active HIGH)
-#define PIN_STATUS_LED     2     // Onboard Status LED (GPIO 2)
 
 // ==============================================================================
 // 2. NETWORK & SERVER CONFIGURATION
@@ -507,11 +510,9 @@ void uiDrawVendCompleteScreen() {
 
 void triggerDispenseMotor(int pulse_ms) {
     Serial.printf("[VEND] Activating Relay Motor for %d ms...\n", pulse_ms);
-    digitalWrite(PIN_STATUS_LED, HIGH);
     digitalWrite(PIN_RELAY_MOTOR, HIGH);  // Energize motor relay
     delay(pulse_ms);
     digitalWrite(PIN_RELAY_MOTOR, LOW);   // De-energize
-    digitalWrite(PIN_STATUS_LED, LOW);
     Serial.println("[VEND] Dispense Complete.");
 
     uiDrawVendCompleteScreen();
@@ -756,8 +757,6 @@ void setup() {
     pinMode(PIN_BUZZER, OUTPUT);
     digitalWrite(PIN_BUZZER, LOW);
 
-    pinMode(PIN_STATUS_LED, OUTPUT);
-    digitalWrite(PIN_STATUS_LED, LOW);
 
     // Setup Chip Select pins to inactive (HIGH)
     pinMode(RFID_SS_PIN, OUTPUT);
