@@ -791,13 +791,18 @@ void uiDrawVerifyingScreen(const char* uid) {
     tft.setTextSize(2);
     tft.print(uid);
 
-    tft.setCursor(40, 285);
-    tft.setTextColor(COLOR_MUTED);
-    tft.setTextSize(1);
-    tft.print("Checking authorization quota...");
+    tft.setCursor(35, 280);
+    tft.setTextColor(COLOR_YELLOW);
+    tft.setTextSize(2);
+    tft.print("HOLD CARD FLAT");
 
-    tft.fillRect(40, 315, 240, 12, COLOR_BG);
-    tft.fillRoundRect(40, 315, 160, 12, 4, COLOR_YELLOW);
+    tft.setCursor(45, 310);
+    tft.setTextColor(COLOR_WHITE);
+    tft.setTextSize(1);
+    tft.print("Keep on reader for 2 seconds...");
+
+    tft.fillRect(40, 335, 240, 12, COLOR_BG);
+    tft.fillRoundRect(40, 335, 160, 12, 4, COLOR_YELLOW);
 
     deselectTFT();
 }
@@ -917,12 +922,21 @@ bool readSerialFromCardSector(char* outBuffer, byte bufferSize) {
     );
 
     if (status != MFRC522::STATUS_OK) {
+        // Fallback: Try Key B
+        status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
+            MFRC522::PICC_CMD_MF_AUTH_KEY_B, blockAddr, &key, &(rfid.uid)
+        );
+    }
+
+    if (status != MFRC522::STATUS_OK) {
+        rfid.PICC_HaltA();
         rfid.PCD_StopCrypto1();
         deselectRFID();
         return false;
     }
 
     status = (MFRC522::StatusCode) rfid.MIFARE_Read(blockAddr, buffer, &byteCount);
+    rfid.PICC_HaltA();      // Orderly halt card session
     rfid.PCD_StopCrypto1(); // Always stop crypto after reading
     deselectRFID();
 
@@ -948,9 +962,6 @@ bool readSerialFromCardSector(char* outBuffer, byte bufferSize) {
 bool writeSerialToCardSector(const char* serialText) {
     if (!serialText || strlen(serialText) == 0) return false;
 
-    MFRC522::MIFARE_Key key;
-    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF; // Factory default Key A
-
     byte blockAddr = 4; // Sector 1 Block 0 (Block 4: Standard user data block)
     byte buffer[16];
     memset(buffer, ' ', 16); // Pad 16-byte block with spaces
@@ -958,41 +969,78 @@ bool writeSerialToCardSector(const char* serialText) {
     if (len > 16) len = 16;
     memcpy(buffer, serialText, len);
 
+    // Standard Mifare Classic keys to try (Default Factory, Blank, NFC Forum)
+    const byte keys[3][6] = {
+        {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+        {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+        {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}
+    };
+
     selectRFID();
 
-    // Retry up to 3 attempts with fresh card re-selection (handles delay after Wi-Fi HTTP roundtrip)
+    // Reset RF field completely to clear any lingering crypto or desync on card
+    rfid.PCD_StopCrypto1();
+    rfid.PCD_AntennaOff();
+    delay(15);
+    rfid.PCD_AntennaOn();
+    delay(30);
+
+    // Poll up to 1500ms for card presence in case card was slightly tilted or lifted
+    bool cardDetected = false;
+    for (int p = 0; p < 15; p++) {
+        if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+            cardDetected = true;
+            break;
+        }
+        delay(100);
+    }
+
+    if (!cardDetected) {
+        Serial.println("[RFID WRITE] ⚠️ Card not detected on antenna! Hold card flat against reader for 2 seconds.");
+        deselectRFID();
+        return false;
+    }
+
     bool writeSuccess = false;
-    for (int attempt = 1; attempt <= 3; attempt++) {
+
+    // Try authenticating with Key A first, then Key B across known keys
+    for (int k = 0; k < 3 && !writeSuccess; k++) {
+        MFRC522::MIFARE_Key key;
+        for (byte b = 0; b < 6; b++) key.keyByte[b] = keys[k][b];
+
+        // Try Key A
         rfid.PCD_StopCrypto1();
-
-        // Re-wake & re-select the PICC in case communication was idle during Wi-Fi HTTP roundtrip
-        byte bufferATQA[2];
-        byte bufferSize = sizeof(bufferATQA);
-        rfid.PICC_WakeupA(bufferATQA, &bufferSize);
-        rfid.PICC_Select(&(rfid.uid));
-
         MFRC522::StatusCode status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
             MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockAddr, &key, &(rfid.uid)
         );
+
+        // If Key A rejected, try Key B
+        if (status != MFRC522::STATUS_OK) {
+            rfid.PCD_StopCrypto1();
+            status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
+                MFRC522::PICC_CMD_MF_AUTH_KEY_B, blockAddr, &key, &(rfid.uid)
+            );
+        }
 
         if (status == MFRC522::STATUS_OK) {
             status = (MFRC522::StatusCode) rfid.MIFARE_Write(blockAddr, buffer, 16);
             if (status == MFRC522::STATUS_OK) {
                 Serial.printf("[RFID WRITE] ✓ SUCCESS! Permanently wrote '%s' into Sector 1 Block 4\n", serialText);
                 writeSuccess = true;
+                rfid.PICC_HaltA();
                 rfid.PCD_StopCrypto1();
                 break;
             } else {
-                Serial.printf("[RFID WRITE] ! MIFARE_Write failed on attempt %d: %s\n", attempt, rfid.GetStatusCodeName(status));
+                Serial.printf("[RFID WRITE] ! MIFARE_Write failed: %s\n", rfid.GetStatusCodeName(status));
             }
         } else {
-            Serial.printf("[RFID WRITE] ! Auth Key A for block %d attempt %d: %s\n", blockAddr, attempt, rfid.GetStatusCodeName(status));
+            Serial.printf("[RFID WRITE] ! Auth key set %d for block %d: %s\n", k + 1, blockAddr, rfid.GetStatusCodeName(status));
         }
-
         rfid.PCD_StopCrypto1();
-        delay(30);
     }
 
+    rfid.PICC_HaltA();
+    rfid.PCD_StopCrypto1();
     deselectRFID();
     return writeSuccess;
 }
