@@ -3698,3 +3698,72 @@ window.exportSeqQueueResults = function() {
     const token = (typeof state !== 'undefined' && state.token) ? state.token : localStorage.getItem("auth_token");
     window.location.href = `/api/v1/rfid-vending/devices/${devId}/enroll-queue/export?token=${token || ''}`;
 };
+
+
+// ==============================================================================
+// MACHINE CARD ACCEPTANCE POLICY (VENDOR_ONLY vs ALLOW_ALL)
+// ==============================================================================
+
+window.openRfidPolicyModal = async function() {
+    const devSelect = document.getElementById("policyDeviceSelect");
+    if (devSelect) {
+        devSelect.innerHTML = '';
+        const rfidList = getRfidDevicesList();
+        rfidList.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.device_id;
+            opt.textContent = `${d.device_id} (${d.client_name || 'RFID Terminal'})`;
+            devSelect.appendChild(opt);
+        });
+        devSelect.value = rfidList[0].device_id;
+    }
+    await loadDevicePolicyDetails();
+    document.getElementById("modalRfidPolicy")?.classList.add("open");
+};
+
+window.closeRfidPolicyModal = function() {
+    document.getElementById("modalRfidPolicy")?.classList.remove("open");
+};
+
+window.loadDevicePolicyDetails = async function() {
+    const devId = document.getElementById("policyDeviceSelect")?.value || "RFID-000001";
+    try {
+        const res = await apiRequest(`/rfid-vending/devices/${devId}/policy`);
+        if (res) {
+            const policy = res.card_policy || "VENDOR_ONLY";
+            const prefix = res.vendor_prefix || "GTECH";
+            if (policy === "ALLOW_ALL") {
+                document.getElementById("policyRadioAllowAll").checked = true;
+            } else {
+                document.getElementById("policyRadioVendorOnly").checked = true;
+            }
+            const prefixInput = document.getElementById("policyVendorPrefixInput");
+            if (prefixInput) prefixInput.value = prefix;
+            const lblPrefix = document.getElementById("lblPolicyPrefix");
+            if (lblPrefix) lblPrefix.textContent = prefix;
+        }
+    } catch (e) {
+        console.warn("Notice loading policy:", e);
+    }
+};
+
+window.saveRfidPolicy = async function() {
+    const devId = document.getElementById("policyDeviceSelect")?.value || "RFID-000001";
+    const isVendorOnly = document.getElementById("policyRadioVendorOnly")?.checked;
+    const policy = isVendorOnly ? "VENDOR_ONLY" : "ALLOW_ALL";
+    const prefix = (document.getElementById("policyVendorPrefixInput")?.value || "GTECH").trim().toUpperCase();
+
+    try {
+        await apiRequest(`/rfid-vending/devices/${devId}/policy`, {
+            method: "POST",
+            body: JSON.stringify({
+                card_policy: policy,
+                vendor_prefix: prefix
+            })
+        });
+        showToast(`✓ Machine ${devId} policy set to: ${policy === 'VENDOR_ONLY' ? '🔒 Vendor Cards Only' : '🌐 Open Fleet Mode'}`, "success");
+        closeRfidPolicyModal();
+    } catch (err) {
+        showToast(err.message || "Failed to update policy", "danger");
+    }
+};

@@ -126,6 +126,10 @@ String device_token    = "dev_token_generic";
 
 int current_config_version = 1;
 
+// Cloud-Controlled Card Acceptance Security Policy
+String card_policy     = "VENDOR_ONLY"; // "VENDOR_ONLY" (only GTECH cards) or "ALLOW_ALL" (open whitelist)
+String vendor_prefix   = "GTECH";       // Expected watermark prefix in Sector 1 Block 4
+
 // Default dispense pulse time if cloud doesn't specify (in milliseconds)
 const int DEFAULT_DISPENSE_MS = 1500;
 
@@ -194,6 +198,9 @@ bool authenticateWithCloud();
 void uiDrawStandbyScreen();
 void uiDrawPendingDiscoveryScreen();
 bool writeSerialToCardSector(const char* serialText);
+bool readSerialFromCardSector(char* outBuffer, byte bufferSize);
+void processCardTap(const char* uid, bool isVendorCard, const char* sectorData);
+void processOfflineTap(const char* uid, bool isVendorCard);
 void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* uid, const char* nextName, const char* nextEmpId, int qIndex, int qTotal);
 void uiDrawLiveCapturedScreen(const char* uid);
 void saveLocalCacheToNVS();
@@ -216,6 +223,8 @@ void loadPersistentConfig() {
     bool has_remote_wifi  = prefs.getBool("wifi_remote", false);
     String saved_dev_id   = prefs.getString("dev_id", "");
     current_config_version = prefs.getInt("cfg_ver", 1);
+    card_policy            = prefs.getString("card_pol", "VENDOR_ONLY");
+    vendor_prefix          = prefs.getString("ven_pfx", "GTECH");
 
     // --- SMART WI-FI SELECTION (Same as QR Machine) ---
     if (has_remote_wifi && saved_ssid.length() > 0) {
@@ -256,6 +265,8 @@ void loadPersistentConfig() {
     Serial.printf("  Hardware MAC Address : %s\n", getDeviceMacAddress().c_str());
     Serial.printf("  Target Wi-Fi SSID    : %s\n", wifi_ssid.c_str());
     Serial.printf("  Cloud Server Base URL: %s\n", server_base_url.c_str());
+    Serial.printf("  Card Security Policy : %s\n", card_policy.c_str());
+    Serial.printf("  Vendor Sector Prefix : %s\n", vendor_prefix.c_str());
     Serial.printf("  Local Cache Capacity : %d Cards\n", MAX_CACHED_CARDS);
     Serial.println("==================================================================\n");
 }
@@ -701,7 +712,7 @@ void uiDrawStandbyScreen() {
     tft.setCursor(20, 64);
     tft.setTextColor(COLOR_MUTED);
     tft.setTextSize(1);
-    tft.printf("NODE: %s  |  MODE: RFID CARD TAP", device_id.c_str());
+    tft.printf("NODE: %s  |  MODE: %s", device_id.c_str(), card_policy == "VENDOR_ONLY" ? "VENDOR ONLY" : "OPEN FLEET");
 
     // Center Hero Card
     tft.fillRoundRect(16, 100, 288, 280, 12, COLOR_CARD);
@@ -885,6 +896,49 @@ void uiDrawVendCompleteScreen() {
 // ==============================================================================
 // 8B. MIFARE CLASSIC SECTOR DATA WRITER & ENROLLMENT UI
 // ==============================================================================
+
+bool readSerialFromCardSector(char* outBuffer, byte bufferSize) {
+    if (!outBuffer || bufferSize < 17) return false;
+    memset(outBuffer, 0, bufferSize);
+
+    MFRC522::MIFARE_Key key;
+    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF; // Factory default Key A
+
+    byte blockAddr = 4; // Sector 1 Block 0 (Block 4: Standard user data block)
+    byte buffer[18];
+    byte byteCount = sizeof(buffer);
+
+    selectRFID();
+    MFRC522::StatusCode status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
+        MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockAddr, &key, &(rfid.uid)
+    );
+
+    if (status != MFRC522::STATUS_OK) {
+        deselectRFID();
+        return false;
+    }
+
+    status = (MFRC522::StatusCode) rfid.MIFARE_Read(blockAddr, buffer, &byteCount);
+    deselectRFID();
+
+    if (status != MFRC522::STATUS_OK) {
+        return false;
+    }
+
+    char temp[17];
+    memcpy(temp, buffer, 16);
+    temp[16] = '\0';
+
+    int len = 16;
+    while (len > 0 && (temp[len - 1] == ' ' || (unsigned char)temp[len - 1] < 32 || (unsigned char)temp[len - 1] > 126)) {
+        temp[len - 1] = '\0';
+        len--;
+    }
+
+    strncpy(outBuffer, temp, bufferSize - 1);
+    outBuffer[bufferSize - 1] = '\0';
+    return true;
+}
 
 bool writeSerialToCardSector(const char* serialText) {
     if (!serialText || strlen(serialText) == 0) return false;
@@ -1216,6 +1270,20 @@ void syncWhitelistFromCloud() {
                 }
             }
 
+            if (doc.containsKey("card_policy")) {
+                String newPol = doc["card_policy"].as<String>();
+                String newPfx = doc.containsKey("vendor_prefix") ? doc["vendor_prefix"].as<String>() : vendor_prefix;
+                if (newPol.length() > 0 && (newPol != card_policy || newPfx != vendor_prefix)) {
+                    Serial.printf("[Config] 🛡️ Card Security Policy updated from Cloud: %s (Prefix: %s)\n", newPol.c_str(), newPfx.c_str());
+                    card_policy = newPol;
+                    vendor_prefix = newPfx;
+                    prefs.begin("vending_cfg", false);
+                    prefs.putString("card_pol", card_policy);
+                    prefs.putString("ven_pfx", vendor_prefix);
+                    prefs.end();
+                }
+            }
+
             JsonArray cards = doc["cards"].as<JsonArray>();
             totalCachedCards = 0;
 
@@ -1295,6 +1363,21 @@ void checkForRemoteConfigUpdates() {
                         device_id = "PENDING";
                         uiDrawPendingDiscoveryScreen();
                     }
+                }
+            }
+
+            if (doc.containsKey("card_policy")) {
+                String newPol = doc["card_policy"].as<String>();
+                String newPfx = doc.containsKey("vendor_prefix") ? doc["vendor_prefix"].as<String>() : vendor_prefix;
+                if (newPol.length() > 0 && (newPol != card_policy || newPfx != vendor_prefix)) {
+                    Serial.printf("[Config] 🛡️ Card Security Policy updated from Cloud: %s (Prefix: %s)\n", newPol.c_str(), newPfx.c_str());
+                    card_policy = newPol;
+                    vendor_prefix = newPfx;
+                    prefs.begin("vending_cfg", false);
+                    prefs.putString("card_pol", card_policy);
+                    prefs.putString("ven_pfx", vendor_prefix);
+                    prefs.end();
+                    uiDrawStandbyScreen();
                 }
             }
 
@@ -1386,7 +1469,15 @@ void flushOfflineBufferToCloud() {
 // 12. CARD TAP PROCESSOR (ONLINE & OFFLINE)
 // ==============================================================================
 
-void processOfflineTap(const char* uid) {
+void processOfflineTap(const char* uid, bool isVendorCard) {
+    if (card_policy == "VENDOR_ONLY" && !isVendorCard) {
+        Serial.printf("[OFFLINE VEND] ! Card %s rejected: Outside card not permitted under VENDOR_ONLY policy.\n", uid);
+        playErrorTone();
+        uiDrawDeniedScreen("UNOFFICIAL CARD", "Use Official G-TECH Card");
+        delay(2500);
+        uiDrawStandbyScreen();
+        return;
+    }
     int idx = findCardInCache(uid);
 
     if (idx >= 0) {
@@ -1438,7 +1529,7 @@ void processOfflineTap(const char* uid) {
     }
 }
 
-void processCardTap(const char* uid) {
+void processCardTap(const char* uid, bool isVendorCard, const char* sectorData) {
     if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) {
         Serial.println("[!] Machine is waiting for Device ID claim in Web Portal.");
         playWarningTone();
@@ -1464,10 +1555,12 @@ void processCardTap(const char* uid) {
         http.addHeader("Content-Type", "application/json");
         http.setTimeout(4000);
 
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<384> doc;
         doc["device_id"] = device_id;
         doc["card_uid"] = uid;
         doc["pulse_ms"] = DEFAULT_DISPENSE_MS;
+        doc["is_vendor_card"] = isVendorCard;
+        doc["sector_data"] = sectorData;
 
         String requestBody;
         serializeJson(doc, requestBody);
@@ -1575,6 +1668,12 @@ void processCardTap(const char* uid) {
                 uiDrawDeniedScreen("DAILY LIMIT EXCEEDED", "No Vends Remaining");
                 delay(2500);
                 uiDrawStandbyScreen();
+            } else if (strcmp(status, "REJECTED_NON_VENDOR") == 0) {
+                Serial.printf("[VERIFY] ! REJECTED: Outside card not allowed under VENDOR_ONLY policy (%s)\n", msg);
+                playErrorTone();
+                uiDrawDeniedScreen("UNOFFICIAL CARD", "Use Official G-TECH Card");
+                delay(2500);
+                uiDrawStandbyScreen();
             } else if (strcmp(status, "BLOCKED_CARD") == 0) {
                 Serial.printf("[VERIFY] ! CARD BLOCKED: %s is suspended\n", username);
                 playErrorTone();
@@ -1590,7 +1689,7 @@ void processCardTap(const char* uid) {
             }
         } else {
             Serial.printf("[ONLINE] Cloud HTTP timeout or error: %d. Falling back to Local Cache!\n", httpCode);
-            processOfflineTap(uid);
+            processOfflineTap(uid, isVendorCard);
         }
         http.end();
     }
@@ -1599,7 +1698,7 @@ void processCardTap(const char* uid) {
     // ----------------------------------------------------
     else {
         Serial.println("[OFFLINE MODE] Verifying against local 1,000-card RAM cache...");
-        processOfflineTap(uid);
+        processOfflineTap(uid, isVendorCard);
     }
     Serial.println("------------------------------------------------\n");
 }
@@ -1663,6 +1762,36 @@ void handleSerialCommand(String cmd) {
         } else {
             Serial.println("[!] Usage: wifi:SSID,PASSWORD");
         }
+    } else if (cmd.startsWith("policy:") || cmd.startsWith("POLICY:")) {
+        int colonIdx = cmd.indexOf(':');
+        String val = cmd.substring(colonIdx + 1);
+        val.trim();
+        val.toUpperCase();
+        if (val == "VENDOR_ONLY" || val == "ALLOW_ALL" || val == "1" || val == "2") {
+            if (val == "1") card_policy = "VENDOR_ONLY";
+            else if (val == "2") card_policy = "ALLOW_ALL";
+            else card_policy = val;
+
+            prefs.begin("vending_cfg", false);
+            prefs.putString("card_pol", card_policy);
+            prefs.end();
+            Serial.printf("[✓ Policy Updated] Card Policy set to: %s\n", card_policy.c_str());
+            uiDrawStandbyScreen();
+        } else {
+            Serial.println("[!] Usage: policy:VENDOR_ONLY or policy:ALLOW_ALL");
+        }
+    } else if (cmd.startsWith("prefix:") || cmd.startsWith("PREFIX:")) {
+        int colonIdx = cmd.indexOf(':');
+        String val = cmd.substring(colonIdx + 1);
+        val.trim();
+        val.toUpperCase();
+        if (val.length() > 0) {
+            vendor_prefix = val;
+            prefs.begin("vending_cfg", false);
+            prefs.putString("ven_pfx", vendor_prefix);
+            prefs.end();
+            Serial.printf("[✓ Prefix Updated] Vendor Prefix set to: %s\n", vendor_prefix.c_str());
+        }
     } else if (cmd == "sync" || cmd == "SYNC") {
         Serial.println("\n[⚡ SYNC] Triggering immediate whitelist & config sync from Cloud...");
         authenticateWithCloud();
@@ -1687,6 +1816,8 @@ void handleSerialCommand(String cmd) {
             Serial.printf("  IP Address      : %s (RSSI: %d dBm)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
         }
         Serial.printf("  Server URL      : %s\n", server_base_url.c_str());
+        Serial.printf("  Card Policy     : %s\n", card_policy.c_str());
+        Serial.printf("  Vendor Prefix   : %s\n", vendor_prefix.c_str());
         Serial.printf("  Cached Cards    : %d / %d\n", totalCachedCards, MAX_CACHED_CARDS);
         Serial.printf("  Offline Buffered: %d / %d\n", offlineBufferCount, MAX_OFFLINE_BUFFER);
         Serial.printf("  Free RAM Heap   : %u bytes\n", ESP.getFreeHeap());
@@ -1702,6 +1833,8 @@ void printHelpMenu() {
     Serial.println("==================================================================");
     Serial.println("  id:RFID-000001     - Set Device ID permanently into Flash NVS");
     Serial.println("  wifi:SSID,PASSWORD - Set Wi-Fi credentials & restart");
+    Serial.println("  policy:VENDOR_ONLY - Set policy (VENDOR_ONLY or ALLOW_ALL)");
+    Serial.println("  prefix:<PREFIX>    - Set sector watermark prefix (default: GTECH)");
     Serial.println("  sync               - Force immediate Cloud Handshake & Whitelist sync");
     Serial.println("  t                  - Test dispense relay motor hardware");
     Serial.println("  status             - Display live MAC, IP, network, cache & heap status");
@@ -1883,8 +2016,20 @@ void loop() {
     }
     deselectRFID();
 
-    // Process the tapped card with full TFT display feedback and auto-enrollment
-    processCardTap(uidString);
+
+    // Read Sector 1 Block 4 for proprietary vendor watermark signature
+    char sectorData[32] = {0};
+    bool sectorReadSuccess = readSerialFromCardSector(sectorData, sizeof(sectorData));
+    bool isVendorCard = false;
+    if (sectorReadSuccess && strlen(sectorData) > 0) {
+        if (vendor_prefix.length() > 0 && strncmp(sectorData, vendor_prefix.c_str(), vendor_prefix.length()) == 0) {
+            isVendorCard = true;
+        }
+    }
+    deselectRFID();
+
+    // Process the tapped card with full TFT display feedback and policy enforcement
+    processCardTap(uidString, isVendorCard, sectorData);
 
     // Halt PICC and stop crypto after tap processing and writing is finished
     selectRFID();

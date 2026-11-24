@@ -36,7 +36,9 @@ from src.api.v1.rfid_vending.schemas import (
     EnrollModeToggle,
     RFIDEnrollQueueItemCreate,
     RFIDEnrollQueueStartRequest,
+    RFIDPolicyUpdate,
 )
+from src.db.models.config import DeviceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -1078,6 +1080,31 @@ def verify_device_tap(
             )
 
 
+    # Check Machine Card Acceptance Policy (VENDOR_ONLY vs ALLOW_ALL)
+    dev_settings = dev.config.config_payload.get("settings", {}) if (dev.config and dev.config.config_payload) else {}
+    machine_policy = dev_settings.get("card_policy", "VENDOR_ONLY")
+    req_prefix = dev_settings.get("vendor_prefix", "GTECH")
+
+    if machine_policy == "VENDOR_ONLY" and payload.is_vendor_card is False:
+        log_entry = RFIDVendingLog(
+            client_id=dev.client_id,
+            device_id=dev.id,
+            card_uid=clean_uid,
+            username="Outside Cardholder",
+            status="REJECTED_NON_VENDOR",
+            pulse_duration_ms=0,
+            notes=f"Rejected outside card (Policy: VENDOR_ONLY, Required Prefix: {req_prefix})",
+        )
+        db.add(log_entry)
+        db.commit()
+        logger.warning(f"[Policy Violation] Device {dev_key} rejected outside card {clean_uid}")
+        return RFIDVerifyTapResponse(
+            authorized=False,
+            status="REJECTED_NON_VENDOR",
+            card_uid=clean_uid,
+            message="Only Official G-TECH Cards Allowed",
+        )
+
     # Look up card in database for this client or machine (Resilient multi-tenant & machine matching)
     card = db.query(RFIDVendingCard).filter(
         or_(
@@ -1245,15 +1272,83 @@ def sync_cards_to_device(
     settings = dev.config.config_payload.get("settings", {}) if (dev.config and dev.config.config_payload) else {}
     wifi_ssid = settings.get("wifi_ssid", "")
     wifi_password = settings.get("wifi_password", "")
+    card_policy = settings.get("card_policy", "VENDOR_ONLY")
+    vendor_prefix = settings.get("vendor_prefix", "GTECH")
 
     return {
         "device_id": dev.device_id,
         "config_version": dev.current_config_version,
         "wifi_ssid": wifi_ssid,
         "wifi_password": wifi_password,
+        "card_policy": card_policy,
+        "vendor_prefix": vendor_prefix,
         "count": len(card_list),
         "timestamp": utc_now().isoformat(),
         "cards": card_list,
+    }
+
+
+@router.get("/devices/{device_id}/policy")
+def get_device_rfid_policy(
+    device_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve current Card Acceptance Policy (VENDOR_ONLY vs ALLOW_ALL) and Vendor Prefix.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="Device not found.")
+
+    settings = dev.config.config_payload.get("settings", {}) if (dev.config and dev.config.config_payload) else {}
+    return {
+        "device_id": dev.device_id,
+        "card_policy": settings.get("card_policy", "VENDOR_ONLY"),
+        "vendor_prefix": settings.get("vendor_prefix", "GTECH"),
+        "config_version": dev.current_config_version,
+    }
+
+
+@router.post("/devices/{device_id}/policy")
+def update_device_rfid_policy(
+    device_id: str,
+    payload: RFIDPolicyUpdate,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+):
+    """
+    Update Card Acceptance Policy for a machine (VENDOR_ONLY or ALLOW_ALL).
+    Bumps config version to automatically sync to ESP32 node.
+    """
+    dev = db.query(Device).filter(
+        (Device.id == device_id) | (Device.device_id == device_id)
+    ).first()
+    if not dev:
+        raise HTTPException(status_code=404, detail="Device not found.")
+
+    if not dev.config:
+        dev.config = DeviceConfig(device_id=dev.id, client_id=dev.client_id, active_version=1, config_payload={"settings": {}})
+        db.add(dev.config)
+
+    cfg = dict(dev.config.config_payload or {})
+    settings = dict(cfg.get("settings", {}))
+    settings["card_policy"] = payload.card_policy
+    settings["vendor_prefix"] = payload.vendor_prefix.strip().upper()
+    cfg["settings"] = settings
+    dev.config.config_payload = cfg
+    dev.current_config_version = (dev.current_config_version or 1) + 1
+
+    db.commit()
+    logger.info(f"[Card Policy] Updated {dev.device_id} policy -> {payload.card_policy} (Prefix: {payload.vendor_prefix})")
+    return {
+        "status": "SUCCESS",
+        "device_id": dev.device_id,
+        "card_policy": payload.card_policy,
+        "vendor_prefix": payload.vendor_prefix,
+        "config_version": dev.current_config_version,
+        "message": f"Policy updated to {payload.card_policy} for {dev.device_id}",
     }
 
 

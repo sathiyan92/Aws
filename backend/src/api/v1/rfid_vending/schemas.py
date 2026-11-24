@@ -62,6 +62,14 @@ class RFIDVerifyTapRequest(BaseModel):
     card_uid: str
     offline_buffer: bool = False
     pulse_ms: Optional[int] = 1500
+    is_vendor_card: Optional[bool] = None
+    sector_data: Optional[str] = None
+
+
+class RFIDPolicyUpdate(BaseModel):
+    card_policy: str = "VENDOR_ONLY"  # "VENDOR_ONLY" or "ALLOW_ALL"
+    vendor_prefix: str = "GTECH"
+
 
 
 class RFIDVerifyTapResponse(BaseModel):

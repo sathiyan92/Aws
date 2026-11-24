@@ -836,6 +836,8 @@ def get_device_qr_config(db: Session, device_id: str, mac: Optional[str] = None)
         "payment_mode": effective_pay_mode,
         "has_coin_payment": coin_enabled,
         "has_qr_payment": qr_enabled,
+        "card_policy": settings.get("card_policy", "VENDOR_ONLY"),
+        "vendor_prefix": settings.get("vendor_prefix", "GTECH"),
     }
 
 
