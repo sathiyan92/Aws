@@ -1096,17 +1096,34 @@ def verify_device_tap(
     req_prefix = dev_settings.get("vendor_prefix", "GTECH")
 
     if machine_policy == "VENDOR_ONLY" and payload.is_vendor_card is False:
-        # Check if card was pre-enrolled from Cloud Web Portal with an official Employee ID (e.g. GTECH-...)
-        # If so, automatically write the official watermark to Sector 1 Block 4 on this first tap!
-        emp_id = (card.employee_id or "").strip() if card else ""
-        if card and emp_id.upper().startswith(req_prefix.upper()):
+        # Check if card was pre-enrolled in the Cloud Database
+        # If enrolled with an official watermark pattern, automatically write it to Sector 1 Block 4 on tap!
+        if card:
+            notes_str = (card.notes or "").strip()
+            dept_str = (card.department or "").strip()
+            user_str = (card.username or "").strip()
+            emp_id = ""
+
+            # Check if notes, department, or username contains the vendor prefix (e.g. GTECH)
+            for src in [notes_str, dept_str, user_str]:
+                if req_prefix.upper() in src.upper():
+                    for token in src.replace(":", " ").replace("(", " ").replace(")", " ").split():
+                        if token.upper().startswith(req_prefix.upper()):
+                            emp_id = token
+                            break
+                if emp_id:
+                    break
+
+            if not emp_id:
+                emp_id = f"{req_prefix}-{clean_uid[-6:]}"
+
             write_str = emp_id
-            logger.info(f"[Auto-Watermark] Pre-enrolled card {clean_uid} ({emp_id}) detected without watermark. Watermarking on tap!")
+            logger.info(f"[Auto-Watermark] Pre-enrolled card {clean_uid} ({emp_id}) detected without watermark. Writing on tap!")
             log_entry = RFIDVendingLog(
                 client_id=dev.client_id,
                 device_id=dev.id,
                 card_uid=clean_uid,
-                username=card.cardholder_name,
+                username=card.username,
                 department=card.department,
                 status="ENROLL_SUCCESS",
                 pulse_duration_ms=0,
@@ -1118,13 +1135,13 @@ def verify_device_tap(
                 authorized=True,
                 status="ENROLL_SUCCESS",
                 card_uid=clean_uid,
-                username=card.cardholder_name,
+                username=card.username,
                 employee_id=emp_id,
                 write_data=write_str,
                 department=card.department or "Operations",
                 daily_limit=card.daily_limit,
                 used_today=card.used_today,
-                dispense_pulse_ms=0,
+                dispense_pulse_ms=payload.pulse_ms or DEFAULT_DISPENSE_MS,
                 message=f"Official Watermark {write_str} Written!",
                 queue_index=1,
                 queue_total=1,
