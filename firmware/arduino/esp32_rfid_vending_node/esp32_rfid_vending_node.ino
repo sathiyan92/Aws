@@ -311,8 +311,7 @@ void saveLocalCacheToNVS() {
         prefs.remove(key.c_str());
     }
     prefs.end();
-    Serial.printf("[NVS CACHE] 💾 Saved %d authorized cards to Flash NVS memory.
-", totalCachedCards);
+    Serial.printf("[NVS CACHE] 💾 Saved %d authorized cards to Flash NVS memory.\n", totalCachedCards);
 }
 
 void loadLocalCacheFromNVS() {
@@ -327,8 +326,7 @@ void loadLocalCacheFromNVS() {
             prefs.getBytes(key.c_str(), &localCardCache[i], chunkSize * sizeof(RFIDCardCacheItem));
             chunkIdx++;
         }
-        Serial.printf("[NVS CACHE] 📂 Loaded %d authorized cards from Flash memory (Ready for Offline Operation)!
-", totalCachedCards);
+        Serial.printf("[NVS CACHE] 📂 Loaded %d authorized cards from Flash memory (Ready for Offline Operation)!\n", totalCachedCards);
     } else {
         totalCachedCards = 0;
         Serial.println("[NVS CACHE] No cards stored in Flash NVS yet. Waiting for first cloud sync.");
@@ -349,8 +347,7 @@ void saveOfflineBufferToNVS() {
         prefs.remove("buf");
     }
     prefs.end();
-    Serial.printf("[OFFLINE NVS] 💾 Saved %d pending offline vends to Flash memory.
-", offlineBufferCount);
+    Serial.printf("[OFFLINE NVS] 💾 Saved %d pending offline vends to Flash memory.\n", offlineBufferCount);
 }
 
 void loadOfflineBufferFromNVS() {
@@ -360,8 +357,7 @@ void loadOfflineBufferFromNVS() {
         size_t readLen = prefs.getBytes("buf", offlineBuffer, savedCount * sizeof(OfflineVendRecord));
         if (readLen == (size_t)(savedCount * sizeof(OfflineVendRecord))) {
             offlineBufferCount = savedCount;
-            Serial.printf("[OFFLINE NVS] 📂 Restored %d pending offline vends from Flash memory (Ready to Upload)!
-", offlineBufferCount);
+            Serial.printf("[OFFLINE NVS] 📂 Restored %d pending offline vends from Flash memory (Ready to Upload)!\n", offlineBufferCount);
         } else {
             offlineBufferCount = 0;
         }
