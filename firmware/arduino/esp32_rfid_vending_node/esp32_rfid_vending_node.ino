@@ -129,6 +129,7 @@ int current_config_version = 1;
 // Cloud-Controlled Card Acceptance Security Policy
 String card_policy     = "VENDOR_ONLY"; // "VENDOR_ONLY" (only GTECH cards) or "ALLOW_ALL" (open whitelist)
 String vendor_prefix   = "GTECH";       // Expected watermark prefix in Sector 1 Block 4
+String pendingSerialWrite = "";         // Holds manual watermark command from Serial Monitor
 
 // Default dispense pulse time if cloud doesn't specify (in milliseconds)
 const int DEFAULT_DISPENSE_MS = 1500;
@@ -1792,6 +1793,30 @@ void handleSerialCommand(String cmd) {
             prefs.end();
             Serial.printf("[✓ Prefix Updated] Vendor Prefix set to: %s\n", vendor_prefix.c_str());
         }
+    } else if (cmd.startsWith("write:") || cmd.startsWith("WRITE:") || cmd.startsWith("watermark:") || cmd.startsWith("WATERMARK:")) {
+        int colonIdx = cmd.indexOf(':');
+        pendingSerialWrite = cmd.substring(colonIdx + 1);
+        pendingSerialWrite.trim();
+        if (pendingSerialWrite.length() > 0) {
+            Serial.println("\n==================================================================");
+            Serial.printf(">>> [✍️ READY TO WATERMARK CARD] Text: '%s' <<<\n", pendingSerialWrite.c_str());
+            Serial.println("  Hold your RFID card flat against the reader antenna now...");
+            Serial.println("==================================================================\n");
+            selectTFT();
+            tft.fillRoundRect(16, 100, 288, 280, 12, COLOR_CARD);
+            tft.drawRoundRect(16, 100, 288, 280, 12, COLOR_YELLOW);
+            tft.setCursor(45, 180);
+            tft.setTextColor(COLOR_YELLOW);
+            tft.setTextSize(2);
+            tft.print("TAP CARD TO WRITE");
+            tft.setCursor(35, 230);
+            tft.setTextColor(COLOR_WHITE);
+            tft.setTextSize(2);
+            tft.print(pendingSerialWrite.c_str());
+            deselectTFT();
+        } else {
+            Serial.println("[!] Usage: write:GTECH-0001 (or watermark:GTECH-0001)");
+        }
     } else if (cmd == "sync" || cmd == "SYNC") {
         Serial.println("\n[⚡ SYNC] Triggering immediate whitelist & config sync from Cloud...");
         authenticateWithCloud();
@@ -1835,6 +1860,7 @@ void printHelpMenu() {
     Serial.println("  wifi:SSID,PASSWORD - Set Wi-Fi credentials & restart");
     Serial.println("  policy:VENDOR_ONLY - Set policy (VENDOR_ONLY or ALLOW_ALL)");
     Serial.println("  prefix:<PREFIX>    - Set sector watermark prefix (default: GTECH)");
+    Serial.println("  write:GTECH-0001   - Write watermark signature to next tapped card");
     Serial.println("  sync               - Force immediate Cloud Handshake & Whitelist sync");
     Serial.println("  t                  - Test dispense relay motor hardware");
     Serial.println("  status             - Display live MAC, IP, network, cache & heap status");
@@ -2016,6 +2042,32 @@ void loop() {
     }
     deselectRFID();
 
+
+    // Check if user initiated a manual watermark write from Serial Console
+    if (pendingSerialWrite.length() > 0) {
+        Serial.printf("[MANUAL WRITE] Writing watermark '%s' into Sector 1 Block 4 of card %s...\n", pendingSerialWrite.c_str(), uidString);
+        bool writeSuccess = writeSerialToCardSector(pendingSerialWrite.c_str());
+        if (writeSuccess) {
+            playSuccessTone();
+            Serial.printf("[✓ SUCCESS] Watermark '%s' permanently saved to card Sector 1 Block 4!\n\n", pendingSerialWrite.c_str());
+            uiDrawCardEnrolledScreen("Official Card", pendingSerialWrite.c_str(), uidString, "", "", 1, 1);
+            delay(2200);
+            uiDrawStandbyScreen();
+        } else {
+            playErrorTone();
+            Serial.println("[!] Watermark write failed! Card might be read-only or moved too quickly.\n");
+            uiDrawDeniedScreen("WRITE FAILED", "Try Again");
+            delay(2200);
+            uiDrawStandbyScreen();
+        }
+        pendingSerialWrite = "";
+        selectRFID();
+        rfid.PICC_HaltA();
+        rfid.PCD_StopCrypto1();
+        deselectRFID();
+        delay(1000);
+        return;
+    }
 
     // Read Sector 1 Block 4 for proprietary vendor watermark signature
     char sectorData[32] = {0};
