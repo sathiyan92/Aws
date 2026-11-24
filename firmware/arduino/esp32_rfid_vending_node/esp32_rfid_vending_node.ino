@@ -196,6 +196,11 @@ void uiDrawPendingDiscoveryScreen();
 bool writeSerialToCardSector(const char* serialText);
 void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* uid, const char* nextName, const char* nextEmpId, int qIndex, int qTotal);
 void uiDrawLiveCapturedScreen(const char* uid);
+void saveLocalCacheToNVS();
+void loadLocalCacheFromNVS();
+void saveOfflineBufferToNVS();
+void loadOfflineBufferFromNVS();
+void clearOfflineBufferInNVS();
 
 
 // ==============================================================================
@@ -277,7 +282,101 @@ void clearPersistentConfig() {
     prefs.begin("vending_cfg", false);
     prefs.clear();
     prefs.end();
-    Serial.println("[!] Flash NVS wiped clean.");
+    prefs.begin("rfid_cache", false);
+    prefs.clear();
+    prefs.end();
+    prefs.begin("rfid_offline", false);
+    prefs.clear();
+    prefs.end();
+    Serial.println("[!] Flash NVS wiped clean (Config, Card Cache & Offline Buffer).");
+}
+
+// ------------------------------------------------------------------------------
+// PERSISTENT CARD WHITELIST CACHE (Flash NVS across power cycles)
+// ------------------------------------------------------------------------------
+
+void saveLocalCacheToNVS() {
+    prefs.begin("rfid_cache", false);
+    prefs.putInt("count", totalCachedCards);
+    int chunkIdx = 0;
+    for (int i = 0; i < totalCachedCards; i += 50) {
+        int chunkSize = ((totalCachedCards - i) < 50) ? (totalCachedCards - i) : 50;
+        String key = "c" + String(chunkIdx);
+        prefs.putBytes(key.c_str(), &localCardCache[i], chunkSize * sizeof(RFIDCardCacheItem));
+        chunkIdx++;
+    }
+    // Clean up any old unused chunks
+    for (int j = chunkIdx; j < 20; j++) {
+        String key = "c" + String(j);
+        prefs.remove(key.c_str());
+    }
+    prefs.end();
+    Serial.printf("[NVS CACHE] 💾 Saved %d authorized cards to Flash NVS memory.
+", totalCachedCards);
+}
+
+void loadLocalCacheFromNVS() {
+    prefs.begin("rfid_cache", true); // Read-only mode
+    int savedCount = prefs.getInt("count", 0);
+    if (savedCount > 0 && savedCount <= MAX_CACHED_CARDS) {
+        totalCachedCards = savedCount;
+        int chunkIdx = 0;
+        for (int i = 0; i < totalCachedCards; i += 50) {
+            int chunkSize = ((totalCachedCards - i) < 50) ? (totalCachedCards - i) : 50;
+            String key = "c" + String(chunkIdx);
+            prefs.getBytes(key.c_str(), &localCardCache[i], chunkSize * sizeof(RFIDCardCacheItem));
+            chunkIdx++;
+        }
+        Serial.printf("[NVS CACHE] 📂 Loaded %d authorized cards from Flash memory (Ready for Offline Operation)!
+", totalCachedCards);
+    } else {
+        totalCachedCards = 0;
+        Serial.println("[NVS CACHE] No cards stored in Flash NVS yet. Waiting for first cloud sync.");
+    }
+    prefs.end();
+}
+
+// ------------------------------------------------------------------------------
+// PERSISTENT OFFLINE VEND EVENT BUFFER (Flash NVS across power cycles)
+// ------------------------------------------------------------------------------
+
+void saveOfflineBufferToNVS() {
+    prefs.begin("rfid_offline", false);
+    prefs.putInt("cnt", offlineBufferCount);
+    if (offlineBufferCount > 0) {
+        prefs.putBytes("buf", offlineBuffer, offlineBufferCount * sizeof(OfflineVendRecord));
+    } else {
+        prefs.remove("buf");
+    }
+    prefs.end();
+    Serial.printf("[OFFLINE NVS] 💾 Saved %d pending offline vends to Flash memory.
+", offlineBufferCount);
+}
+
+void loadOfflineBufferFromNVS() {
+    prefs.begin("rfid_offline", false);
+    int savedCount = prefs.getInt("cnt", 0);
+    if (savedCount > 0 && savedCount <= MAX_OFFLINE_BUFFER) {
+        size_t readLen = prefs.getBytes("buf", offlineBuffer, savedCount * sizeof(OfflineVendRecord));
+        if (readLen == (size_t)(savedCount * sizeof(OfflineVendRecord))) {
+            offlineBufferCount = savedCount;
+            Serial.printf("[OFFLINE NVS] 📂 Restored %d pending offline vends from Flash memory (Ready to Upload)!
+", offlineBufferCount);
+        } else {
+            offlineBufferCount = 0;
+        }
+    } else {
+        offlineBufferCount = 0;
+    }
+    prefs.end();
+}
+
+void clearOfflineBufferInNVS() {
+    prefs.begin("rfid_offline", false);
+    prefs.putInt("cnt", 0);
+    prefs.remove("buf");
+    prefs.end();
+    Serial.println("[OFFLINE NVS] 🗑️ Cleared offline vend buffer in Flash memory.");
 }
 
 // ==============================================================================
@@ -1131,6 +1230,7 @@ void syncWhitelistFromCloud() {
             }
 
             Serial.printf("[SYNC] ✓ Success! Loaded %d authorized cards into ESP32 RAM cache.\n", totalCachedCards);
+            saveLocalCacheToNVS();
             uiDrawStandbyScreen();
         } else {
             Serial.printf("[SYNC] JSON parse error: %s\n", err.c_str());
@@ -1246,6 +1346,7 @@ void flushOfflineBufferToCloud() {
     if (httpCode == HTTP_CODE_OK || httpCode == 201) {
         Serial.println("[OFFLINE] ✓ Buffer successfully synced to Cloud database!");
         offlineBufferCount = 0; // Clear buffer
+        clearOfflineBufferInNVS();
     } else {
         Serial.printf("[OFFLINE] Sync failed with status: %d\n", httpCode);
     }
@@ -1278,6 +1379,8 @@ void processOfflineTap(const char* uid) {
                 offlineBuffer[offlineBufferCount].dispense_ms = DEFAULT_DISPENSE_MS;
                 offlineBufferCount++;
                 Serial.printf("[OFFLINE] Buffered offline event (%d/%d queued)\n", offlineBufferCount, MAX_OFFLINE_BUFFER);
+                saveOfflineBufferToNVS();
+                saveLocalCacheToNVS();
             }
         } else {
             Serial.printf("[OFFLINE VEND] ! Daily Limit Reached for %s (%d/%d)\n", 
@@ -1380,6 +1483,7 @@ void processCardTap(const char* uid) {
                     localCardCache[targetIdx].daily_limit = limit;
                     localCardCache[targetIdx].used_today = 0;
                     if (existingIdx < 0) totalCachedCards++;
+                    saveLocalCacheToNVS();
                 }
 
                 // Distinct Happy Double-Chirp Tone
@@ -1399,6 +1503,20 @@ void processCardTap(const char* uid) {
                 playSuccessTone();
                 uiDrawDispenseScreen(username, used, limit, pulse);
                 triggerDispenseMotor(pulse);
+
+                // Add or update in local cache so card works offline immediately if power or Wi-Fi drops
+                if (totalCachedCards < MAX_CACHED_CARDS) {
+                    int existingIdx = findCardInCache(uid);
+                    int targetIdx = (existingIdx >= 0) ? existingIdx : totalCachedCards;
+                    strncpy(localCardCache[targetIdx].uid, uid, sizeof(localCardCache[0].uid) - 1);
+                    localCardCache[targetIdx].uid[sizeof(localCardCache[0].uid) - 1] = '\0';
+                    strncpy(localCardCache[targetIdx].name, username, sizeof(localCardCache[0].name) - 1);
+                    localCardCache[targetIdx].name[sizeof(localCardCache[0].name) - 1] = '\0';
+                    localCardCache[targetIdx].daily_limit = limit;
+                    localCardCache[targetIdx].used_today = used;
+                    if (existingIdx < 0) totalCachedCards++;
+                    saveLocalCacheToNVS();
+                }
             } else if (strcmp(status, "ENROLL_CAPTURED") == 0 || (strstr(msg, "Enroll Mode") != NULL)) {
                 Serial.println("\n==================================================================");
                 Serial.printf(">>> [📡 CARD CAPTURED IN LIVE ENROLL MODE] UID: %s <<<\n", uid);
@@ -1575,8 +1693,10 @@ void setup() {
     Serial.begin(115200);
     delay(200);
 
-    // 2. Load persistent configuration from Flash NVS
+    // 2. Load persistent configuration & cached data from Flash NVS
     loadPersistentConfig();
+    loadLocalCacheFromNVS();
+    loadOfflineBufferFromNVS();
 
     // Initial audio chirp
     beep(2000, 100);
@@ -1631,6 +1751,7 @@ void setup() {
         authenticateWithCloud();
         checkForRemoteConfigUpdates();
         syncWhitelistFromCloud();
+        flushOfflineBufferToCloud(); // Immediately sync any pending offline vends from Flash
     } else {
         Serial.println("\n[WIFI] ! Wi-Fi Connection Failed. Running in OFFLINE CACHE MODE.");
         playWarningTone();
