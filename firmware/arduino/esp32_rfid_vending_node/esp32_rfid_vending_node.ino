@@ -163,8 +163,8 @@ struct RFIDCardCacheItem {
 RFIDCardCacheItem localCardCache[MAX_CACHED_CARDS];
 int totalCachedCards = 0;
 
-// Offline Log Buffer (Holds up to 64 offline vends when internet is down)
-#define MAX_OFFLINE_BUFFER 64
+// Offline Log Buffer (Holds up to 500 offline vends with FIFO circular retention)
+#define MAX_OFFLINE_BUFFER 500
 struct OfflineVendRecord {
     char uid[12];
     uint32_t timestamp_sec;
@@ -341,26 +341,36 @@ void loadLocalCacheFromNVS() {
 void saveOfflineBufferToNVS() {
     prefs.begin("rfid_offline", false);
     prefs.putInt("cnt", offlineBufferCount);
-    if (offlineBufferCount > 0) {
-        prefs.putBytes("buf", offlineBuffer, offlineBufferCount * sizeof(OfflineVendRecord));
-    } else {
-        prefs.remove("buf");
+    int chunkIdx = 0;
+    for (int i = 0; i < offlineBufferCount; i += 50) {
+        int chunkSize = ((offlineBufferCount - i) < 50) ? (offlineBufferCount - i) : 50;
+        String key = "b" + String(chunkIdx);
+        prefs.putBytes(key.c_str(), &offlineBuffer[i], chunkSize * sizeof(OfflineVendRecord));
+        chunkIdx++;
     }
+    // Clean up any old unused chunks
+    for (int j = chunkIdx; j < 10; j++) {
+        String key = "b" + String(j);
+        prefs.remove(key.c_str());
+    }
+    prefs.remove("buf"); // Clean legacy key
     prefs.end();
-    Serial.printf("[OFFLINE NVS] 💾 Saved %d pending offline vends to Flash memory.\n", offlineBufferCount);
+    Serial.printf("[OFFLINE NVS] 💾 Saved %d pending offline vends to Flash memory (%d chunks).\n", offlineBufferCount, chunkIdx);
 }
 
 void loadOfflineBufferFromNVS() {
     prefs.begin("rfid_offline", false);
     int savedCount = prefs.getInt("cnt", 0);
     if (savedCount > 0 && savedCount <= MAX_OFFLINE_BUFFER) {
-        size_t readLen = prefs.getBytes("buf", offlineBuffer, savedCount * sizeof(OfflineVendRecord));
-        if (readLen == (size_t)(savedCount * sizeof(OfflineVendRecord))) {
-            offlineBufferCount = savedCount;
-            Serial.printf("[OFFLINE NVS] 📂 Restored %d pending offline vends from Flash memory (Ready to Upload)!\n", offlineBufferCount);
-        } else {
-            offlineBufferCount = 0;
+        offlineBufferCount = savedCount;
+        int chunkIdx = 0;
+        for (int i = 0; i < offlineBufferCount; i += 50) {
+            int chunkSize = ((offlineBufferCount - i) < 50) ? (offlineBufferCount - i) : 50;
+            String key = "b" + String(chunkIdx);
+            prefs.getBytes(key.c_str(), &offlineBuffer[i], chunkSize * sizeof(OfflineVendRecord));
+            chunkIdx++;
         }
+        Serial.printf("[OFFLINE NVS] 📂 Restored %d pending offline vends from Flash memory (Ready to Upload)!\n", offlineBufferCount);
     } else {
         offlineBufferCount = 0;
     }
@@ -370,6 +380,10 @@ void loadOfflineBufferFromNVS() {
 void clearOfflineBufferInNVS() {
     prefs.begin("rfid_offline", false);
     prefs.putInt("cnt", 0);
+    for (int j = 0; j < 10; j++) {
+        String key = "b" + String(j);
+        prefs.remove(key.c_str());
+    }
     prefs.remove("buf");
     prefs.end();
     Serial.println("[OFFLINE NVS] 🗑️ Cleared offline vend buffer in Flash memory.");
@@ -1318,35 +1332,54 @@ void flushOfflineBufferToCloud() {
     if (offlineBufferCount == 0 || WiFi.status() != WL_CONNECTED) return;
     if (device_id == "AUTO" || device_id == "PENDING" || device_id.length() == 0) return;
 
-    Serial.printf("[OFFLINE] Flushing %d buffered offline vends to Cloud...\n", offlineBufferCount);
-    HTTPClient http;
-    String url = server_base_url + "/api/v1/rfid-vending/offline-sync";
+    Serial.printf("[OFFLINE] Flushing %d buffered offline vends to Cloud in batches...\n", offlineBufferCount);
 
-    DynamicJsonDocument doc(4096);
-    doc["device_id"] = device_id;
-    JsonArray logs = doc.createNestedArray("logs");
+    while (offlineBufferCount > 0 && WiFi.status() == WL_CONNECTED) {
+        int batchSize = ((offlineBufferCount < 50) ? offlineBufferCount : 50);
 
-    for (int i = 0; i < offlineBufferCount; i++) {
-        JsonObject item = logs.createNestedObject();
-        item["card_uid"] = offlineBuffer[i].uid;
-        item["dispense_ms"] = offlineBuffer[i].dispense_ms;
+        HTTPClient http;
+        String url = server_base_url + "/api/v1/rfid-vending/offline-sync";
+
+        DynamicJsonDocument doc(4096);
+        doc["device_id"] = device_id;
+        JsonArray logs = doc.createNestedArray("logs");
+
+        for (int i = 0; i < batchSize; i++) {
+            JsonObject item = logs.createNestedObject();
+            item["card_uid"] = offlineBuffer[i].uid;
+            item["dispense_ms"] = offlineBuffer[i].dispense_ms;
+        }
+
+        String requestBody;
+        serializeJson(doc, requestBody);
+
+        http.begin(url);
+        http.addHeader("Content-Type", "application/json");
+        http.setTimeout(8000);
+        int httpCode = http.POST(requestBody);
+
+        if (httpCode == HTTP_CODE_OK || httpCode == 201) {
+            Serial.printf("[OFFLINE] ✓ Batch of %d vends synced to Cloud!\n", batchSize);
+            int remaining = offlineBufferCount - batchSize;
+            if (remaining > 0) {
+                memmove(&offlineBuffer[0], &offlineBuffer[batchSize], remaining * sizeof(OfflineVendRecord));
+            }
+            offlineBufferCount = remaining;
+            saveOfflineBufferToNVS();
+        } else {
+            Serial.printf("[OFFLINE] ! Sync batch failed with HTTP code: %d. Will retry.\n", httpCode);
+            http.end();
+            break;
+        }
+        http.end();
     }
 
-    String requestBody;
-    serializeJson(doc, requestBody);
-
-    http.begin(url);
-    http.addHeader("Content-Type", "application/json");
-    int httpCode = http.POST(requestBody);
-
-    if (httpCode == HTTP_CODE_OK || httpCode == 201) {
-        Serial.println("[OFFLINE] ✓ Buffer successfully synced to Cloud database!");
-        offlineBufferCount = 0; // Clear buffer
+    if (offlineBufferCount == 0) {
+        Serial.println("[OFFLINE] ✓ All offline buffers successfully synced to Cloud database!");
         clearOfflineBufferInNVS();
     } else {
-        Serial.printf("[OFFLINE] Sync failed with status: %d\n", httpCode);
+        Serial.printf("[OFFLINE] ⚠️ %d offline vends remaining in Flash buffer for next retry.\n", offlineBufferCount);
     }
-    http.end();
 }
 
 // ==============================================================================
@@ -1368,16 +1401,26 @@ void processOfflineTap(const char* uid) {
             uiDrawDispenseScreen(item.name, item.used_today, item.daily_limit, DEFAULT_DISPENSE_MS);
             triggerDispenseMotor(DEFAULT_DISPENSE_MS);
 
-            // Buffer offline vend
+            // Buffer offline vend (FIFO Circular Buffer: holds latest 500 events)
             if (offlineBufferCount < MAX_OFFLINE_BUFFER) {
                 strncpy(offlineBuffer[offlineBufferCount].uid, uid, sizeof(offlineBuffer[0].uid) - 1);
+                offlineBuffer[offlineBufferCount].uid[sizeof(offlineBuffer[0].uid) - 1] = '\0';
                 offlineBuffer[offlineBufferCount].timestamp_sec = millis() / 1000;
                 offlineBuffer[offlineBufferCount].dispense_ms = DEFAULT_DISPENSE_MS;
                 offlineBufferCount++;
                 Serial.printf("[OFFLINE] Buffered offline event (%d/%d queued)\n", offlineBufferCount, MAX_OFFLINE_BUFFER);
-                saveOfflineBufferToNVS();
-                saveLocalCacheToNVS();
+            } else {
+                // Buffer is full (500 events): drop the oldest event (FIFO) and append latest event
+                memmove(&offlineBuffer[0], &offlineBuffer[1], (MAX_OFFLINE_BUFFER - 1) * sizeof(OfflineVendRecord));
+                int lastIdx = MAX_OFFLINE_BUFFER - 1;
+                strncpy(offlineBuffer[lastIdx].uid, uid, sizeof(offlineBuffer[0].uid) - 1);
+                offlineBuffer[lastIdx].uid[sizeof(offlineBuffer[0].uid) - 1] = '\0';
+                offlineBuffer[lastIdx].timestamp_sec = millis() / 1000;
+                offlineBuffer[lastIdx].dispense_ms = DEFAULT_DISPENSE_MS;
+                Serial.printf("[OFFLINE] 🔄 Buffer full (500/500)! Oldest event dropped, keeping latest 500.\n");
             }
+            saveOfflineBufferToNVS();
+            saveLocalCacheToNVS();
         } else {
             Serial.printf("[OFFLINE VEND] ! Daily Limit Reached for %s (%d/%d)\n", 
                           item.name, item.used_today, item.daily_limit);
