@@ -3513,6 +3513,14 @@ window.updateSeqPatternPreview = function() {
     if (el) el.textContent = preview;
 };
 
+window.setSeqCount = function(num) {
+    const el = document.getElementById("seqTotalCount");
+    if (el) {
+        el.value = num;
+        updateSeqPatternPreview();
+    }
+};
+
 window.downloadSeqTemplate = function() {
     const csvContent = "data:text/csv;charset=utf-8,Name,Designation,Employee ID,Daily Limit\nRajesh Kumar,Operations,GTECH-SMT-0001,1\nPriya Sharma,Quality Control,GTECH-SMT-0002,1\nSuresh Raina,Production,GTECH-SMT-0003,1\nAnita Desai,Engineering,GTECH-SMT-0004,1\n";
     const encodedUri = encodeURI(csvContent);

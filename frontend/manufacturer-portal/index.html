@@ -710,7 +710,7 @@
                                 <button class="btn btn-secondary btn-sm" onclick="openAdminRfidBulkUpload()" style="background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #60a5fa;">📁 Bulk Upload (Method A)</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openAdminRfidBatchRange()" style="background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.4); color: #c084fc;">⚡ Batch Range (Method B)</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openAdminRfidLiveEnroll()" style="background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fbbf24;">📡 Live Tap Enroll (Method C)</button>
-                                <button class="btn btn-primary btn-sm" onclick="openSequentialCardProgrammer()" style="background: linear-gradient(135deg, #10b981, #059669); border: none; color: #fff; font-weight:700; box-shadow: 0 2px 8px rgba(16,185,129,0.35);">🏷️ 100-Card Auto-Programmer (Write & Enroll)</button>
+                                <button class="btn btn-primary btn-sm" onclick="openSequentialCardProgrammer()" style="background: linear-gradient(135deg, #10b981, #059669); border: none; color: #fff; font-weight:700; box-shadow: 0 2px 8px rgba(16,185,129,0.35);">✍️ Cloud Card Watermarker & Auto-Programmer</button>
                                 <button class="btn btn-secondary btn-sm" onclick="openRfidPolicyModal()" style="background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.4); color: #facc15; font-weight:700;">🛡️ Machine Card Policy</button>
                             </div>
                         </div>
@@ -1874,7 +1874,7 @@
             document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
         }
     </script>
-    <script src="app.js?v=13.0"></script>
+    <script src="app.js?v=13.1"></script>
 
     <!-- Modal: Admin Add Single Card -->
     <div class="modal-overlay" id="modalAdminRfidAddCard">
@@ -2131,7 +2131,7 @@
             <div class="modal-header">
                 <div>
                     <h3 style="display:flex; align-items:center; gap:0.5rem; margin:0;">
-                        <span>🏷️</span> Sequential 100-Card Auto-Programmer & Writer
+                        <span>✍️</span> Cloud Card Watermarker & Auto-Programmer
                     </h3>
                     <p style="font-size:0.78rem; color:var(--text-muted); margin:0.25rem 0 0 0;">
                         Automatic sequential card encoding & registration: Tap blank cards on the machine to bind & write them 1-by-1
@@ -2183,7 +2183,13 @@
                                 </div>
                                 <div>
                                     <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:0.25rem;">Total Count:</label>
-                                    <input type="number" id="seqTotalCount" class="input-field" value="100" min="1" max="1000" oninput="updateSeqPatternPreview()">
+                                    <input type="number" id="seqTotalCount" class="input-field" value="1" min="1" max="1000" oninput="updateSeqPatternPreview()">
+                                    <div style="display:flex; gap:0.25rem; margin-top:0.35rem; flex-wrap:wrap;">
+                                        <button type="button" class="btn btn-sm btn-secondary" onclick="setSeqCount(1)" style="padding:2px 7px; font-size:0.68rem; font-weight:700; color:#38bdf8;">1 Card</button>
+                                        <button type="button" class="btn btn-sm btn-secondary" onclick="setSeqCount(10)" style="padding:2px 7px; font-size:0.68rem;">10</button>
+                                        <button type="button" class="btn btn-sm btn-secondary" onclick="setSeqCount(50)" style="padding:2px 7px; font-size:0.68rem;">50</button>
+                                        <button type="button" class="btn btn-sm btn-secondary" onclick="setSeqCount(100)" style="padding:2px 7px; font-size:0.68rem;">100</button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:0.25rem;">Pad Digits:</label>

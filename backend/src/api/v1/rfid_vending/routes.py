@@ -1080,12 +1080,57 @@ def verify_device_tap(
             )
 
 
+    # Look up card in database for this client or machine (Resilient multi-tenant & machine matching)
+    card = db.query(RFIDVendingCard).filter(
+        or_(
+            RFIDVendingCard.device_id == dev.id,
+            and_(RFIDVendingCard.client_id == dev.client_id, RFIDVendingCard.device_id == None),
+            and_(RFIDVendingCard.client_id == dev.client_id, RFIDVendingCard.device_id == dev.id),
+        ),
+        RFIDVendingCard.card_uid == clean_uid,
+    ).first()
+
     # Check Machine Card Acceptance Policy (VENDOR_ONLY vs ALLOW_ALL)
     dev_settings = dev.config.config_payload.get("settings", {}) if (dev.config and dev.config.config_payload) else {}
     machine_policy = dev_settings.get("card_policy", "VENDOR_ONLY")
     req_prefix = dev_settings.get("vendor_prefix", "GTECH")
 
     if machine_policy == "VENDOR_ONLY" and payload.is_vendor_card is False:
+        # Check if card was pre-enrolled from Cloud Web Portal with an official Employee ID (e.g. GTECH-...)
+        # If so, automatically write the official watermark to Sector 1 Block 4 on this first tap!
+        emp_id = (card.employee_id or "").strip() if card else ""
+        if card and emp_id.upper().startswith(req_prefix.upper()):
+            write_str = emp_id
+            logger.info(f"[Auto-Watermark] Pre-enrolled card {clean_uid} ({emp_id}) detected without watermark. Watermarking on tap!")
+            log_entry = RFIDVendingLog(
+                client_id=dev.client_id,
+                device_id=dev.id,
+                card_uid=clean_uid,
+                username=card.cardholder_name,
+                department=card.department,
+                status="ENROLL_SUCCESS",
+                pulse_duration_ms=0,
+                notes=f"Cloud Auto-Watermarked card with {write_str}",
+            )
+            db.add(log_entry)
+            db.commit()
+            return RFIDVerifyTapResponse(
+                authorized=True,
+                status="ENROLL_SUCCESS",
+                card_uid=clean_uid,
+                username=card.cardholder_name,
+                employee_id=emp_id,
+                write_data=write_str,
+                department=card.department or "Operations",
+                daily_limit=card.daily_limit,
+                used_today=card.used_today,
+                dispense_pulse_ms=0,
+                message=f"Official Watermark {write_str} Written!",
+                queue_index=1,
+                queue_total=1,
+            )
+
+        # Otherwise, this is an outside/unwatermarked card not authorized as a vendor card
         log_entry = RFIDVendingLog(
             client_id=dev.client_id,
             device_id=dev.id,
@@ -1104,16 +1149,6 @@ def verify_device_tap(
             card_uid=clean_uid,
             message="Only Official G-TECH Cards Allowed",
         )
-
-    # Look up card in database for this client or machine (Resilient multi-tenant & machine matching)
-    card = db.query(RFIDVendingCard).filter(
-        or_(
-            RFIDVendingCard.device_id == dev.id,
-            and_(RFIDVendingCard.client_id == dev.client_id, RFIDVendingCard.device_id == None),
-            and_(RFIDVendingCard.client_id == dev.client_id, RFIDVendingCard.device_id == dev.id),
-        ),
-        RFIDVendingCard.card_uid == clean_uid,
-    ).first()
 
 
     # 1. Unregistered Card
