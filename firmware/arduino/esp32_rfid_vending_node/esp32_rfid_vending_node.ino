@@ -910,16 +910,20 @@ bool readSerialFromCardSector(char* outBuffer, byte bufferSize) {
     byte byteCount = sizeof(buffer);
 
     selectRFID();
+    rfid.PCD_StopCrypto1(); // Reset any residual crypto state
+
     MFRC522::StatusCode status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
         MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockAddr, &key, &(rfid.uid)
     );
 
     if (status != MFRC522::STATUS_OK) {
+        rfid.PCD_StopCrypto1();
         deselectRFID();
         return false;
     }
 
     status = (MFRC522::StatusCode) rfid.MIFARE_Read(blockAddr, buffer, &byteCount);
+    rfid.PCD_StopCrypto1(); // Always stop crypto after reading
     deselectRFID();
 
     if (status != MFRC522::STATUS_OK) {
@@ -955,26 +959,42 @@ bool writeSerialToCardSector(const char* serialText) {
     memcpy(buffer, serialText, len);
 
     selectRFID();
-    MFRC522::StatusCode status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
-        MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockAddr, &key, &(rfid.uid)
-    );
 
-    if (status != MFRC522::STATUS_OK) {
-        Serial.printf("[RFID WRITE] ! Auth Key A for block %d returned: %s\n", blockAddr, rfid.GetStatusCodeName(status));
-        deselectRFID();
-        return false;
+    // Retry up to 3 attempts with fresh card re-selection (handles delay after Wi-Fi HTTP roundtrip)
+    bool writeSuccess = false;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        rfid.PCD_StopCrypto1();
+
+        // Re-wake & re-select the PICC in case communication was idle during Wi-Fi HTTP roundtrip
+        byte bufferATQA[2];
+        byte bufferSize = sizeof(bufferATQA);
+        rfid.PICC_WakeupA(bufferATQA, &bufferSize);
+        rfid.PICC_Select(&(rfid.uid));
+
+        MFRC522::StatusCode status = (MFRC522::StatusCode) rfid.PCD_Authenticate(
+            MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockAddr, &key, &(rfid.uid)
+        );
+
+        if (status == MFRC522::STATUS_OK) {
+            status = (MFRC522::StatusCode) rfid.MIFARE_Write(blockAddr, buffer, 16);
+            if (status == MFRC522::STATUS_OK) {
+                Serial.printf("[RFID WRITE] ✓ SUCCESS! Permanently wrote '%s' into Sector 1 Block 4\n", serialText);
+                writeSuccess = true;
+                rfid.PCD_StopCrypto1();
+                break;
+            } else {
+                Serial.printf("[RFID WRITE] ! MIFARE_Write failed on attempt %d: %s\n", attempt, rfid.GetStatusCodeName(status));
+            }
+        } else {
+            Serial.printf("[RFID WRITE] ! Auth Key A for block %d attempt %d: %s\n", blockAddr, attempt, rfid.GetStatusCodeName(status));
+        }
+
+        rfid.PCD_StopCrypto1();
+        delay(30);
     }
 
-    status = (MFRC522::StatusCode) rfid.MIFARE_Write(blockAddr, buffer, 16);
-    if (status != MFRC522::STATUS_OK) {
-        Serial.printf("[RFID WRITE] ! MIFARE_Write to block %d returned: %s\n", blockAddr, rfid.GetStatusCodeName(status));
-        deselectRFID();
-        return false;
-    }
-
-    Serial.printf("[RFID WRITE] ✓ SUCCESS! Permanently wrote '%s' into Sector 1 Block 4\n", serialText);
     deselectRFID();
-    return true;
+    return writeSuccess;
 }
 
 void uiDrawCardEnrolledScreen(const char* name, const char* empId, const char* uid, const char* nextName, const char* nextEmpId, int qIndex, int qTotal) {
@@ -1625,6 +1645,10 @@ void processCardTap(const char* uid, bool isVendorCard, const char* sectorData) 
                 beep(3200, 140);
 
                 uiDrawCardEnrolledScreen(username, empId, uid, nextName, nextEmpId, qIndex, qTotal);
+                if (pulse > 0) {
+                    Serial.printf("[AUTO-VEND] Dispensing item on auto-watermarked tap (pulse: %d ms)...\n", pulse);
+                    triggerDispenseMotor(pulse);
+                }
                 delay(2200);
 
                 if (!nextName || nextName[0] == '\0') {
